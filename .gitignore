@@ -1,15 +1,43 @@
 # Python
-backend/venv/
-__pycache__/
+
+**pycache**/
 *.pyc
+*.pyo
+*.pyd
+*.sqlite3
+*.db
 
-# React
-frontend/node_modules/
-frontend/dist/
+# Virtual Environment
 
-# Environment
+venv/
 .env
 
+# Upload files
+
+backend/uploads/
+
+# Node
+
+node_modules/
+dist/
+build/
+
+# Logs
+
+*.log
+
 # OS
+
 .DS_Store
 Thumbs.db
+
+# IDE
+
+.vscode/
+.idea/
+
+# Environment variables
+
+.env.local
+.env.development
+.env.production
