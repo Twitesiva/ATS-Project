@@ -44,11 +44,30 @@ def get_model_singleton():
     if _model_singleton is None:
         from sentence_transformers import SentenceTransformer
         from backend.config import SENTENCE_TRANSFORMER_MODEL
+        import os
         
-        logger.info("Loading SentenceTransformer model (singleton)...")
-        _model_singleton = SentenceTransformer(SENTENCE_TRANSFORMER_MODEL)
-        _encoder_singleton = _model_singleton.encode
-        logger.info("Model loaded successfully")
+        logger.info(f"Loading SentenceTransformer model from {SENTENCE_TRANSFORMER_MODEL}...")
+        try:
+            # Check if path exists
+            if os.path.isdir(SENTENCE_TRANSFORMER_MODEL):
+                logger.info("Local model directory found. Loading in offline mode...")
+                _model_singleton = SentenceTransformer(SENTENCE_TRANSFORMER_MODEL)
+            else:
+                logger.warning(f"Local path {SENTENCE_TRANSFORMER_MODEL} not found. Attempting online load...")
+                _model_singleton = SentenceTransformer("all-MiniLM-L6-v2")
+                
+            _encoder_singleton = _model_singleton.encode
+            logger.info("SentenceTransformer model loaded successfully")
+        except Exception as e:
+            logger.error(f"Failed to load SentenceTransformer: {e}")
+            # Final fallback
+            try:
+                logger.info("Using emergency fallback to online model...")
+                _model_singleton = SentenceTransformer("all-MiniLM-L6-v2")
+                _encoder_singleton = _model_singleton.encode
+            except Exception as e2:
+                logger.critical(f"CRITICAL: All model loading attempts failed: {e2}")
+                raise RuntimeError(f"ML Model Loading Failure: {e2}")
     
     return _model_singleton, _encoder_singleton
 

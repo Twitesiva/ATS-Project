@@ -16,6 +16,10 @@ venv/
 
 backend/uploads/
 
+# ML Models (downloaded locally - too large for git)
+
+backend/models/
+
 # Node
 
 node_modules/

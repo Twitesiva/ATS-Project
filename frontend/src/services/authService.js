@@ -21,16 +21,22 @@ export async function normalizeAllUserRoles() {
 export async function loginWithEmail(email, password) {
   await normalizeAllUserRoles();
 
-  const { data, error } = await supabase
-    .from("users")
-    .select("*")
-    .eq("email", email)
-    .eq("password", password)
-    .single();
+  try {
+    const { data, error } = await supabase
+      .from("users")
+      .select("*")
+      .eq("email", email.trim())
+      .eq("password", password)
+      .maybeSingle();
 
-  if (error || !data) {
-    return { error: "Invalid email or password" };
-  }
+    if (error) {
+      console.error("[auth] login query error", error);
+      return { error: error.message || "Database connection error" };
+    }
+
+    if (!data) {
+      return { error: "Invalid email or password" };
+    }
 
   const normalizedRole = canonicalizeRole(data.role);
   const dbNormalizedRole = String(data.role || "").trim().toLowerCase();
@@ -55,14 +61,18 @@ export async function loginWithEmail(email, password) {
     console.error("[auth] is_online update failed", onlineError);
   }
 
-  return {
-    user: {
-      id: data.id,
-      email: data.email,
-      role: normalizedRole,
-      name: data.name || data.email.split("@")[0],
-    },
-  };
+      return {
+        user: {
+          id: data.id,
+          email: data.email,
+          role: normalizedRole,
+          name: data.name || data.email.split("@")[0],
+        },
+      };
+    } catch (err) {
+      console.error("[auth] unexpected login error", err);
+      return { error: "An unexpected error occurred during login" };
+    }
 }
 
 export async function setUserOnlineStatus(userId, isOnline) {

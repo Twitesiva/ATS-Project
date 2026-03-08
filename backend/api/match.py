@@ -1,6 +1,9 @@
 """POST /match: run parser + NLP + matching, return per-resume results."""
 from flask import Blueprint, request, jsonify
 import numpy as np
+import logging
+
+logger = logging.getLogger(__name__)
 
 bp = Blueprint("match", __name__)
 
@@ -213,6 +216,23 @@ def match():
             
     except Exception as e:
         import traceback
-        print(f"Match error: {e}")
+        import uuid
+        error_id = str(uuid.uuid4())[:8]
+        logger.error(f"[API ERROR] [{error_id}] Match failure: {e}")
         traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        
+        # Determine error category for better user feedback
+        error_type = type(e).__name__
+        message = str(e)
+        
+        status_code = 500
+        if isinstance(e, ValueError):
+            status_code = 400
+            
+        return jsonify({
+            "status": "error",
+            "error_id": error_id,
+            "error_type": error_type,
+            "message": message,
+            "suggestion": "Please check if the job description and resumes are valid and try again."
+        }), status_code

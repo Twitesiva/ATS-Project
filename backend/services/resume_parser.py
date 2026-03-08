@@ -28,16 +28,38 @@ def _preprocess_text(text):
 
 
 def _read_pdf(file_path):
-    import PyPDF2
+    """Read PDF text with pdfplumber (primary) and PyPDF2 (fallback)."""
     text_parts = []
-    with open(file_path, "rb") as f:
-        reader = PyPDF2.PdfReader(f)
-        for page in reader.pages:
-            t = page.extract_text()
-            if t:
-                text_parts.append(t)
-    raw_text = "\n".join(text_parts) if text_parts else ""
-    return _preprocess_text(raw_text)
+    
+    # Try pdfplumber first (better layout preservation)
+    try:
+        import pdfplumber
+        with pdfplumber.open(file_path) as pdf:
+            for page in pdf.pages:
+                t = page.extract_text()
+                if t:
+                    text_parts.append(t)
+        if text_parts:
+            raw_text = "\n".join(text_parts)
+            return _preprocess_text(raw_text)
+    except Exception as e:
+        print(f"[PARSER] pdfplumber failed: {e}. Falling back to PyPDF2.")
+    
+    # Fallback to PyPDF2
+    try:
+        import PyPDF2
+        text_parts = []
+        with open(file_path, "rb") as f:
+            reader = PyPDF2.PdfReader(f)
+            for page in reader.pages:
+                t = page.extract_text()
+                if t:
+                    text_parts.append(t)
+        raw_text = "\n".join(text_parts) if text_parts else ""
+        return _preprocess_text(raw_text)
+    except Exception as e:
+        print(f"[PARSER] PyPDF2 also failed: {e}")
+        return ""
 
 
 def _read_docx(file_path):

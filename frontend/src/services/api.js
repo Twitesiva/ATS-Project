@@ -1,7 +1,10 @@
 import axios from "axios";
 
+// Central API configuration - points to Flask backend
+const API_BASE_URL = "http://127.0.0.1:5000/api";
+
 const api = axios.create({
-  baseURL: "/api",
+  baseURL: API_BASE_URL,
   headers: { "Content-Type": "application/json" },
 });
 
@@ -22,7 +25,7 @@ export async function uploadJobAndResumes(jobDescription, files, jdFile = null) 
     form.append("resumes", files[i]);
   }
   // Use direct post so no default Content-Type is set; browser adds multipart/form-data with boundary
-  const { data } = await axios.post("/api/upload", form);
+  const { data } = await axios.post(`${API_BASE_URL}/upload`, form);
   return data;
 }
 

@@ -10,67 +10,43 @@ from functools import lru_cache
 
 logger = logging.getLogger(__name__)
 
-# Lazy-load heavy libs
-_nlp = None
-_stopwords = None
-_encoder = None
-_embedding_model = None
+from backend.utils.model_loader import get_nlp, get_encoder, get_stopwords, preload_models
 
-# PERFORMANCE OPTIMIZATION – NON-BREAKING: In-memory cache for skill extraction
+# PERFORMANCE OPTIMIZATION – NON-BREAKING: In-memory cache for extraction results
 _skill_cache = {}
 _location_cache = {}
 _experience_cache = {}
+_text_hash_cache = {}
+
+def _get_nlp(): return get_nlp()
+def _get_stopwords(): return get_stopwords()
+def _get_encoder(): return get_encoder()
 
 
-def _get_nlp():
-    global _nlp
-    if _nlp is None:
-        import spacy
-        try:
-            _nlp = spacy.load("en_core_web_sm")
-        except OSError:
-            import subprocess
-            subprocess.run([sys.executable, "-m", "spacy", "download", "en_core_web_sm"], check=True, capture_output=True)
-            _nlp = spacy.load("en_core_web_sm")
-    return _nlp
-
-
-def _get_stopwords():
-    global _stopwords
-    if _stopwords is None:
-        import nltk
-        try:
-            _stopwords = set(nltk.corpus.stopwords.words("english"))
-        except LookupError:
-            nltk.download("stopwords", quiet=True)
-            _stopwords = set(nltk.corpus.stopwords.words("english"))
-    return _stopwords
-
-
-def _get_encoder():
-    global _encoder, _embedding_model
-    if _encoder is None:
-        from sentence_transformers import SentenceTransformer
-        from backend.config import SENTENCE_TRANSFORMER_MODEL
-        _embedding_model = SentenceTransformer(SENTENCE_TRANSFORMER_MODEL)
-        _encoder = _embedding_model.encode
-    return _encoder
-
-
-# PERFORMANCE OPTIMIZATION – NON-BREAKING: Preload models at startup
-def preload_models():
-    """Preload all NLP models at application startup."""
-    _get_nlp()
-    _get_stopwords()
-    _get_encoder()
-    logger.info("NLP models preloaded successfully")
-
-
-def _get_text_hash(text, length=2000):
-    """Generate hash for text caching (first N chars for efficiency)."""
+def _get_text_hash(text, length=10000):
+    """
+    Generate robust hash for text caching.
+    Uses more of the text for unique identification.
+    Normalized whitespace for better identity verification.
+    """
     if not text:
         return ""
-    return hashlib.md5(text[:length].encode()).hexdigest()
+    
+    # Normalize text slightly for better cache hits (whitespace normalization)
+    text_sample = " ".join(text[:length].split())
+    
+    # Check simple cache
+    if text_sample in _text_hash_cache:
+        return _text_hash_cache[text_sample]
+    
+    h = hashlib.md5(text_sample.encode()).hexdigest()
+    
+    # LRU-style cache management (limit cache size to 2000 entries)
+    if len(_text_hash_cache) > 2000:
+        _text_hash_cache.clear()
+        
+    _text_hash_cache[text_sample] = h
+    return h
 
 
 def _normalize_skill(s):
@@ -84,7 +60,8 @@ def _merge_similar_skills(skills, threshold=0.85):
         return []
     encoder = _get_encoder()
     import numpy as np
-    vecs = encoder(skills)
+    # Encode without progress bar to avoid console spam
+    vecs = encoder(skills, show_progress_bar=False)
     vecs = np.asarray(vecs)
     keep = []
     used = [False] * len(skills)

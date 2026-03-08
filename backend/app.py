@@ -1,4 +1,5 @@
 """Flask app: CORS, route registration, init DB."""
+# -*- coding: utf-8 -*-
 import os
 import sys
 import warnings
@@ -21,18 +22,57 @@ from backend.config import MAX_CONTENT_LENGTH
 from backend.models.schema import init_db
 
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
-CORS(app)
+app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50 MB max file size
+
+import logging
+from logging.handlers import RotatingFileHandler
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Add file handler for production-style logging
+if not os.path.exists('logs'):
+    os.makedirs('logs')
+file_handler = RotatingFileHandler('logs/ats_backend.log', maxBytes=10240000, backupCount=5)
+file_handler.setFormatter(logging.Formatter(
+    '%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'
+))
+file_handler.setLevel(logging.INFO)
+app.logger.addHandler(file_handler)
+logger.addHandler(file_handler)
+
+# Enable CORS for React frontend
+# Note: If supports_credentials=True, origins should not be '*' for some environments.
+# We'll allow all origins but return the specific origin to satisfy credentials requirement.
+CORS(
+    app,
+    resources={r"/api/*": {
+        "origins": ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5173", "http://127.0.0.1:5173"],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"]
+    }},
+    supports_credentials=True
+)
 
 init_db()
 
-# PERFORMANCE OPTIMIZATION – CRITICAL: Lazy-load ML models to reduce startup time
-# Models will be loaded on first request to reduce initial startup delay
-print("Initializing ATS backend (lazy-load for faster startup)...")
+# PERFORMANCE OPTIMIZATION - CRITICAL: Preload models at startup
+from backend.utils.model_loader import preload_models
+print("Preloading ML models (SentenceTransformer, SpaCy)...")
+preload_models()
+print("âœ“ ML models preloaded successfully")
 
-# PERFORMANCE ARCHITECTURE – CRITICAL: Initialize ANN index for ultra-fast matching
-# Will be initialized on demand for faster startup
-print("ANN index will be initialized on first use for faster startup")
+# PERFORMANCE ARCHITECTURE - CRITICAL: Initialize ANN index
+from backend.services.ann_index import init_ann_index, load_index_from_db
+print("Initializing ANN index...")
+if init_ann_index():
+    print("âœ“ FAISS skeleton ready")
+    print("Loading existing embeddings from database...")
+    load_index_from_db()
+    print("âœ“ ANN index populated and ready")
+else:
+    print("âš  ANN index failed to initialize. System will use exact matching.")
 
 # Register API routes
 from backend.api.upload import bp as upload_bp
@@ -59,7 +99,7 @@ def health():
     }
 
 
-# PERFORMANCE OPTIMIZATION – CRITICAL: keep startup fast with lazy model loading.
+# PERFORMANCE OPTIMIZATION - CRITICAL: keep startup fast with lazy model loading.
 # SentenceTransformer and related ML models are loaded on first request that needs them.
 
 

@@ -79,11 +79,11 @@ ROLE_INDICATORS = {
 _role_embedding_cache = {}
 
 
+from backend.utils.model_loader import get_encoder
+
 def _get_encoder():
     """Get the sentence transformer encoder."""
-    from backend.services.matching import _get_model
-    _, encoder = _get_model()
-    return encoder
+    return get_encoder()
 
 
 def _get_text_hash(text: str) -> str:

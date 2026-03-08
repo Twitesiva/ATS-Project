@@ -6,18 +6,13 @@ import numpy as np
 from functools import lru_cache
 import hashlib
 
-_encoder = None
-_model = None
+from backend.utils.model_loader import get_encoder, preload_models as preload_model
 
-# PERFORMANCE OPTIMIZATION – NON-BREAKING: Global model singleton with eager loading support
 def _get_model():
-    global _encoder, _model
-    if _model is None:
-        from sentence_transformers import SentenceTransformer
-        from backend.config import SENTENCE_TRANSFORMER_MODEL
-        _model = SentenceTransformer(SENTENCE_TRANSFORMER_MODEL)
-        _encoder = _model.encode
-    return _model, _encoder
+    encoder = get_encoder()
+    # For backward compatibility with existing code that expects (model, encoder)
+    # We'll just return (None, encoder) since we mainly use the encoder
+    return None, encoder
 
 
 # PERFORMANCE OPTIMIZATION – NON-BREAKING: Preload model at module import (optional, called at startup)
@@ -74,75 +69,69 @@ def clear_jd_cache():
     clear_request_caches()
 
 
-def run_matching(job_description, resume_text, jd_skills, resume_skills, use_semantic_roles=True):
+def run_matching(job_description, resume_text, jd_skills, resume_skills):
     """
-    Compute document-level match percentage with SEMANTIC ROLE UNDERSTANDING.
+    Compute document-level match percentage combining multiple dimensions:
+    1. Full Semantic Similarity (Doc vs Doc)
+    2. Skill-level Semantic Similarity
+    3. Experience Relevance
     
-    NEW: When use_semantic_roles=True, uses meaning-based matching instead of keyword matching.
-    This prevents incorrect matches like "Java Developer" JD matching "Java Tester" resumes.
-    
-    Scoring breakdown (semantic mode):
-    - 50% Role intent similarity (semantic understanding of actual job function)
-    - 30% Skill semantic similarity (meaning of skills, not just keyword overlap)
-    - 20% Experience relevance (document-level context similarity)
-    
+    Final score = (Semantic Sim * 0.4) + (Skill Match * 0.4) + (Experience Match * 0.2)
     Returns (match_percentage 0-100, matching_skills list, missing_skills list).
     """
     from backend.config import SKILL_SIMILARITY_THRESHOLD
+    from backend.services.nlp_pipeline import extract_experience_years
+    from backend.services.role_intent import compute_semantic_match_score
     
-    # SEMANTIC ROLE MATCHING – NON-BREAKING: Use new semantic matching if enabled
-    if use_semantic_roles:
-        from backend.services.role_intent import compute_semantic_match_score
+    # Get encoder once (singleton)
+    encoder = get_encoder()
+    
+    # 1. Full Semantic Similarity (Resume Text -> Embedding, JD -> Embedding)
+    # Truncate to avoid memory issues while keeping significant context
+    jd_emb = encoder([job_description[:8000]], show_progress_bar=False)[0]
+    res_emb = encoder([resume_text[:8000]], show_progress_bar=False)[0]
+    
+    # Normalize and compute cosine similarity
+    semantic_sim = _cosine_similarity(jd_emb, res_emb)
+    # Map cosine similarity [-1, 1] to [0, 1] range for scoring
+    semantic_score = (semantic_sim + 1) / 2
+    
+    # 2. Skill-level Semantic Matching
+    # Use role_intent for comprehensive skill matching (0-100 range returned)
+    match_result = compute_semantic_match_score(
+        jd_text=job_description,
+        resume_text=resume_text,
+        jd_skills=jd_skills,
+        resume_skills=resume_skills
+    )
+    skill_score = match_result["skill_similarity"] / 100.0
+    matching_skills = match_result["matching_skills"]
+    missing_skills = match_result["missing_skills"]
+    
+    # 3. Experience Relevance
+    jd_exp = extract_experience_years(job_description)
+    res_exp = extract_experience_years(resume_text)
+    
+    exp_score = 1.0
+    if jd_exp and res_exp:
+        # Penalize if resume experience is less than JD requirement, else full score
+        if res_exp < jd_exp:
+            exp_score = res_exp / jd_exp
+        else:
+            exp_score = 1.0
+    elif jd_exp and not res_exp:
+        # Significant penalty for not mentioning experience when JD requires it
+        exp_score = 0.5
+    else:
+        # If JD doesn't specify, we grant a baseline high score (fairness)
+        exp_score = 0.8
         
-        result = compute_semantic_match_score(
-            jd_text=job_description,
-            resume_text=resume_text,
-            jd_skills=jd_skills,
-            resume_skills=resume_skills
-        )
-        
-        return (
-            result["match_percentage"],
-            result["matching_skills"],
-            result["missing_skills"]
-        )
+    # Final combined score (Weighted sum)
+    # Weights: Semantic (40%), Skill (40%), Experience (20%)
+    final_score = (semantic_score * 0.4) + (skill_score * 0.4) + (exp_score * 0.2)
+    match_percentage = round(final_score * 100, 2)
     
-    # LEGACY: Original keyword-based matching (fallback)
-    _, encode = _get_model()
-    
-    # PERFORMANCE OPTIMIZATION – CRITICAL: Use batch optimizer for JD embedding
-    from backend.services.batch_optimizer import get_jd_embedding_cached
-    jd_emb = get_jd_embedding_cached(job_description)
-    res_emb = encode([resume_text[:8000]])[0]
-    doc_sim = _cosine_similarity(jd_emb, res_emb)
-    match_percentage = (doc_sim + 1) / 2 * 100  # map [-1,1] to [0,100]
-
-    if not jd_skills:
-        return round(match_percentage, 2), [], []
-
-    # Skill-level: for each JD skill, check if any resume skill is similar enough
-    if not resume_skills:
-        return round(match_percentage, 2), [], list(jd_skills)
-
-    # PERFORMANCE OPTIMIZATION – NON-BREAKING: Batch encode all skills at once
-    all_skills = list(resume_skills) + list(jd_skills)
-    all_embeddings = encode(all_skills)
-    
-    res_embeddings = all_embeddings[:len(resume_skills)]
-    jd_embeddings = all_embeddings[len(resume_skills):]
-    
-    # PERFORMANCE OPTIMIZATION – NON-BREAKING: Vectorized similarity computation
-    similarity_matrix = _batch_cosine_similarity(jd_embeddings, res_embeddings)
-    max_similarities = np.max(similarity_matrix, axis=1)
-    
-    matching = [
-        jd_skills[i] 
-        for i, sim in enumerate(max_similarities) 
-        if sim >= SKILL_SIMILARITY_THRESHOLD
-    ]
-    missing = [s for s in jd_skills if s not in matching]
-    
-    return round(match_percentage, 2), matching, missing
+    return match_percentage, matching_skills, missing_skills
 
 
 # PERFORMANCE OPTIMIZATION – NON-BREAKING: Batch matching for multiple resumes

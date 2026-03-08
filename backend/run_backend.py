@@ -9,4 +9,4 @@ os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("FLASK_APP", "backend.app")
 from app import app
-app.run(debug=False, port=5000)
+app.run(debug=True, port=5000)

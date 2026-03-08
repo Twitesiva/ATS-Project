@@ -20,7 +20,10 @@ Why ANN:
 import numpy as np
 import hashlib
 import json
+import logging
 from typing import List, Dict, Tuple, Optional
+
+logger = logging.getLogger(__name__)
 
 # FAISS index singleton
 _faiss_index = None
@@ -40,11 +43,11 @@ _faiss_module = None
 _role_indices = {}  # Map of role_type -> (faiss_index, metadata_list)
 
 
+from backend.utils.model_loader import get_encoder
+
 def _get_encoder():
-    """Get the sentence transformer encoder (reuses matching.py model)."""
-    from backend.services.matching import _get_model
-    _, encoder = _get_model()
-    return encoder
+    """Get the sentence transformer encoder."""
+    return get_encoder()
 
 
 def _normalize_embeddings(embeddings: np.ndarray) -> np.ndarray:
@@ -75,10 +78,10 @@ def _check_faiss_available():
         return False
 
 
-def init_ann_index():
+def init_ann_index(use_ivf=False, num_resumes=1000):
     """
-    Initialize FAISS index at application startup.
-    Uses IndexFlatIP (Inner Product) which equals cosine similarity for normalized vectors.
+    Initialize FAISS index.
+    Supports IndexFlatIP for small sets and IndexIVFFlat for larger ones.
     """
     global _faiss_index, _index_built, _faiss_module
     
@@ -86,18 +89,63 @@ def init_ann_index():
         return True
     
     if not _check_faiss_available():
+        print("⚠ FAISS not available. Falling back to exact matching.")
         return False
     
     try:
-        # IndexFlatIP: Exact inner product search (cosine for normalized vectors)
-        # Using Flat index for simplicity - can be upgraded to IVF or HNSW for larger datasets
-        _faiss_index = _faiss_module.IndexFlatIP(EMBEDDING_DIM)
-        print("✓ FAISS ANN index initialized (IndexFlatIP)")
+        if use_ivf:
+            # IndexIVFFlat: Scalable inverted file index
+            # nlist is typically 4*sqrt(N)
+            nlist = int(4 * (num_resumes**0.5)) if num_resumes > 0 else 100
+            quantizer = _faiss_module.IndexFlatIP(EMBEDDING_DIM)
+            _faiss_index = _faiss_module.IndexIVFFlat(quantizer, EMBEDDING_DIM, nlist, _faiss_module.METRIC_INNER_PRODUCT)
+            print(f"✓ FAISS ANN index initialized (IndexIVFFlat, nlist={nlist})")
+        else:
+            # IndexFlatIP: Exact inner product search (L2-normalized cosine)
+            _faiss_index = _faiss_module.IndexFlatIP(EMBEDDING_DIM)
+            print("✓ FAISS ANN index initialized (IndexFlatIP)")
         return True
         
+    except ImportError:
+        _faiss_available = False
+        logger.error("[FAISS] faiss-cpu not installed. Using exact matching fallback.")
+        return False
     except Exception as e:
         print(f"⚠ FAISS initialization error: {e}")
+        logger.error(f"[FAISS] Initialiation failed: {e}")
         return False
+
+def load_index_from_db():
+    """PRODUCTION: Load existing embeddings from database into FAISS index."""
+    try:
+        from backend.services.storage import fetch_resumes
+        resumes = fetch_resumes()
+        
+        count = 0
+        for res in resumes:
+            emb = res.get("embedding")
+            if emb:
+                # Add to memory metadata
+                _resume_metadata.append(res)
+                # Add to FAISS
+                arr = np.array(emb).reshape(1, -1).astype(np.float32)
+                _normalize_embeddings(arr)
+                
+                if _faiss_index is None:
+                    init_ann_index()
+                
+                if not _faiss_index.is_trained:
+                    _faiss_index.train(arr)
+                
+                _faiss_index.add(arr)
+                count += 1
+        
+        if count > 0:
+            print(f"✓ Loaded {count} embeddings from DB into ANN index")
+            return True
+    except Exception as e:
+        logger.error(f"[FAISS] Failed to load embeddings from DB: {e}")
+    return False
 
 
 def add_resume_to_index(resume_text: str, metadata: Dict) -> bool:

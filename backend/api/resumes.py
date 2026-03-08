@@ -60,6 +60,10 @@ def fetch():
     - semantic_threshold: Similarity threshold 0.0-1.0 (default: 0.75)
     - strict_role_skill_match: 'true' for strict role+skill gating (prevents "Python Developer" matching "Java Developer")
     """
+    # DEBUG: Log request
+    print(f"[API DEBUG] GET /api/fetch-resumes request received")
+    print(f"[API DEBUG] Query params: {request.args.to_dict()}")
+    
     location = (request.args.get("location") or "").strip()
     skills_str = (request.args.get("skills") or "").strip()
     skills_mode = (request.args.get("skills_mode") or "any").strip().lower()
@@ -75,6 +79,8 @@ def fetch():
     semantic_threshold = request.args.get("semantic_threshold", type=float, default=0.75)
     use_strict_role_skill_match = request.args.get("strict_role_skill_match", "false").lower() == "true"
     
+    print(f"[API DEBUG] Parsed filters: location={location}, skills={skills_str}, role={role_filter}")
+    
     try:
         rows = fetch_resumes(
             location=location or None,
@@ -89,6 +95,8 @@ def fetch():
             semantic_threshold=semantic_threshold,
             use_strict_role_skill_match=use_strict_role_skill_match
         )
+        print(f"[API DEBUG] fetch_resumes returned {len(rows)} resumes")
+        
         response = {
             "resumes": rows,
             "filters_applied": {
@@ -96,9 +104,15 @@ def fetch():
                 "role_filter": role_filter or None
             }
         }
+        print(f"[API DEBUG] Returning response with {len(rows)} resumes")
         return jsonify(serialize_for_json(response))
     except Exception as e:
         import traceback
-        print(f"Fetch resumes error: {e}")
-        traceback.print_exc()
-        return jsonify({"error": "Failed to fetch resumes", "details": str(e)}), 500
+        print(f"[API ERROR] Fetch resumes error: {e}")
+        print(f"[API ERROR] Traceback: {traceback.format_exc()}")
+        # Return empty resumes array instead of crashing
+        return jsonify({
+            "resumes": [],
+            "error": "Failed to fetch resumes",
+            "details": str(e)
+        }), 500
