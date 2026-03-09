@@ -6,7 +6,6 @@ import NavToSearch from "../../components/ats/NavToSearch";
 import { uploadJobAndResumes, matchResumes, storeResumes } from "../../services/api";
 
 // PERFORMANCE UX IMPROVEMENT – NON-BREAKING: Lazy load heavy MatchResults component
-const MatchResults = lazy(() => import("../../components/ats/MatchResults"));
 const EnhancedMatchResults = lazy(() => import("../../components/ats/EnhancedMatchResults"));
 
 const MIN_RESUMES = 1;
@@ -85,10 +84,8 @@ export default function ResumeMatchingPage() {
   const [progressStep, setProgressStep] = useState(0);
   const [showEarlyResults, setShowEarlyResults] = useState(false);
   
-  // EXTENSION – SAFE TO REMOVE: State for JD file upload
   const [jdFile, setJdFile] = useState(null);
   const [jdFileError, setJdFileError] = useState("");
-  const [useEnhancedMatching, setUseEnhancedMatching] = useState(false);
 
   // PERFORMANCE OPTIMIZATION – SAFE: Memoize computed values
   const hasJdInput = useMemo(() => jobDescription.trim().length > 0 || jdFile !== null, [jobDescription, jdFile]);
@@ -134,7 +131,7 @@ export default function ResumeMatchingPage() {
       const matchData = await matchResumes({
         job_description: uploadData.job_description,
         resume_paths: uploadData.resume_paths,
-        use_enhanced_matching: useEnhancedMatching
+        use_enhanced_matching: true
       });
       
       setProgressStep(3);
@@ -182,22 +179,6 @@ export default function ResumeMatchingPage() {
             min={MIN_RESUMES}
             max={MAX_RESUMES}
           />
-        </div>
-        
-        {/* Enhanced Matching Toggle */}
-        <div className="enhanced-toggle-section">
-          <label className="toggle-container">
-            <input 
-              type="checkbox" 
-              checked={useEnhancedMatching}
-              onChange={(e) => setUseEnhancedMatching(e.target.checked)}
-            />
-            <span className="toggle-slider"></span>
-            <span className="toggle-label">Use Enhanced Enterprise Matching</span>
-          </label>
-          <div className="toggle-description">
-            Enable advanced role understanding, skill context analysis, and detailed match explanations
-          </div>
         </div>
         
         {submitError && (
@@ -250,23 +231,15 @@ export default function ResumeMatchingPage() {
       {/* PERFORMANCE UX IMPROVEMENT – NON-BREAKING: Lazy load MatchResults with Suspense */}
       {results && results.length > 0 && !loading && (
         <Suspense fallback={<ResultsSkeleton />}>
-          {useEnhancedMatching ? (
-            <EnhancedMatchResults
-              results={results}
-              onPreview={handlePreview}
-              previewResume={previewResume}
-              onClosePreview={handleClosePreview}
-            />
-          ) : (
-            <MatchResults
-              results={results}
-              onPreview={handlePreview}
-              previewResume={previewResume}
-              onClosePreview={handleClosePreview}
-            />
-          )}
+          <EnhancedMatchResults
+            results={results}
+            onPreview={handlePreview}
+            previewResume={previewResume}
+            onClosePreview={handleClosePreview}
+          />
         </Suspense>
       )}
+
     </div>
   );
 }

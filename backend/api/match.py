@@ -55,12 +55,9 @@ def match():
     resume_paths = data.get("resume_paths") or []
     
     # Enterprise pipeline flags
-    use_enterprise = data.get("use_enterprise_matching", True)
     use_ann = data.get("use_ann", True)
     min_role_compat = data.get("min_role_compatibility", 0.65)
-    # For the matching page, we want to return all resumes (matched and unmatched)
-    # Set use_role_gatekeeper=False by default to return all results
-    use_role_gatekeeper = data.get("use_role_gatekeeper", False)
+
     
     if not job_description:
         return jsonify({"error": "Job description is required"}), 400
@@ -73,146 +70,91 @@ def match():
     from backend.services.matching import compute_location_display
     from backend.services.ann_index import is_ann_available
     from backend.services.enterprise_matching import (
-        classify_role_intent,
-        run_enterprise_matching,
-        match_result_to_dict
+        classify_role_intent
     )
     from backend.services.enhanced_matching import run_enhanced_batch_matching, extract_experience_from_jd, enhanced_match_to_dict
+
 
     try:
         # Extract JD entities
         jd_skills, jd_locations = extract_jd_entities(job_description)
         
+        # Performance optimization: Preload models if not already loaded
+        from backend.utils.model_loader import get_encoder
+        get_encoder()
+        
         # STAGE 1: Classify JD Role Intent (always run)
         jd_role = classify_role_intent(job_description)
         print(f"\n[JD ROLE INTENT] {jd_role.role_family} | {jd_role.role_type} | {jd_role.role_specialization} | {jd_role.primary_tech}")
         
-        # ENTERPRISE PIPELINE
-        if use_enterprise:
-            print("\n[ENTERPRISE MATCHING PIPELINE ENABLED]")
-            
-            # Try ANN first for large batches
-            if use_ann and is_ann_available() and len(resume_paths) > 5:
-                from backend.services.ann_index import run_ann_matching_enterprise
-                
-                print("[STAGE 2] Using ANN-based fast search...")
-                ann_results = run_ann_matching_enterprise(
-                    job_description=job_description,
-                    jd_skills=jd_skills,
-                    jd_role_intent={
-                        "role_type": jd_role.role_type,
-                        "role_family": jd_role.role_family,
-                        "role_specialization": jd_role.role_specialization,
-                        "primary_tech": jd_role.primary_tech
-                    },
-                    top_k=len(resume_paths),
-                    min_role_compatibility=min_role_compat
-                )
-                
-                if ann_results:
-                    # Add location display
-                    for result in ann_results:
-                        result["location_display"] = compute_location_display(
-                            jd_locations,
-                            result.get("locations", [])
-                        )
-                    
-                    print(f"[STAGE 3] ANN matching complete: {len(ann_results)} results")
-                    response = {"results": ann_results, "pipeline": "enterprise_ann"}
-                    return jsonify(serialize_for_json(response))
-            
-            # FALLBACK: Full enterprise pipeline without ANN
-            print("[STAGE 2] Parsing resumes...")
-            parsed = parse_resumes_from_paths(resume_paths, max_workers=4)
-            
-            resume_items = []
-            for item in parsed:
-                res_skills, res_exp, res_locations, res_phones, res_emails = extract_resume_entities(item["text"])
-                resume_items.append({
-                    "text": item["text"],
-                    "original_name": item["original_name"],
-                    "path": item["path"],
-                    "skills": res_skills,
-                    "experience_years": res_exp,
-                    "locations": res_locations,
-                    "phone_numbers": res_phones,
-                    "emails": res_emails,
-                })
-            
-            # Check if enhanced matching is requested
-            use_enhanced = data.get("use_enhanced_matching", False)
-            
-            if use_enhanced:
-                print("[STAGE 3] Running ENHANCED enterprise matching...")
-                # Extract JD experience requirement
-                jd_experience = extract_experience_from_jd(job_description)
-                
-                enhanced_results = run_enhanced_batch_matching(
-                    job_description=job_description,
-                    resume_items=resume_items,
-                    jd_skills=jd_skills,
-                    jd_experience=jd_experience
-                )
-                
-                # Convert enhanced results to API format
-                results = [enhanced_match_to_dict(r) for r in enhanced_results]
-                print(f"[COMPLETE] Enhanced pipeline: {len(results)} matches")
-                response = {"results": results, "pipeline": "enhanced_full"}
-                return jsonify(serialize_for_json(response))
-            else:
-                print("[STAGE 3] Running standard enterprise matching...")
-                # Determine if we should apply role gatekeeping or return all resumes
-                # By default, for the matching page we want to return all resumes to show matched/unmatched
-                # Set use_role_gatekeeper=False to return all resumes regardless of compatibility
-                use_role_gatekeeper = data.get("use_role_gatekeeper", False)
-                
-                match_results = run_enterprise_matching(
-                    job_description=job_description,
-                    resume_items=resume_items,
-                    jd_skills=jd_skills,
-                    jd_locations=jd_locations,
-                    use_role_gatekeeper=use_role_gatekeeper,
-                    min_role_compatibility=min_role_compat
-                )
-                
-                # Convert to API format
-                results = [match_result_to_dict(r) for r in match_results]
-            
-            print(f"[COMPLETE] Enterprise pipeline: {len(results)} matches")
-            response = {"results": results, "pipeline": "enterprise_full"}
-            return jsonify(serialize_for_json(response))
+        # ENHANCED MATCHING PIPELINE (Enterprise Matching Pipeline)
+        print("\n[ENHANCED MATCHING PIPELINE ENABLED]")
         
-        # LEGACY PIPELINE (fallback)
-        else:
-            print("\n[LEGACY MATCHING PIPELINE]")
-            from backend.services.matching import run_batch_matching
+        # Try ANN first for large batches
+        if use_ann and is_ann_available() and len(resume_paths) > 5:
+            from backend.services.ann_index import run_ann_matching_enterprise
             
-            parsed = parse_resumes_from_paths(resume_paths, max_workers=4)
-            
-            resume_items = []
-            for item in parsed:
-                res_skills, res_exp, res_locations, res_phones, res_emails = extract_resume_entities(item["text"])
-                resume_items.append({
-                    "text": item["text"],
-                    "original_name": item["original_name"],
-                    "path": item["path"],
-                    "skills": res_skills,
-                    "experience_years": res_exp,
-                    "locations": res_locations,
-                    "phone_numbers": res_phones,
-                    "emails": res_emails,
-                })
-            
-            results = run_batch_matching(
-                job_description,
-                resume_items,
-                jd_skills,
-                jd_locations,
-                use_semantic_roles=False
+            print("[STAGE 2] Using ANN-based fast search...")
+            ann_results = run_ann_matching_enterprise(
+                job_description=job_description,
+                jd_skills=jd_skills,
+                jd_role_intent={
+                    "role_type": jd_role.role_type,
+                    "role_family": jd_role.role_family,
+                    "role_specialization": jd_role.role_specialization,
+                    "primary_tech": jd_role.primary_tech
+                },
+                top_k=len(resume_paths),
+                min_role_compatibility=min_role_compat
             )
             
-            response = {"results": results, "pipeline": "legacy"}
-            return jsonify(serialize_for_json(response))
+            if ann_results:
+                # Add location display
+                for result in ann_results:
+                    result["location_display"] = compute_location_display(
+                        jd_locations,
+                        result.get("locations", [])
+                    )
+                
+                print(f"[STAGE 3] ANN matching complete: {len(ann_results)} results")
+                response = {"results": ann_results, "pipeline": "enterprise_ann"}
+                return jsonify(serialize_for_json(response))
+        
+        # FALLBACK: Full enhanced pipeline without ANN
+        print("[STAGE 2] Parsing resumes...")
+        parsed = parse_resumes_from_paths(resume_paths, max_workers=4)
+        
+        resume_items = []
+        for item in parsed:
+            res_skills, res_exp, res_locations, res_phones, res_emails = extract_resume_entities(item["text"])
+            resume_items.append({
+                "text": item["text"],
+                "original_name": item["original_name"],
+                "path": item["path"],
+                "skills": res_skills,
+                "experience_years": res_exp,
+                "locations": res_locations,
+                "phone_numbers": res_phones,
+                "emails": res_emails,
+            })
+        
+        print("[STAGE 3] Running ENHANCED enterprise matching...")
+        # Extract JD experience requirement
+        jd_experience = extract_experience_from_jd(job_description)
+        
+        enhanced_results = run_enhanced_batch_matching(
+            job_description=job_description,
+            resume_items=resume_items,
+            jd_skills=jd_skills,
+            jd_experience=jd_experience
+        )
+        
+        # Convert enhanced results to API format
+        results = [enhanced_match_to_dict(r) for r in enhanced_results]
+        print(f"[COMPLETE] Enhanced pipeline: {len(results)} matches")
+        response = {"results": results, "pipeline": "enhanced_full"}
+        return jsonify(serialize_for_json(response))
+
             
     except Exception as e:
         import traceback

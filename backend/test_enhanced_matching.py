@@ -78,55 +78,16 @@ def test_enhanced_matching():
     
     return True
 
-def test_standard_matching():
-    """Test standard matching for comparison"""
-    
-    job_description = "Java Developer with Spring experience"
-    resume_paths = [{"path": "00d4fee199b34b6dae8b30a628f91515.pdf", "original_name": "resume1.pdf"}]
-    
-    url = "http://127.0.0.1:5000/api/match"
-    
-    payload = {
-        "job_description": job_description,
-        "resume_paths": resume_paths,
-        "use_enhanced_matching": False,
-        "use_role_gatekeeper": False
-    }
-    
-    try:
-        response = requests.post(url, json=payload)
-        response.raise_for_status()
-        
-        results = response.json()
-        print("\n✅ Standard Matching Test Results:")
-        print(f"Pipeline used: {results.get('pipeline', 'unknown')}")
-        print(f"Number of results: {len(results.get('results', []))}")
-        
-        for result in results.get('results', [])[:1]:  # Show first result
-            print(f"Match Percentage: {result.get('match_percentage', 0)}%")
-            print(f"Matching Skills: {len(result.get('matching_skills', []))}")
-            print(f"Missing Skills: {len(result.get('missing_skills', []))}")
-            
-    except Exception as e:
-        print(f"❌ Standard Matching Test Error: {e}")
-        return False
-    
-    return True
-
 if __name__ == "__main__":
     print("🧪 Testing Enhanced ATS Matching System")
     print("=" * 50)
     
     # Test enhanced matching
-    print("\n1. Testing Enhanced Matching System:")
-    enhanced_success = test_enhanced_matching()
-    
-    # Test standard matching for comparison
-    print("\n2. Testing Standard Matching System:")
-    standard_success = test_standard_matching()
+    print("\n1. Testing Enterprise Matching Pipeline:")
+    success = test_enhanced_matching()
     
     print("\n" + "=" * 50)
-    if enhanced_success and standard_success:
-        print("✅ All tests passed! Enhanced matching system is working correctly.")
+    if success:
+        print("✅ Enhanced matching system is working correctly.")
     else:
-        print("❌ Some tests failed. Please check the implementation.")
+        print("❌ Test failed. Please check the implementation.")
