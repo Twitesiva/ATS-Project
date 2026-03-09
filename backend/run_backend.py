@@ -10,3 +10,4 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("FLASK_APP", "backend.app")
 from app import app
 app.run(debug=True, port=5000)
+=
