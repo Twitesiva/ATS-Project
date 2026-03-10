@@ -16,3 +16,4 @@ spacy==3.7.4
 tqdm==4.66.2
 requests==2.31.0
 python-dotenv==1.0.0
+en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1.tar.gz

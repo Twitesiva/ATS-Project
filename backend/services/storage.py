@@ -223,7 +223,7 @@ def store_resumes(resumes):
         locations = [location_display] if location_display else []
         match_percentage = r.get("match_percentage")
         resume_file_path = r.get("path") or r.get("resume_file_path") or ""
-        raw_text = r.get("raw_text") or ""
+        raw_text = r.get("raw_text") or r.get("text_preview") or ""
         
         # ENTERPRISE: Extract role and primary skill info
         role_label = r.get("role_label") or ""
@@ -443,6 +443,7 @@ def fetch_resumes(
                     "resume_file_path": row.get("resume_file_path", ""),
                     "uploaded_date": row.get("uploaded_date", ""),
                     "raw_text": row.get("raw_text") or "",
+                    "text_preview": row.get("raw_text") or "",
                     "phone_number_display": format_phone_number(phone) if phone else "",
                     # ENTERPRISE: Include role information if available
                     "role_label": row.get("role_label"),

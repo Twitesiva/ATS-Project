@@ -62,7 +62,7 @@ export default function SearchCRMPage() {
     <div className="page search-crm-page">
       {/* PAGE HEADER WITH CENTERED LOGO – NON-BREAKING: Logo left, title center, nav right */}
       <header className="page-header">
-        <img className="header-logo-img" src="../logos/Twite AI PNG 1.png" alt="Twite AI ATS" />
+        <img className="header-logo-img" src="/logos/Twite AI PNG 1.png" alt="Twite AI ATS" />
         <strong className="header-page-title">Resume Search</strong>
         <NavToMatch />
       </header>

@@ -42,17 +42,16 @@ file_handler.setLevel(logging.INFO)
 app.logger.addHandler(file_handler)
 logger.addHandler(file_handler)
 
-# Enable CORS for React frontend
-# Note: If supports_credentials=True, origins should not be '*' for some environments.
-# We'll allow all origins but return the specific origin to satisfy credentials requirement.
+# Enable CORS for frontend-backend cross-domain requests.
 CORS(
     app,
-    resources={r"/api/*": {
-        "origins": ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5173", "http://127.0.0.1:5173"],
-        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"]
-    }},
-    supports_credentials=True
+    resources={
+        r"/api/*": {
+            "origins": "*",
+            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"],
+        }
+    },
 )
 
 init_db()

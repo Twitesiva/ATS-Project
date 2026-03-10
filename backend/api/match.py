@@ -111,6 +111,9 @@ def match():
             if ann_results:
                 # Add location display
                 for result in ann_results:
+                    if not result.get("raw_text"):
+                        result["raw_text"] = result.get("text", "") or ""
+                    result["text_preview"] = result.get("raw_text", "")
                     result["location_display"] = compute_location_display(
                         jd_locations,
                         result.get("locations", [])
@@ -151,6 +154,8 @@ def match():
         
         # Convert enhanced results to API format
         results = [enhanced_match_to_dict(r) for r in enhanced_results]
+        for result in results:
+            result["text_preview"] = result.get("raw_text", "") or ""
         print(f"[COMPLETE] Enhanced pipeline: {len(results)} matches")
         response = {"results": results, "pipeline": "enhanced_full"}
         return jsonify(serialize_for_json(response))

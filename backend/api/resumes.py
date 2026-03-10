@@ -1,6 +1,7 @@
 """GET /fetch-resumes: optional filters. GET /resume-file/<path>: serve original file for preview."""
 import os
-from flask import Blueprint, request, jsonify, send_file
+import mimetypes
+from flask import Blueprint, request, jsonify, send_from_directory
 from backend.services.storage import fetch_resumes
 from backend.config import UPLOAD_FOLDER
 import numpy as np
@@ -35,10 +36,18 @@ def serve_resume_file(filename):
     """Serve a resume file from uploads folder for preview. No path traversal."""
     if not filename or ".." in filename or os.path.isabs(filename):
         return jsonify({"error": "Invalid file path"}), 400
-    path = os.path.join(UPLOAD_FOLDER, os.path.basename(filename))
+    safe_name = os.path.basename(filename)
+    path = os.path.join(UPLOAD_FOLDER, safe_name)
     if not os.path.isfile(path):
         return jsonify({"error": "File not found"}), 404
-    return send_file(path, as_attachment=False, download_name=os.path.basename(filename))
+    guessed_mime, _ = mimetypes.guess_type(safe_name)
+    return send_from_directory(
+        UPLOAD_FOLDER,
+        safe_name,
+        mimetype=guessed_mime or "application/octet-stream",
+        as_attachment=False,
+        download_name=safe_name,
+    )
 
 
 @bp.route("/fetch-resumes", methods=["GET"])

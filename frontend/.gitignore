@@ -1,6 +1,5 @@
 # Python
-
-**pycache**/
+__pycache__/
 *.pyc
 *.pyo
 *.pyd
@@ -8,42 +7,35 @@
 *.db
 
 # Virtual Environment
-
 venv/
+
+# Environment variables
 .env
+.env.local
+.env.development
+.env.production
 
 # Upload files
-
 backend/uploads/
 
-# ML Models (downloaded locally - too large for git)
+# ML Models (large files)
 backend/models/*/
 !backend/models/__init__.py
 !backend/models/schema.py
 !backend/models/README.md
 
 # Node
-
 node_modules/
 dist/
 build/
 
 # Logs
-
 *.log
 
-# OS
-
+# OS files
 .DS_Store
 Thumbs.db
 
 # IDE
-
 .vscode/
 .idea/
-
-# Environment variables
-
-.env.local
-.env.development
-.env.production

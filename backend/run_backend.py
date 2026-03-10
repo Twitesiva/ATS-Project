@@ -10,7 +10,7 @@ os.environ.setdefault("FLASK_APP", "backend.app")
 
 from app import app
 
-# Render-compatible port configuration
+# Standard hosting port configuration
 port = int(os.environ.get("PORT", 5000))
 
 app.run(host="0.0.0.0", port=port, debug=False)

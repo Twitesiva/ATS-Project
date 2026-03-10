@@ -111,6 +111,8 @@ def upload():
                     "path": parsed["path"],
                     "original_name": parsed["original_name"],
                     "text": parsed["text"],
+                    "raw_text": parsed["text"],
+                    "text_preview": parsed["text"],
                     "skills": res_skills,
                     "experience_years": res_exp,
                     "locations": res_locations,

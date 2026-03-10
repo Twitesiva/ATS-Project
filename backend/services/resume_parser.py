@@ -1,7 +1,22 @@
 """Extract plain text from PDF and DOCX resume files."""
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from backend.config import BASE_DIR, UPLOAD_FOLDER
+from backend.config import UPLOAD_FOLDER
+
+try:
+    import pdfplumber
+except Exception:
+    pdfplumber = None
+
+try:
+    import PyPDF2
+except Exception:
+    PyPDF2 = None
+
+try:
+    from docx import Document
+except Exception:
+    Document = None
 
 
 # PERFORMANCE OPTIMIZATION – NON-BREAKING: Text preprocessing to reduce embedding computation
@@ -33,7 +48,8 @@ def _read_pdf(file_path):
     
     # Try pdfplumber first (better layout preservation)
     try:
-        import pdfplumber
+        if pdfplumber is None:
+            raise ImportError("pdfplumber not available")
         with pdfplumber.open(file_path) as pdf:
             for page in pdf.pages:
                 t = page.extract_text()
@@ -47,7 +63,8 @@ def _read_pdf(file_path):
     
     # Fallback to PyPDF2
     try:
-        import PyPDF2
+        if PyPDF2 is None:
+            raise ImportError("PyPDF2 not available")
         text_parts = []
         with open(file_path, "rb") as f:
             reader = PyPDF2.PdfReader(f)
@@ -63,9 +80,34 @@ def _read_pdf(file_path):
 
 
 def _read_docx(file_path):
-    from docx import Document
+    if Document is None:
+        return ""
     doc = Document(file_path)
-    raw_text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+    chunks = []
+    chunks.extend(p.text.strip() for p in doc.paragraphs if p.text and p.text.strip())
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                cell_text = (cell.text or "").strip()
+                if cell_text:
+                    chunks.append(cell_text)
+    if not chunks:
+        try:
+            import zipfile
+            import xml.etree.ElementTree as ET
+
+            with zipfile.ZipFile(file_path) as zf:
+                xml_parts = [name for name in zf.namelist() if name.startswith("word/") and name.endswith(".xml")]
+                for part in xml_parts:
+                    xml_bytes = zf.read(part)
+                    root = ET.fromstring(xml_bytes)
+                    for node in root.iter("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t"):
+                        value = (node.text or "").strip()
+                        if value:
+                            chunks.append(value)
+        except Exception:
+            pass
+    raw_text = "\n".join(chunks)
     return _preprocess_text(raw_text)
 
 

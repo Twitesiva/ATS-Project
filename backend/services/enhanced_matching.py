@@ -53,6 +53,7 @@ class EnhancedMatchResult:
     locations: List[str]
     phone_numbers: List[str]
     emails: List[str]
+    raw_text: str
     role_intent: Dict
     is_matched: bool
 
@@ -496,6 +497,7 @@ def enhanced_compute_match(jd_text: str, resume_text: str, jd_skills: List[str],
         locations=res_locations,
         phone_numbers=res_phones,
         emails=res_emails,
+        raw_text=resume_text,
         role_intent={
             "role_family": resume_role.role_family,
             "role_type": resume_role.role_type,
@@ -592,6 +594,8 @@ def enhanced_match_to_dict(result: EnhancedMatchResult) -> Dict:
         "locations": result.locations,
         "phone_numbers": result.phone_numbers,
         "emails": result.emails,
+        "raw_text": result.raw_text,
+        "text_preview": result.raw_text,
         "role_intent": result.role_intent,
         "is_matched": result.is_matched
     }
