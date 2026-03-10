@@ -89,7 +89,7 @@ def init_ann_index(use_ivf=False, num_resumes=1000):
         return True
     
     if not _check_faiss_available():
-        print("⚠ FAISS not available. Falling back to exact matching.")
+        print("[WARN] FAISS not available. Falling back to exact matching.")
         return False
     
     try:
@@ -99,11 +99,11 @@ def init_ann_index(use_ivf=False, num_resumes=1000):
             nlist = int(4 * (num_resumes**0.5)) if num_resumes > 0 else 100
             quantizer = _faiss_module.IndexFlatIP(EMBEDDING_DIM)
             _faiss_index = _faiss_module.IndexIVFFlat(quantizer, EMBEDDING_DIM, nlist, _faiss_module.METRIC_INNER_PRODUCT)
-            print(f"✓ FAISS ANN index initialized (IndexIVFFlat, nlist={nlist})")
+            print(f"[OK] FAISS ANN index initialized (IndexIVFFlat, nlist={nlist})")
         else:
             # IndexFlatIP: Exact inner product search (L2-normalized cosine)
             _faiss_index = _faiss_module.IndexFlatIP(EMBEDDING_DIM)
-            print("✓ FAISS ANN index initialized (IndexFlatIP)")
+            print("[OK] FAISS ANN index initialized (IndexFlatIP)")
         return True
         
     except ImportError:
@@ -111,7 +111,7 @@ def init_ann_index(use_ivf=False, num_resumes=1000):
         logger.error("[FAISS] faiss-cpu not installed. Using exact matching fallback.")
         return False
     except Exception as e:
-        print(f"⚠ FAISS initialization error: {e}")
+        print(f"[WARN] FAISS initialization error: {e}")
         logger.error(f"[FAISS] Initialiation failed: {e}")
         return False
 
@@ -141,7 +141,7 @@ def load_index_from_db():
                 count += 1
         
         if count > 0:
-            print(f"✓ Loaded {count} embeddings from DB into ANN index")
+            print(f"[OK] Loaded {count} embeddings from DB into ANN index")
             return True
     except Exception as e:
         logger.error(f"[FAISS] Failed to load embeddings from DB: {e}")
@@ -194,7 +194,7 @@ def add_resume_to_index(resume_text: str, metadata: Dict) -> bool:
         return True
         
     except Exception as e:
-        print(f"⚠ Error adding resume to ANN index: {e}")
+        print(f"[WARN] Error adding resume to ANN index: {e}")
         return False
 
 
@@ -248,7 +248,7 @@ def search_similar_resumes(
         return results
         
     except Exception as e:
-        print(f"⚠ ANN search error: {e}")
+        print(f"[WARN] ANN search error: {e}")
         return []
 
 
@@ -284,7 +284,7 @@ def clear_ann_index():
     _resume_metadata = []
     _resume_embeddings = None
     _index_built = False
-    print("✓ ANN index cleared")
+    print("[OK] ANN index cleared")
 
 
 def get_index_stats() -> Dict:
@@ -472,7 +472,7 @@ def add_resume_to_index_enterprise(
         return True
         
     except Exception as e:
-        print(f"⚠ Error adding resume to enterprise ANN index: {e}")
+        print(f"[WARN] Error adding resume to enterprise ANN index: {e}")
         return False
 
 
@@ -541,7 +541,7 @@ def search_similar_resumes_enterprise(
         return results
         
     except Exception as e:
-        print(f"⚠ Enterprise ANN search error: {e}")
+        print(f"[WARN] Enterprise ANN search error: {e}")
         return []
 
 

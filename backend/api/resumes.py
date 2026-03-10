@@ -51,6 +51,7 @@ def serve_resume_file(filename):
 
 
 @bp.route("/fetch-resumes", methods=["GET"])
+@bp.route("/resumes", methods=["GET"])
 def fetch():
     """
     Fetch resumes with filters.
