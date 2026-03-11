@@ -4,7 +4,6 @@ import { useAuth } from "../../context/AuthContext";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import Loader from "../../components/common/Loader";
-import { formatDate } from "../../utils/dateFormat";
 
 const toHistoryCandidateId = (value) => {
   const parsed = Number(value);
@@ -53,6 +52,16 @@ const touchUserLastSeen = async (userId, source) => {
   if (error) {
     console.error(`[last_seen_at][${source}] update failed`, error);
   }
+};
+
+const formatDateDDMMYYYY = (value) => {
+  if (!value) return "-";
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) return String(value);
+  const dd = String(dt.getDate()).padStart(2, "0");
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const yyyy = dt.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
 };
 
 // headerMap (normalized aliases -> DB columns)
@@ -707,7 +716,7 @@ const handleSave = async (form) => {
               {records.map((r) => (
                 <tr key={r.id}>
                   <td style={styles.td}>{r.sl_no}</td>
-                  <td style={styles.td}>{formatDate(r.record_date)}</td>
+                  <td style={styles.td}>{formatDateDDMMYYYY(r.record_date)}</td>
                   <td style={styles.td}>{r.recruiter}</td>
                   <td style={styles.td}>{r.client_name}</td>
                   <td style={styles.td}>{r.requirement}</td>
@@ -720,7 +729,7 @@ const handleSave = async (form) => {
                   <td style={styles.td}>{r.hire_mode}</td>
                   <td style={styles.td}>{r.status}</td>
                   <td style={styles.td} title={r.remarks || "-"}>{r.remarks || "-"}</td>
-                  <td style={styles.td}>{formatDate(r.interview_date)}</td>
+                  <td style={styles.td}>{formatDateDDMMYYYY(r.interview_date)}</td>
                   <td style={styles.td}>{r.interview_time || "-"}</td>
                   <td style={styles.td}
                   >
@@ -1292,6 +1301,7 @@ function EditCandidateModal({ record, onClose, onUpdated }) {
                     <option value="Drop Out By Candidate">Drop Out By Candidate</option>
                     <option value="Assessment Round">Assessment Round</option>
                     <option value="HR Round">HR Round</option>
+                    <option value="Interview Scheduled">Interview Scheduled</option>
                     <option value="L1 Scheduled">L1 Scheduled</option>
                     <option value="L2 Scheduled">L2 Scheduled</option>
                     <option value="AI Interview">AI Interview</option>
