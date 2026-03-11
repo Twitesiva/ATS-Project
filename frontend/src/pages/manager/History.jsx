@@ -33,6 +33,25 @@ function mapRow(row) {
   };
 }
 
+function formatDateTimeDDMMYYYY(value) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+
+  const dd = String(date.getDate()).padStart(2, "0");
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const yyyy = date.getFullYear();
+
+  const hours24 = date.getHours();
+  const hours12 = hours24 % 12 || 12;
+  const hh = String(hours12).padStart(2, "0");
+  const mi = String(date.getMinutes()).padStart(2, "0");
+  const ss = String(date.getSeconds()).padStart(2, "0");
+  const period = hours24 >= 12 ? "PM" : "AM";
+
+  return `${dd}/${mm}/${yyyy}, ${hh}:${mi}:${ss} ${period}`;
+}
+
 export default function History() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -139,7 +158,7 @@ export default function History() {
                   <td style={styles.td}>{r.candidateName}</td>
                   <td style={styles.td}>{r.status}</td>
                   <td style={styles.td}>
-                    {r.updatedAt ? new Date(r.updatedAt).toLocaleString() : "-"}
+                    {formatDateTimeDDMMYYYY(r.updatedAt)}
                   </td>
                 </tr>
               ))
