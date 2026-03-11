@@ -366,6 +366,73 @@ body {
   color: var(--color-slate-500);
 }
 
+/* ATS MATCH STATUS BADGE - clearer % and label visibility */
+.match-status-badge {
+  min-width: 170px;
+  min-height: 74px;
+  padding: 0.75rem 0.95rem;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 0.15rem;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.14);
+}
+
+.match-status-percentage {
+  font-size: 1.85rem;
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+
+.match-status-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.match-status-badge.high {
+  background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
+  border-color: #15803d;
+}
+
+.match-status-badge.medium {
+  background: linear-gradient(135deg, #ea580c 0%, #c2410c 100%);
+  border-color: #c2410c;
+}
+
+.match-status-badge.low {
+  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+  border-color: #b91c1c;
+}
+
+.card-header-premium .match-status-badge {
+  flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+  .match-status-badge {
+    min-width: 136px;
+    min-height: 64px;
+    padding: 0.6rem 0.75rem;
+  }
+
+  .match-status-percentage {
+    font-size: 1.5rem;
+  }
+
+  .match-status-label {
+    font-size: 0.68rem;
+  }
+}
+
 /* UI ENHANCEMENT – NON-BREAKING: Skeleton Loader for Perceived Performance */
 .skeleton {
   background: linear-gradient(90deg, var(--color-slate-200) 25%, var(--color-slate-100) 50%, var(--color-slate-200) 75%);
@@ -1696,8 +1763,8 @@ body {
 
 .enhanced-match-score {
   position: relative;
-  width: 70px;
-  height: 70px;
+  width: 85px;
+  height: 85px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1709,29 +1776,78 @@ body {
   height: 100%;
 }
 
-.score-content {
+.enhanced-track {
+  fill: none;
+  stroke: #e2e8f0;
+  stroke-width: 7;
+}
+
+.enhanced-progress {
+  fill: none;
+  stroke-width: 7;
+  stroke-linecap: round;
+}
+
+.enhanced-score-content {
   position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.12rem;
+  width: 78px;
   text-align: center;
 }
 
-.score-text {
+.enhanced-score-value {
   display: block;
-  font-size: 1rem;
-  font-weight: 700;
-  color: #1e293b;
+  font-size: 1.52rem;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.02em;
+  line-height: 1;
 }
 
-.quality-label {
+.enhanced-score-label {
   display: block;
-  font-size: 0.65rem;
-  font-weight: 600;
+  font-size: 0.56rem;
+  font-weight: 800;
   text-align: center;
-  margin-top: 2px;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.03em;
+  line-height: 1.05;
+  max-width: 76px;
+  white-space: normal;
+}
+
+.enhanced-match-score.good .enhanced-score-label {
+  color: #15803d;
+}
+
+.enhanced-match-score.partial .enhanced-score-label {
+  color: #c2410c;
+}
+
+.enhanced-match-score.low .enhanced-score-label {
+  color: #b91c1c;
+}
+
+@media (max-width: 768px) {
+  .enhanced-match-score {
+    width: 82px;
+    height: 82px;
+  }
+
+  .enhanced-score-value {
+    font-size: 1.35rem;
+  }
+
+  .enhanced-score-label {
+    font-size: 0.52rem;
+  }
 }
 
 .role-match-text {

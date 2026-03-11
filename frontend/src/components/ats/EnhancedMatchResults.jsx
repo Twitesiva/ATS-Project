@@ -1,11 +1,12 @@
-import React, { useMemo, useCallback } from "react";
+import React, { useMemo } from "react";
 import ResumePreviewModal from "./ResumePreviewModal";
 
 // UI ENHANCEMENT – Enhanced Score Display with Quality Categories
 function EnhancedMatchScore({ percentage, qualityCategory }) {
   const radius = 26;
   const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference - (percentage / 100) * circumference;
+  const safePercentage = Math.max(0, Math.min(100, Math.round(percentage || 0)));
+  const strokeDashoffset = circumference - (safePercentage / 100) * circumference;
   
   const getScoreStyle = (category) => {
     switch (category) {
@@ -13,29 +14,29 @@ function EnhancedMatchScore({ percentage, qualityCategory }) {
         return {
           gradientId: "gradient-excellent",
           gradient: ["#10b981", "#059669"],
-          bgColor: "#10b981",
-          textColor: "white"
+          tone: "good",
+          label: "GOOD MATCH"
         };
       case "Good Match":
         return {
           gradientId: "gradient-good",
-          gradient: ["#3b82f6", "#2563eb"],
-          bgColor: "#3b82f6",
-          textColor: "white"
+          gradient: ["#22c55e", "#16a34a"],
+          tone: "good",
+          label: "GOOD MATCH"
         };
       case "Partial Match":
         return {
           gradientId: "gradient-partial",
           gradient: ["#f59e0b", "#d97706"],
-          bgColor: "#f59e0b",
-          textColor: "white"
+          tone: "partial",
+          label: "PARTIAL MATCH"
         };
       default:
         return {
           gradientId: "gradient-poor",
           gradient: ["#ef4444", "#dc2626"],
-          bgColor: "#ef4444",
-          textColor: "white"
+          tone: "low",
+          label: "LOW MATCH"
         };
     }
   };
@@ -43,7 +44,7 @@ function EnhancedMatchScore({ percentage, qualityCategory }) {
   const style = getScoreStyle(qualityCategory);
   
   return (
-    <div className="enhanced-match-score">
+    <div className={`enhanced-match-score ${style.tone}`}>
       <svg viewBox="0 0 64 64">
         <defs>
           <linearGradient id={style.gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
@@ -51,9 +52,9 @@ function EnhancedMatchScore({ percentage, qualityCategory }) {
             <stop offset="100%" stopColor={style.gradient[1]} />
           </linearGradient>
         </defs>
-        <circle className="track" cx="32" cy="32" r={radius} />
+        <circle className="enhanced-track" cx="32" cy="32" r={radius} />
         <circle
-          className="progress"
+          className="enhanced-progress"
           cx="32"
           cy="32"
           r={radius}
@@ -63,10 +64,10 @@ function EnhancedMatchScore({ percentage, qualityCategory }) {
           style={{ transition: "stroke-dashoffset 0.8s cubic-bezier(0.16, 1, 0.3, 1)" }}
         />
       </svg>
-      <div className="score-content">
-        <span className="score-text">{Math.round(percentage)}%</span>
-        <span className="quality-label" style={{ color: style.bgColor }}>
-          {qualityCategory}
+      <div className="enhanced-score-content">
+        <span className="enhanced-score-value">{safePercentage}%</span>
+        <span className="enhanced-score-label">
+          {style.label}
         </span>
       </div>
     </div>

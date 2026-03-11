@@ -1,49 +1,27 @@
-import React, { useMemo, useCallback } from "react";
+import React, { useMemo } from "react";
 import ResumePreviewModal from "./ResumePreviewModal";
 
 // UI ENHANCEMENT – NON-BREAKING: Circular Progress Component for Match Score
 function MatchScoreCircle({ percentage }) {
-  const radius = 26;
-  const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference - (percentage / 100) * circumference;
-  
   const getScoreCategory = (score) => {
     if (score >= 70) return "high";
     if (score >= 50) return "medium";
     return "low";
   };
-  
-  const category = getScoreCategory(percentage);
-  
+
+  const getScoreLabel = (category) => {
+    if (category === "high") return "GOOD MATCH";
+    if (category === "medium") return "PARTIAL MATCH";
+    return "LOW MATCH";
+  };
+
+  const category = getScoreCategory(percentage || 0);
+  const safePercentage = Math.max(0, Math.min(100, Math.round(percentage || 0)));
+
   return (
-    <div className="match-score-circle">
-      <svg viewBox="0 0 64 64">
-        <defs>
-          <linearGradient id="gradient-high" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#22c55e" />
-            <stop offset="100%" stopColor="#16a34a" />
-          </linearGradient>
-          <linearGradient id="gradient-medium" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#eab308" />
-            <stop offset="100%" stopColor="#ca8a04" />
-          </linearGradient>
-          <linearGradient id="gradient-low" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#ef4444" />
-            <stop offset="100%" stopColor="#dc2626" />
-          </linearGradient>
-        </defs>
-        <circle className="track" cx="32" cy="32" r={radius} />
-        <circle
-          className={`progress progress-${category}`}
-          cx="32"
-          cy="32"
-          r={radius}
-          strokeDasharray={circumference}
-          strokeDashoffset={strokeDashoffset}
-          style={{ transition: "stroke-dashoffset 0.8s cubic-bezier(0.16, 1, 0.3, 1)" }}
-        />
-      </svg>
-      <span className="score-text">{Math.round(percentage)}%</span>
+    <div className={`match-status-badge ${category}`}>
+      <span className="match-status-percentage">{safePercentage}%</span>
+      <span className="match-status-label">{getScoreLabel(category)}</span>
     </div>
   );
 }
@@ -69,13 +47,6 @@ const MatchResults = React.memo(function MatchResults({ results, onPreview, prev
     const unmatched = allResults.filter(r => r.is_matched === false).sort((a, b) => (b.match_percentage || 0) - (a.match_percentage || 0));
     return { matchedResults: matched, unmatchedResults: unmatched };
   }, [results]);
-
-  // UI ENHANCEMENT – NON-BREAKING: Memoize score formatting
-  const formatMatchScore = useCallback((score) => {
-    if (score == null) return "—";
-    return Math.round(score);
-  }, []);
-
   return (
     <section className="match-results">
       {/* MATCHING RESUMES SECTION */}
@@ -246,3 +217,5 @@ const MatchResults = React.memo(function MatchResults({ results, onPreview, prev
 });
 
 export default MatchResults;
+
+

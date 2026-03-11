@@ -55,8 +55,8 @@ export default function Dashboard() {
   const [riskLoading, setRiskLoading] = useState(true);
 
   const [kpis, setKpis] = useState({
-    totalActiveCandidates: 0,
-    totalOpenPositions: 0,
+    feedbackPending: 0,
+    profileSubmitted: 0,
     totalInterviewsScheduled: 0,
     totalClosuresThisMonth: 0,
     revenueThisMonth: 0,
@@ -80,8 +80,8 @@ export default function Dashboard() {
     const { start, end } = getMonthBounds();
 
     const [
-      activeCandidatesRes,
-      openPositionsRes,
+      feedbackPendingRes,
+      profileSubmittedRes,
       interviewsRes,
       closuresRes,
       revenueRes,
@@ -89,34 +89,33 @@ export default function Dashboard() {
     ] = await Promise.all([
       supabase
         .from("candidate_records")
-        .select("*", { count: "exact" })
-        .neq("status", "Joined")
-        ,
-      supabase.from("client_records").select("number_of_openings"),
+        .select("id", { count: "exact", head: true })
+        .ilike("status", "Feedback Pending"),
+      supabase
+        .from("candidate_records")
+        .select("id", { count: "exact", head: true })
+        .ilike("status", "Profile Submitted"),
       supabase
         .from("candidate_records")
         .select("*", { count: "exact" })
-        .eq("status", "Interview Scheduled")
-        ,
+        .eq("status", "Interview Scheduled"),
       supabase
         .from("candidate_records")
         .select("*", { count: "exact" })
         .eq("status", "Joined")
         .gte("record_date", start)
-        .lte("record_date", end)
-        ,
+        .lte("record_date", end),
       supabase
         .from("revenue_tracker")
         .select("margin_value,doj")
         .gte("doj", start)
-        .lte("doj", end)
-        ,
+        .lte("doj", end),
       supabase.from("revenue_tracker").select("margin_value,offered_ctc"),
     ]);
 
     const errors = [
-      activeCandidatesRes.error,
-      openPositionsRes.error,
+      feedbackPendingRes.error,
+      profileSubmittedRes.error,
       interviewsRes.error,
       closuresRes.error,
       revenueRes.error,
@@ -128,11 +127,6 @@ export default function Dashboard() {
       setLoading(false);
       return;
     }
-
-    const totalOpenPositions = (openPositionsRes.data || []).reduce(
-      (sum, row) => sum + toNumber(row.number_of_openings),
-      0
-    );
 
     const revenueThisMonth = (revenueRes.data || []).reduce(
       (sum, row) => sum + parseRevenueValue(row.margin_value),
@@ -154,8 +148,8 @@ export default function Dashboard() {
         : 0;
 
     setKpis({
-      totalActiveCandidates: activeCandidatesRes.count || 0,
-      totalOpenPositions,
+      feedbackPending: feedbackPendingRes.count || 0,
+      profileSubmitted: profileSubmittedRes.count || 0,
       totalInterviewsScheduled: interviewsRes.count || 0,
       totalClosuresThisMonth: closuresRes.count || 0,
       revenueThisMonth,
@@ -427,11 +421,6 @@ export default function Dashboard() {
       )
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "client_records" },
-        loadDashboardKPIs
-      )
-      .on(
-        "postgres_changes",
         { event: "*", schema: "public", table: "revenue_tracker" },
         loadDashboardKPIs
       )
@@ -524,14 +513,14 @@ export default function Dashboard() {
 
   const cards = [
     {
-      title: "Total Active Candidates",
-      value: kpis.totalActiveCandidates,
-      subtitle: "Candidates not joined yet",
+      title: "Feedback Pending",
+      value: kpis.feedbackPending,
+      subtitle: "Candidates awaiting client feedback",
     },
     {
-      title: "Total Open Positions",
-      value: kpis.totalOpenPositions,
-      subtitle: "Current openings across clients",
+      title: "Profile Submitted",
+      value: kpis.profileSubmitted,
+      subtitle: "Profiles submitted to clients",
     },
     {
       title: "Total Interviews Scheduled",
