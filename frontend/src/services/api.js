@@ -69,3 +69,24 @@ export async function fetchResumes(params = {}) {
   const { data } = await api.get("/fetch-resumes", { params });
   return data;
 }
+
+/*
+Bulk upload resumes (PDF/DOCX or ZIP)
+*/
+export async function bulkUploadResumes(files) {
+  const form = new FormData();
+  for (let i = 0; i < files.length; i++) {
+    form.append("files", files[i]);
+  }
+  try {
+    const { data } = await axios.post(`${API_BASE_URL}/bulk-upload-resumes`, form);
+    return data;
+  } catch (err) {
+    // Compatibility fallback for environments where /api rewrite doesn't include new routes.
+    if (err?.response?.status === 404 && API_BASE_URL !== "") {
+      const { data } = await axios.post("/bulk-upload-resumes", form);
+      return data;
+    }
+    throw err;
+  }
+}

@@ -210,13 +210,57 @@ def _find_duplicate_resume(emails, phone_numbers):
     return None
 
 
+def _normalize_phone_for_match(phone):
+    """Normalize phone for duplicate matching."""
+    return (phone or "").replace("+", "").strip()
+
+
+def _is_embedding_column_error(exc):
+    msg = str(exc or "").lower()
+    return "embedding" in msg and ("pgrst204" in msg or "could not find the 'embedding' column" in msg)
+
+
+def _safe_upsert_resume(supabase, duplicate_id, data):
+    """
+    Upsert one resume row.
+    If the Supabase schema does not have `embedding`, retry once without it.
+    """
+    try:
+        if duplicate_id:
+            return supabase.table("resumes").update(data).eq("resume_id", duplicate_id).execute()
+        return supabase.table("resumes").insert(data).execute()
+    except Exception as e:
+        if "embedding" in data and _is_embedding_column_error(e):
+            fallback = dict(data)
+            fallback.pop("embedding", None)
+            if duplicate_id:
+                return supabase.table("resumes").update(fallback).eq("resume_id", duplicate_id).execute()
+            return supabase.table("resumes").insert(fallback).execute()
+        raise
+
+
 def store_resumes(resumes):
     """Insert or update resumes in Supabase. Prevents duplicates by email/phone. Returns count stored."""
     supabase = get_supabase_client()
-    
+
+    # PERFORMANCE: Preload existing identifiers once for O(1) duplicate checks.
+    existing = supabase.table("resumes").select("resume_id,email,phone_number").execute()
+    email_to_resume_id = {}
+    phone_to_resume_id = {}
+    for row in (existing.data or []):
+        rid = row.get("resume_id")
+        if not rid:
+            continue
+        email = (row.get("email") or "").strip().lower()
+        phone = _normalize_phone_for_match(row.get("phone_number"))
+        if email:
+            email_to_resume_id[email] = rid
+        if phone:
+            phone_to_resume_id[phone] = rid
+
     count = 0
     for r in resumes:
-        name = r.get("original_name") or r.get("name") or "unknown"
+        name = r.get("name") or r.get("original_name") or "unknown"
         extracted_skills = r.get("extracted_skills") or []
         experience_years = r.get("experience_years")
         location_display = (r.get("location_display") or "").strip()
@@ -249,8 +293,19 @@ def store_resumes(resumes):
             
         uploaded_date = datetime.utcnow().isoformat() + "Z"
         
-        # Check for duplicates
-        duplicate_id = _find_duplicate_resume(emails, phone_numbers)
+        # Check for duplicates using preloaded maps.
+        duplicate_id = None
+        for email in emails:
+            key = (email or "").strip().lower()
+            if key and key in email_to_resume_id:
+                duplicate_id = email_to_resume_id[key]
+                break
+        if duplicate_id is None:
+            for phone in phone_numbers:
+                key = _normalize_phone_for_match(phone)
+                if key and key in phone_to_resume_id:
+                    duplicate_id = phone_to_resume_id[key]
+                    break
         
         # Prepare data object
         data = {
@@ -278,12 +333,24 @@ def store_resumes(resumes):
         
         if duplicate_id:
             # Update existing record
-            supabase.table("resumes").update(data).eq("resume_id", duplicate_id).execute()
+            _safe_upsert_resume(supabase, duplicate_id, data)
             count += 1
+            # Keep maps fresh if key values changed.
+            if primary_email:
+                email_to_resume_id[primary_email.lower()] = duplicate_id
+            if primary_phone:
+                phone_to_resume_id[_normalize_phone_for_match(primary_phone)] = duplicate_id
         else:
             # Insert new record
-            supabase.table("resumes").insert(data).execute()
+            insert_resp = _safe_upsert_resume(supabase, None, data)
             count += 1
+            inserted = (insert_resp.data or [{}])[0]
+            new_resume_id = inserted.get("resume_id")
+            if new_resume_id:
+                if primary_email:
+                    email_to_resume_id[primary_email.lower()] = new_resume_id
+                if primary_phone:
+                    phone_to_resume_id[_normalize_phone_for_match(primary_phone)] = new_resume_id
     
     return count
 
