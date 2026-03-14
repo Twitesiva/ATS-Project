@@ -1,6 +1,7 @@
 """Supabase storage: insert resumes, fetch with optional filters."""
 import json
 import re
+import os
 from datetime import datetime
 from backend.services.supabase_client import get_supabase_client
 from backend.services.nlp_pipeline import _normalize_skill as _normalize_skill_for_filter, format_phone_number, extract_phone_numbers, extract_emails
@@ -215,6 +216,26 @@ def _normalize_phone_for_match(phone):
     return (phone or "").replace("+", "").strip()
 
 
+def _name_from_filename(filename):
+    """
+    Derive display name from uploaded filename.
+    Examples:
+    - `sivabalan.pdf` -> `Sivabalan.pdf`
+    - `john_doe.docx` -> `John Doe.docx`
+    """
+    raw_name = os.path.basename(filename or "").strip()
+    if not raw_name:
+        return ""
+    base, ext = os.path.splitext(raw_name)
+    if not base:
+        return raw_name
+    # Requirement: replace underscores with spaces and capitalize words,
+    # while keeping original extension visible in UI.
+    pretty_base = re.sub(r"_+", " ", base).strip()
+    pretty_base = re.sub(r"\s{2,}", " ", pretty_base).title()
+    return f"{pretty_base}{ext.lower()}"
+
+
 def _is_embedding_column_error(exc):
     msg = str(exc or "").lower()
     return "embedding" in msg and ("pgrst204" in msg or "could not find the 'embedding' column" in msg)
@@ -247,6 +268,7 @@ def store_resumes(resumes):
     existing = supabase.table("resumes").select("resume_id,email,phone_number").execute()
     email_to_resume_id = {}
     phone_to_resume_id = {}
+    embedding_supported = True
     for row in (existing.data or []):
         rid = row.get("resume_id")
         if not rid:
@@ -260,7 +282,8 @@ def store_resumes(resumes):
 
     count = 0
     for r in resumes:
-        name = r.get("name") or r.get("original_name") or "unknown"
+        filename_name = _name_from_filename(r.get("original_name"))
+        name = filename_name or r.get("name") or "unknown"
         extracted_skills = r.get("extracted_skills") or []
         experience_years = r.get("experience_years")
         location_display = (r.get("location_display") or "").strip()
@@ -328,12 +351,20 @@ def store_resumes(resumes):
         
         # Only add embedding if it exists to prevent PGRST204 errors 
         # when the 'embedding' column hasn't been created in Supabase yet
-        if embedding is not None:
+        if embedding is not None and embedding_supported:
             data["embedding"] = embedding
         
         if duplicate_id:
             # Update existing record
-            _safe_upsert_resume(supabase, duplicate_id, data)
+            try:
+                _safe_upsert_resume(supabase, duplicate_id, data)
+            except Exception as e:
+                if _is_embedding_column_error(e):
+                    embedding_supported = False
+                    data.pop("embedding", None)
+                    _safe_upsert_resume(supabase, duplicate_id, data)
+                else:
+                    raise
             count += 1
             # Keep maps fresh if key values changed.
             if primary_email:
@@ -342,7 +373,15 @@ def store_resumes(resumes):
                 phone_to_resume_id[_normalize_phone_for_match(primary_phone)] = duplicate_id
         else:
             # Insert new record
-            insert_resp = _safe_upsert_resume(supabase, None, data)
+            try:
+                insert_resp = _safe_upsert_resume(supabase, None, data)
+            except Exception as e:
+                if _is_embedding_column_error(e):
+                    embedding_supported = False
+                    data.pop("embedding", None)
+                    insert_resp = _safe_upsert_resume(supabase, None, data)
+                else:
+                    raise
             count += 1
             inserted = (insert_resp.data or [{}])[0]
             new_resume_id = inserted.get("resume_id")

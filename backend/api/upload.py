@@ -144,28 +144,11 @@ def _is_supported_resume_ext(filename):
     return ext in (".pdf", ".docx")
 
 
-def _extract_name_from_text(text, fallback_name):
-    """
-    Best-effort name extraction from the top of resume text.
-    Falls back to filename stem if no plausible candidate is found.
-    """
-    fallback = os.path.splitext(os.path.basename(fallback_name or "unknown"))[0].strip() or "unknown"
-    if not text:
-        return fallback
-
-    lines = [ln.strip() for ln in text.splitlines() if ln and ln.strip()]
-    for line in lines[:12]:
-        if len(line) < 2 or len(line) > 80:
-            continue
-        low = line.lower()
-        if any(token in low for token in ("email", "phone", "mobile", "skills", "experience", "linkedin", "@")):
-            continue
-        if re.search(r"\d", line):
-            continue
-        words = [w for w in re.split(r"\s+", line) if w]
-        if 2 <= len(words) <= 4 and all(re.fullmatch(r"[A-Za-z][A-Za-z\-'`]*", w) for w in words):
-            return " ".join(words)
-    return fallback
+def _name_from_filename(filename):
+    base = os.path.splitext(os.path.basename(filename or ""))[0]
+    cleaned = re.sub(r"[._\-]+", " ", base).strip()
+    cleaned = re.sub(r"\s{2,}", " ", cleaned)
+    return cleaned.title() if cleaned else "Unknown"
 
 
 def _save_uploaded_resume_file(file_obj):
@@ -312,7 +295,7 @@ def bulk_upload_resumes():
         def _extract_entities(parsed_item):
             skills, exp, locations, phones, emails = extract_resume_entities(parsed_item["text"])
             role = extract_semantic_role_intent(parsed_item["text"])
-            name = _extract_name_from_text(parsed_item["text"], parsed_item.get("original_name", "unknown"))
+            name = _name_from_filename(parsed_item.get("original_name", "unknown"))
             return {
                 "skills": skills,
                 "experience_years": exp,
@@ -341,8 +324,22 @@ def bulk_upload_resumes():
         # Stage 5: build payload for DB and ANN.
         records_to_store = []
         ann_payloads = []
+        seen_emails = set()
+        seen_phones = set()
+        duplicates_found = 0
         for parsed, entities, emb in zip(valid_parsed, extracted_entities, embeddings):
             location_display = entities["locations"][0] if entities["locations"] else ""
+            normalized_emails = [(e or "").strip().lower() for e in (entities.get("emails") or []) if (e or "").strip()]
+            normalized_phones = [re.sub(r"\D", "", p or "") for p in (entities.get("phone_numbers") or []) if (p or "").strip()]
+
+            is_duplicate_in_batch = any(e in seen_emails for e in normalized_emails) or any(
+                p in seen_phones for p in normalized_phones
+            )
+            if is_duplicate_in_batch:
+                duplicates_found += 1
+            seen_emails.update(normalized_emails)
+            seen_phones.update(normalized_phones)
+
             record = {
                 "name": entities["name"],
                 "original_name": parsed["original_name"],
@@ -388,7 +385,7 @@ def bulk_upload_resumes():
                     "role_family": record["role_family"],
                     "primary_skill": record["primary_skill"],
                 }
-                if add_resume_to_index(resume_text, ann_metadata):
+                if add_resume_to_index(resume_text, ann_metadata, embedding=record.get("embedding")):
                     ann_added += 1
 
         successful = len(records_to_store)
@@ -400,8 +397,14 @@ def bulk_upload_resumes():
                     "stored": stored_count,
                     "indexed": ann_added,
                     "failed": len(failed_files),
+                    "duplicates_found": duplicates_found,
                 },
                 "failed_files": failed_files,
+                "duplicate_message": (
+                    "Duplicate resumes were detected. Only the latest resume was stored in the system."
+                    if duplicates_found > 0
+                    else ""
+                ),
             }
         )
     except Exception as e:

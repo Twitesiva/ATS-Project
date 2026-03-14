@@ -148,7 +148,7 @@ def load_index_from_db():
     return False
 
 
-def add_resume_to_index(resume_text: str, metadata: Dict) -> bool:
+def add_resume_to_index(resume_text: str, metadata: Dict, embedding=None) -> bool:
     """
     Add a resume to the ANN index.
     Generates embedding once and stores for reuse.
@@ -171,10 +171,12 @@ def add_resume_to_index(resume_text: str, metadata: Dict) -> bool:
         return False
     
     try:
-        # Generate embedding
-        encoder = _get_encoder()
-        embedding = encoder([resume_text[:8000]])[0]
-        
+        # Reuse provided embedding when available (bulk upload optimization).
+        if embedding is None:
+            encoder = _get_encoder()
+            embedding = encoder([resume_text[:8000]])[0]
+        embedding = np.asarray(embedding, dtype=np.float32)
+
         # Normalize for cosine similarity
         embedding_norm = _normalize_embeddings(embedding.reshape(1, -1))
         

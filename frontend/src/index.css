@@ -158,9 +158,21 @@ body {
   font-size: 1rem;
 }
 
+.bulk-upload-summary-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
 .bulk-upload-summary p {
   margin: 0.25rem 0;
   font-size: 0.95rem;
+}
+
+.bulk-upload-duplicate-message {
+  color: #9a6700;
+  font-weight: 500;
 }
 
 .bulk-upload-failures {

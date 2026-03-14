@@ -26,6 +26,9 @@ export default function SearchCRMPage() {
   const loadResumes = async () => {
     setLoading(true);
     setError("");
+    // Show loading-state UI with empty results while data is being fetched.
+    setResumes([]);
+    setPreviewResume(null);
     try {
       const params = {};
       if (filters.location.trim()) params.location = filters.location.trim();
@@ -106,9 +109,23 @@ export default function SearchCRMPage() {
       <SearchFilters filters={filters} onChange={setFilters} onApply={loadResumes} loading={loading} />
       {bulkResult?.summary && (
         <section className="bulk-upload-summary">
-          <h3>Upload Summary</h3>
+          <div className="bulk-upload-summary-header">
+            <h3>Upload Summary</h3>
+            <button type="button" className="btn btn-small btn-secondary" onClick={() => setBulkResult(null)}>
+              Close
+            </button>
+          </div>
           <p>Successfully Uploaded: {bulkResult.summary.successful ?? 0}</p>
           <p>Failed: {bulkResult.summary.failed ?? 0}</p>
+          {(bulkResult.summary.duplicates_found ?? 0) > 0 && (
+            <>
+              <p>Duplicates Found: {bulkResult.summary.duplicates_found}</p>
+              <p className="bulk-upload-duplicate-message">
+                {bulkResult.duplicate_message ||
+                  "Duplicate resumes were detected. Only the latest resume was stored in the system."}
+              </p>
+            </>
+          )}
           {Array.isArray(bulkResult.failed_files) && bulkResult.failed_files.length > 0 && (
             <div className="bulk-upload-failures">
               <strong>Failed Files:</strong>

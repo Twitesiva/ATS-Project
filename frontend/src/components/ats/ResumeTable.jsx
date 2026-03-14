@@ -1,4 +1,4 @@
-import ResumePreviewModal from "./ResumePreviewModal";
+﻿import ResumePreviewModal from "./ResumePreviewModal";
 
 export default function ResumeTable({ resumes, onPreview, previewResume, onClosePreview, highlightKeywords }) {
   return (
@@ -28,16 +28,15 @@ export default function ResumeTable({ resumes, onPreview, previewResume, onClose
                 <tr key={r.resume_id}>
                   <td className="name-cell">
                     <div className="name-primary">{r.name}</div>
-                    {r.location_display && <div className="name-secondary">📍 {r.location_display}</div>}
                   </td>
                   <td>
                     {r.phone_number_display ? (
                       <span className="phone-badge">📞 {r.phone_number_display}</span>
                     ) : (
-                      <span className="phone-missing">—</span>
+                      <span className="phone-missing">-</span>
                     )}
                   </td>
-                  <td>{r.experience_years != null ? `${r.experience_years} yrs` : "—"}</td>
+                  <td>{r.experience_years != null ? `${r.experience_years} yrs` : "-"}</td>
                   <td>
                     <button type="button" className="btn btn-small btn-preview" onClick={() => onPreview(r)}>
                       View
