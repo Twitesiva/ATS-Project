@@ -3,14 +3,8 @@ import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/TextLayer.css";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 
-// Configure worker in same module as Document/Page (required by react-pdf). Vite-friendly.
-try {
-  const workerUrl = new URL("pdfjs-dist/build/pdf.worker.mjs", import.meta.url).href;
-  pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
-} catch {
-  // Fallback for environments where new URL with package path fails
-  pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
-}
+// Use stable CDN worker to avoid dynamic import issues in production
+pdfjs.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.mjs";
 
 function escapeHtml(s) {
   return String(s)
