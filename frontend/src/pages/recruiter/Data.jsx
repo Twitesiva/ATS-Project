@@ -112,8 +112,18 @@ export default function RecruiterData({ scopeRole }) {
   const [searchText, setSearchText] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const [interviewFromDate, setInterviewFromDate] = useState("");
+  const [interviewToDate, setInterviewToDate] = useState("");
 
-  /* ----------------------------- FETCH DATA ----------------------------- */
+  const handleClearFilters = () => {
+    setSearchBy("candidate_name");
+    setSearchText("");
+    setFromDate("");
+    setToDate("");
+    setInterviewFromDate("");
+    setInterviewToDate("");
+    fetchRecords();
+  };
 
   const fetchRecords = async () => {
     setLoading(true);
@@ -134,9 +144,13 @@ export default function RecruiterData({ scopeRole }) {
       query = query.ilike(searchBy, `%${searchText}%`);
     }
 
-    // date filters
+    // record date filters
     if (fromDate) query = query.gte("record_date", fromDate);
     if (toDate) query = query.lte("record_date", toDate);
+
+    // interview date filters
+    if (interviewFromDate) query = query.gte("interview_date", interviewFromDate);
+    if (interviewToDate) query = query.lte("interview_date", interviewToDate);
 
     const { data, error } = await query;
 
@@ -630,7 +644,7 @@ const handleSave = async (form) => {
 
   return (
     <div style={styles.page}>
-      <h2>{isManagerView ? "Recruiters History" : "Recruiter Data"}</h2>
+      <h2>{isManagerView ? "Monthly Report" : "Recruiter Data"}</h2>
 
       {/* ACTION BAR */}
       <div style={styles.actionBar}>
@@ -665,11 +679,20 @@ const handleSave = async (form) => {
           style={styles.input}
         />
 
-        <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
-        <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+        <span style={styles.filterLabel}>Record Date</span>
+        <input type="date" placeholder="Record From Date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} style={styles.dateInput} />
+        <input type="date" placeholder="Record To Date" value={toDate} onChange={(e) => setToDate(e.target.value)} style={styles.dateInput} />
+
+        <span style={styles.filterLabel}>Interview Date</span>
+        <input type="date" placeholder="Interview From Date" value={interviewFromDate} onChange={(e) => setInterviewFromDate(e.target.value)} style={styles.dateInput} />
+        <input type="date" placeholder="Interview To Date" value={interviewToDate} onChange={(e) => setInterviewToDate(e.target.value)} style={styles.dateInput} />
 
         <button onClick={fetchRecords} style={styles.primaryBtn}>
           Apply
+        </button>
+
+        <button onClick={handleClearFilters} style={styles.secondaryBtn}>
+          Clear Filters
         </button>
       </div>
 
@@ -1380,6 +1403,27 @@ const styles = {
     borderRadius: "10px",
     cursor: "pointer",
     fontWeight: 600,
+  },
+  secondaryBtn: {
+    padding: "10px 18px",
+    background: "#64748b",
+    color: "#fff",
+    border: "none",
+    borderRadius: "10px",
+    cursor: "pointer",
+    fontWeight: 600,
+  },
+  filterLabel: {
+    fontWeight: 600,
+    color: "#475569",
+    fontSize: "13px",
+    alignSelf: "center",
+    marginRight: "4px",
+  },
+  dateInput: {
+    padding: "6px",
+    borderRadius: "6px",
+    border: "1px solid #cbd5e1",
   },
   uploadBtn: {
     padding: "10px 18px",
