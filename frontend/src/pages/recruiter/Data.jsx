@@ -121,6 +121,8 @@ export default function RecruiterData({ scopeRole }) {
   const [searchText, setSearchText] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const [interviewFromDate, setInterviewFromDate] = useState("");
+  const [interviewToDate, setInterviewToDate] = useState("");
 
   /* ----------------------------- FETCH DATA ----------------------------- */
 
@@ -146,6 +148,10 @@ export default function RecruiterData({ scopeRole }) {
     // date filters
     if (fromDate) query = query.gte("record_date", fromDate);
     if (toDate) query = query.lte("record_date", toDate);
+
+    // interview date filters
+    if (interviewFromDate) query = query.gte("interview_date", interviewFromDate);
+    if (interviewToDate) query = query.lte("interview_date", interviewToDate);
 
     const { data, error } = await query;
 
@@ -178,7 +184,7 @@ export default function RecruiterData({ scopeRole }) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user?.id, user?.role, user?.name, searchBy, searchText, fromDate, toDate]);
+  }, [user?.id, user?.role, user?.name, searchBy, searchText, fromDate, toDate, interviewFromDate, interviewToDate]);
 
 
 // normalize()
@@ -639,7 +645,7 @@ const handleSave = async (form) => {
 
   return (
     <div style={styles.page}>
-      <h2>{isManagerView ? "Recruiters History" : "Recruiter Data"}</h2>
+      <h2>Monthly Report</h2>
 
       {/* ACTION BAR */}
       <div style={styles.actionBar}>
@@ -677,8 +683,36 @@ const handleSave = async (form) => {
         <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
         <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
 
+        <input
+          type="date"
+          value={interviewFromDate}
+          onChange={(e) => setInterviewFromDate(e.target.value)}
+          placeholder="Interview From"
+        />
+        <input
+          type="date"
+          value={interviewToDate}
+          onChange={(e) => setInterviewToDate(e.target.value)}
+          placeholder="Interview To"
+        />
+
         <button onClick={fetchRecords} style={styles.primaryBtn}>
           Apply
+        </button>
+
+        <button
+          onClick={() => {
+            setSearchBy("candidate_name");
+            setSearchText("");
+            setFromDate("");
+            setToDate("");
+            setInterviewFromDate("");
+            setInterviewToDate("");
+            fetchRecords();
+          }}
+          style={styles.secondaryBtn}
+        >
+          Clear Filters
         </button>
       </div>
 
