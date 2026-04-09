@@ -99,13 +99,18 @@ const styles = {
     gap: "8px",
   },
   menuList: {
-    flex: 1,
-    minHeight: 0,
-    overflowY: "auto",
-    display: "flex",
-    flexDirection: "column",
-    gap: "8px",
-  },
+  flex: 1,
+  minHeight: 0,
+  overflowY: "auto",
+
+  /* Hide scrollbar (Firefox + IE) */
+  scrollbarWidth: "none",
+  msOverflowStyle: "none",
+
+  display: "flex",
+  flexDirection: "column",
+  gap: "8px",
+},
   logo: {
     textAlign: "center",
     marginBottom: "4px",

@@ -1712,6 +1712,9 @@ body {
   overflow: hidden;
   margin-bottom: 0.5rem;
 }
+.menuList::-webkit-scrollbar {
+  display: none;
+}
 
 .score-fill {
   height: 100%;
