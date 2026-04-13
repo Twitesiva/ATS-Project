@@ -159,10 +159,10 @@ export default function RecruiterData({ scopeRole }) {
   };
 
   useEffect(() => {
-  if (user?.id) {
-    fetchRecords();
-  }
-}, [user]);
+    if (user?.id) {
+      fetchRecords();
+    }
+  }, [user, searchText, fromDate, toDate, interviewFromDate, interviewToDate]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -186,385 +186,385 @@ export default function RecruiterData({ scopeRole }) {
   }, [user?.id, user?.role, user?.name, searchBy, searchText, fromDate, toDate]);
 
 
-// normalize()
-const normalize = (value) =>
-  String(value ?? "")
-    .replace(/^\uFEFF/, "")          
-    .replace(/[\u200B-\u200D]/g, "") 
-    .replace(/\u00A0/g, " ")         
-    .replace(/[\t\r\n]+/g, " ")
-    .replace(/[._-]+/g, " ")         
-    .trim()
-    .replace(/\s+/g, " ")
-    .toLowerCase();
+  // normalize()
+  const normalize = (value) =>
+    String(value ?? "")
+      .replace(/^\uFEFF/, "")
+      .replace(/[\u200B-\u200D]/g, "")
+      .replace(/\u00A0/g, " ")
+      .replace(/[\t\r\n]+/g, " ")
+      .replace(/[._-]+/g, " ")
+      .trim()
+      .replace(/\s+/g, " ")
+      .toLowerCase();
 
-const normalizedHeaderMap = Object.entries(headerMap).reduce((acc, [k, v]) => {
-  acc[normalize(k)] = v;
-  return acc;
-}, {});
+  const normalizedHeaderMap = Object.entries(headerMap).reduce((acc, [k, v]) => {
+    acc[normalize(k)] = v;
+    return acc;
+  }, {});
 
-const detectDelimiter = (csvText) => {
-  const firstLine = String(csvText || "").split(/\r\n|\n|\r/, 1)[0] || "";
-  const counts = {
-    "\t": (firstLine.match(/\t/g) || []).length,
-    ",": (firstLine.match(/,/g) || []).length,
-    ";": (firstLine.match(/;/g) || []).length,
-    "|": (firstLine.match(/\|/g) || []).length,
+  const detectDelimiter = (csvText) => {
+    const firstLine = String(csvText || "").split(/\r\n|\n|\r/, 1)[0] || "";
+    const counts = {
+      "\t": (firstLine.match(/\t/g) || []).length,
+      ",": (firstLine.match(/,/g) || []).length,
+      ";": (firstLine.match(/;/g) || []).length,
+      "|": (firstLine.match(/\|/g) || []).length,
+    };
+
+    let best = ",";
+    let bestCount = -1;
+    for (const [delimiter, count] of Object.entries(counts)) {
+      if (count > bestCount) {
+        best = delimiter;
+        bestCount = count;
+      }
+    }
+    return bestCount > 0 ? best : ",";
   };
 
-  let best = ",";
-  let bestCount = -1;
-  for (const [delimiter, count] of Object.entries(counts)) {
-    if (count > bestCount) {
-      best = delimiter;
-      bestCount = count;
-    }
-  }
-  return bestCount > 0 ? best : ",";
-};
+  const getCanonicalKey = (key) => {
+    const normalized = normalize(key);
+    return normalizedHeaderMap[normalized] || normalized;
+  };
 
-const getCanonicalKey = (key) => {
-  const normalized = normalize(key);
-  return normalizedHeaderMap[normalized] || normalized;
-};
-
-const hasCanonicalHeader = (rows, targetKey) => {
-  const keys = new Set();
-  rows.slice(0, 5).forEach((row) => {
-    Object.keys(row || {}).forEach((k) => keys.add(getCanonicalKey(k)));
-  });
-  return keys.has(targetKey);
-};
-
-const parseCSVRows = (csvText) =>
-  new Promise((resolve, reject) => {
-    const delimiter = detectDelimiter(csvText);
-    Papa.parse(csvText, {
-      header: true,
-      skipEmptyLines: "greedy",
-      delimiter,
-      transformHeader: (header) => {
-        const key = normalize(header);
-        return normalizedHeaderMap[key] || key;
-      },
-      transform: (value) =>
-        typeof value === "string"
-          ? value.replace(/^\uFEFF/, "").replace(/\u00A0/g, " ").trim()
-          : value,
-      complete: (results) => resolve(results.data || []),
-      error: (error) => reject(error),
+  const hasCanonicalHeader = (rows, targetKey) => {
+    const keys = new Set();
+    rows.slice(0, 5).forEach((row) => {
+      Object.keys(row || {}).forEach((k) => keys.add(getCanonicalKey(k)));
     });
+    return keys.has(targetKey);
+  };
+
+  const parseCSVRows = (csvText) =>
+    new Promise((resolve, reject) => {
+      const delimiter = detectDelimiter(csvText);
+      Papa.parse(csvText, {
+        header: true,
+        skipEmptyLines: "greedy",
+        delimiter,
+        transformHeader: (header) => {
+          const key = normalize(header);
+          return normalizedHeaderMap[key] || key;
+        },
+        transform: (value) =>
+          typeof value === "string"
+            ? value.replace(/^\uFEFF/, "").replace(/\u00A0/g, " ").trim()
+            : value,
+        complete: (results) => resolve(results.data || []),
+        error: (error) => reject(error),
+      });
+    });
+
+  const toHistoryCandidateId = (value) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const buildHistoryRow = ({
+    candidateId,
+    recruiterName,
+    candidateName,
+    clientName,
+    requirement,
+    oldStatus,
+    newStatus,
+  }) => ({
+    candidate_id: toHistoryCandidateId(candidateId),
+    recruiter_name: recruiterName || "-",
+    candidate_name: candidateName || "-",
+    client_name: clientName || null,
+    requirement: requirement || null,
+    old_status: oldStatus ?? null,
+    new_status: newStatus || "Profile Submitted",
+    updated_at: new Date().toISOString(),
   });
 
-const toHistoryCandidateId = (value) => {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : 0;
-};
+  const insertStatusHistoryRows = async (rows, source) => {
+    const payload = Array.isArray(rows) ? rows : [rows];
+    const { data, error } = await supabase.from("status_history").insert(payload).select("*");
 
-const buildHistoryRow = ({
-  candidateId,
-  recruiterName,
-  candidateName,
-  clientName,
-  requirement,
-  oldStatus,
-  newStatus,
-}) => ({
-  candidate_id: toHistoryCandidateId(candidateId),
-  recruiter_name: recruiterName || "-",
-  candidate_name: candidateName || "-",
-  client_name: clientName || null,
-  requirement: requirement || null,
-  old_status: oldStatus ?? null,
-  new_status: newStatus || "Profile Submitted",
-  updated_at: new Date().toISOString(),
-});
-
-const insertStatusHistoryRows = async (rows, source) => {
-  const payload = Array.isArray(rows) ? rows : [rows];
-  const { data, error } = await supabase.from("status_history").insert(payload).select("*");
-
-  if (error) {
-    console.error(`[status_history][${source}] insert failed`, { error, payload });
-    return { ok: false, error };
-  }
-
-  console.log(`[status_history][${source}] insert success`, data || []);
-  return { ok: true, data: data || [] };
-};
-
-const touchUserLastSeen = async (userId, source) => {
-  if (!userId) return;
-  const { error } = await supabase
-    .from("users")
-    .update({ last_seen_at: new Date().toISOString() })
-    .eq("id", userId);
-
-  if (error) {
-    console.error(`[last_seen_at][${source}] update failed`, error);
-  }
-};
-
-// transformCSVRow()
-const transformCSVRow = (row, index, hasSlNoHeader) => {
-  const clean = {};
-  for (const [k, v] of Object.entries(row)) {
-    const value =
-      typeof v === "string"
-        ? v.replace(/\u00A0/g, " ").trim()
-        : v;
-    const canonicalKey = normalizedHeaderMap[normalize(k)] || normalize(k);
-    if (clean[canonicalKey] == null || clean[canonicalKey] === "") {
-      clean[canonicalKey] = value;
+    if (error) {
+      console.error(`[status_history][${source}] insert failed`, { error, payload });
+      return { ok: false, error };
     }
-  }
 
-  const isBlank = (v) => v == null || (typeof v === "string" && normalize(v) === "");
-
-  // Fallback to row index ONLY when SL.No header is missing
-  if (!hasSlNoHeader && isBlank(clean.sl_no)) {
-    clean.sl_no = index + 1;
-  }
-
-  if (isBlank(clean.sl_no)) throw new Error("SL.No missing in CSV row");
-  if (isBlank(clean.recruiter)) throw new Error("Recruiter missing in CSV row");
-  if (isBlank(clean.client_name)) throw new Error("Client Name missing in CSV row");
-
-  return {
-    sl_no: Number(clean.sl_no),
-    record_date: clean.record_date || new Date().toISOString().split("T")[0],
-    recruiter: clean.recruiter, // CSV only (no user autofill)
-    client_name: clean.client_name,
-    requirement: clean.requirement || "",
-    location: clean.location || "",
-    candidate_name: clean.candidate_name || "",
-    phone_number: clean.phone_number || "",
-    email: clean.email || "",
-    ctc: clean.ctc ? Number(clean.ctc) : null,
-    ectc: clean.ectc ? Number(clean.ectc) : null,
-    hire_mode: clean.hire_mode || "",
-    status: clean.status || "Profile Submitted",
-    remarks: clean.remarks || null,
-    interview_date: clean.interview_date || null,
-    interview_time: clean.interview_time || null,
+    console.log(`[status_history][${source}] insert success`, data || []);
+    return { ok: true, data: data || [] };
   };
-};
+
+  const touchUserLastSeen = async (userId, source) => {
+    if (!userId) return;
+    const { error } = await supabase
+      .from("users")
+      .update({ last_seen_at: new Date().toISOString() })
+      .eq("id", userId);
+
+    if (error) {
+      console.error(`[last_seen_at][${source}] update failed`, error);
+    }
+  };
+
+  // transformCSVRow()
+  const transformCSVRow = (row, index, hasSlNoHeader) => {
+    const clean = {};
+    for (const [k, v] of Object.entries(row)) {
+      const value =
+        typeof v === "string"
+          ? v.replace(/\u00A0/g, " ").trim()
+          : v;
+      const canonicalKey = normalizedHeaderMap[normalize(k)] || normalize(k);
+      if (clean[canonicalKey] == null || clean[canonicalKey] === "") {
+        clean[canonicalKey] = value;
+      }
+    }
+
+    const isBlank = (v) => v == null || (typeof v === "string" && normalize(v) === "");
+
+    // Fallback to row index ONLY when SL.No header is missing
+    if (!hasSlNoHeader && isBlank(clean.sl_no)) {
+      clean.sl_no = index + 1;
+    }
+
+    if (isBlank(clean.sl_no)) throw new Error("SL.No missing in CSV row");
+    if (isBlank(clean.recruiter)) throw new Error("Recruiter missing in CSV row");
+    if (isBlank(clean.client_name)) throw new Error("Client Name missing in CSV row");
+
+    return {
+      sl_no: Number(clean.sl_no),
+      record_date: clean.record_date || new Date().toISOString().split("T")[0],
+      recruiter: clean.recruiter, // CSV only (no user autofill)
+      client_name: clean.client_name,
+      requirement: clean.requirement || "",
+      location: clean.location || "",
+      candidate_name: clean.candidate_name || "",
+      phone_number: clean.phone_number || "",
+      email: clean.email || "",
+      ctc: clean.ctc ? Number(clean.ctc) : null,
+      ectc: clean.ectc ? Number(clean.ectc) : null,
+      hire_mode: clean.hire_mode || "",
+      status: clean.status || "Profile Submitted",
+      remarks: clean.remarks || null,
+      interview_date: clean.interview_date || null,
+      interview_time: clean.interview_time || null,
+    };
+  };
 
 
   const handleCSVUpload = async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
+    const file = e.target.files[0];
+    if (!file) return;
 
-  const fileName = file.name.toLowerCase();
-  let parsedRows = [];
+    const fileName = file.name.toLowerCase();
+    let parsedRows = [];
 
-  try {
-    if (fileName.endsWith(".xlsx") || fileName.endsWith(".xls")) {
-      const arrayBuffer = await file.arrayBuffer();
-      const workbook = XLSX.read(arrayBuffer, { type: "array" });
-      const firstSheetName = workbook.SheetNames[0];
-      const firstSheet = workbook.Sheets[firstSheetName];
-      parsedRows = XLSX.utils.sheet_to_json(firstSheet, {
-        defval: "",
-        raw: false,
-      });
-    } else {
-      const csvText = await file.text();
-      parsedRows = await parseCSVRows(csvText);
-    }
-  } catch (err) {
-    alert("Unable to parse uploaded file");
-    console.error(err);
-    return;
-  }
-
-  const validRows = [];
-  const errors = [];
-  const hasSlNoHeader = hasCanonicalHeader(parsedRows, "sl_no");
-
-  parsedRows.forEach((row, index) => {
     try {
-      const transformed = transformCSVRow(row, index, hasSlNoHeader);
-      validRows.push(transformed);
+      if (fileName.endsWith(".xlsx") || fileName.endsWith(".xls")) {
+        const arrayBuffer = await file.arrayBuffer();
+        const workbook = XLSX.read(arrayBuffer, { type: "array" });
+        const firstSheetName = workbook.SheetNames[0];
+        const firstSheet = workbook.Sheets[firstSheetName];
+        parsedRows = XLSX.utils.sheet_to_json(firstSheet, {
+          defval: "",
+          raw: false,
+        });
+      } else {
+        const csvText = await file.text();
+        parsedRows = await parseCSVRows(csvText);
+      }
     } catch (err) {
-      errors.push(
-        `Row ${index + 2}: ${err.message} (SL.No / Recruiter / Client Name mandatory)`
-      );
+      alert("Unable to parse uploaded file");
+      console.error(err);
+      return;
     }
-  });
 
-      if (errors.length) {
-        alert(
-          "CSV Upload Failed \n\n" +
-          errors.slice(0, 5).join("\n") +
-          (errors.length > 5 ? "\n..." : "")
+    const validRows = [];
+    const errors = [];
+    const hasSlNoHeader = hasCanonicalHeader(parsedRows, "sl_no");
+
+    parsedRows.forEach((row, index) => {
+      try {
+        const transformed = transformCSVRow(row, index, hasSlNoHeader);
+        validRows.push(transformed);
+      } catch (err) {
+        errors.push(
+          `Row ${index + 2}: ${err.message} (SL.No / Recruiter / Client Name mandatory)`
         );
-        console.error(errors);
+      }
+    });
+
+    if (errors.length) {
+      alert(
+        "CSV Upload Failed \n\n" +
+        errors.slice(0, 5).join("\n") +
+        (errors.length > 5 ? "\n..." : "")
+      );
+      console.error(errors);
+      return;
+    }
+    const slNos = validRows.map(r => r.sl_no);
+    const uniqueSlNos = new Set(slNos);
+
+    if (slNos.length !== uniqueSlNos.size) {
+      alert("Duplicate SL.No found in CSV ");
+      return;
+    }
+
+    const payloadRows =
+      isManagerView
+        ? validRows.map((row) => ({ ...row, recruiter: "manager" }))
+        : validRows.map((row) => ({ ...row, recruiter: user?.name }));
+
+    const makeMatchKey = (email, phone) => {
+      const e = String(email || "").trim().toLowerCase();
+      const p = String(phone || "").trim();
+      return `${e}__${p}`;
+    };
+
+    const scopedRecruiter = isManagerView ? "manager" : user?.name;
+
+    const decoratedRows = payloadRows.map((row) => {
+      const email = String(row.email || "").trim().toLowerCase();
+      const phone = String(row.phone_number || "").trim();
+      const isMatchable = email !== "" && phone !== "";
+      return {
+        ...row,
+        _emailKey: email,
+        _phoneKey: phone,
+        _isMatchable: isMatchable,
+        _matchKey: isMatchable ? makeMatchKey(email, phone) : null,
+      };
+    });
+
+    const matchableRows = decoratedRows.filter((r) => r._isMatchable);
+    const existingByMatchKey = new Map();
+
+    if (matchableRows.length) {
+      const emailKeys = [...new Set(matchableRows.map((r) => r._emailKey))];
+      const phoneKeys = [...new Set(matchableRows.map((r) => r._phoneKey))];
+
+      const { data: existingRows, error: existingError } = await supabase
+        .from("candidate_records")
+        .select("id,sl_no,email,phone_number,status,recruiter")
+        .eq("recruiter", scopedRecruiter)
+        .in("email", emailKeys)
+        .in("phone_number", phoneKeys);
+
+      if (existingError) {
+        alert(existingError.message);
+        console.error(existingError);
         return;
       }
-      const slNos = validRows.map(r => r.sl_no);
-const uniqueSlNos = new Set(slNos);
 
-if (slNos.length !== uniqueSlNos.size) {
-  alert("Duplicate SL.No found in CSV ");
-  return;
-}
+      (existingRows || []).forEach((row) => {
+        const key = makeMatchKey(row.email, row.phone_number);
+        if (!existingByMatchKey.has(key)) {
+          existingByMatchKey.set(key, row);
+        }
+      });
+    }
 
-      const payloadRows =
-        isManagerView
-          ? validRows.map((row) => ({ ...row, recruiter: "manager" }))
-          : validRows.map((row) => ({ ...row, recruiter: user?.name }));
+    const rowsToInsert = [];
+    const rowsToUpdate = [];
 
-      const makeMatchKey = (email, phone) => {
-        const e = String(email || "").trim().toLowerCase();
-        const p = String(phone || "").trim();
-        return `${e}__${p}`;
+    decoratedRows.forEach((row) => {
+      const cleanRow = {
+        sl_no: row.sl_no,
+        record_date: row.record_date,
+        recruiter: row.recruiter,
+        client_name: row.client_name,
+        requirement: row.requirement,
+        location: row.location,
+        candidate_name: row.candidate_name,
+        phone_number: row.phone_number,
+        email: row.email,
+        ctc: row.ctc,
+        ectc: row.ectc,
+        hire_mode: row.hire_mode,
+        status: row.status,
+        remarks: row.remarks,
+        interview_date: row.interview_date,
+        interview_time: row.interview_time,
       };
 
-      const scopedRecruiter = isManagerView ? "manager" : user?.name;
+      if (row._isMatchable && existingByMatchKey.has(row._matchKey)) {
+        rowsToUpdate.push({ existing: existingByMatchKey.get(row._matchKey), payload: cleanRow });
+      } else {
+        rowsToInsert.push(cleanRow);
+      }
+    });
 
-      const decoratedRows = payloadRows.map((row) => {
-        const email = String(row.email || "").trim().toLowerCase();
-        const phone = String(row.phone_number || "").trim();
-        const isMatchable = email !== "" && phone !== "";
-        return {
-          ...row,
-          _emailKey: email,
-          _phoneKey: phone,
-          _isMatchable: isMatchable,
-          _matchKey: isMatchable ? makeMatchKey(email, phone) : null,
-        };
-      });
+    let insertedRows = [];
+    if (rowsToInsert.length) {
+      const { data, error } = await supabase
+        .from("candidate_records")
+        .insert(rowsToInsert)
+        .select("id,sl_no,recruiter,candidate_name,client_name,requirement,status");
 
-      const matchableRows = decoratedRows.filter((r) => r._isMatchable);
-      const existingByMatchKey = new Map();
+      if (error) {
+        alert(error.message);
+        console.error(error);
+        return;
+      }
+      insertedRows = data || [];
+    }
 
-      if (matchableRows.length) {
-        const emailKeys = [...new Set(matchableRows.map((r) => r._emailKey))];
-        const phoneKeys = [...new Set(matchableRows.map((r) => r._phoneKey))];
+    const updatedRows = [];
+    for (const item of rowsToUpdate) {
+      const { existing, payload } = item;
+      const { data, error } = await supabase
+        .from("candidate_records")
+        .update(payload)
+        .eq("id", existing.id)
+        .select("id,sl_no,recruiter,candidate_name,client_name,requirement,status")
+        .single();
 
-        const { data: existingRows, error: existingError } = await supabase
-          .from("candidate_records")
-          .select("id,sl_no,email,phone_number,status,recruiter")
-          .eq("recruiter", scopedRecruiter)
-          .in("email", emailKeys)
-          .in("phone_number", phoneKeys);
-
-        if (existingError) {
-          alert(existingError.message);
-          console.error(existingError);
-          return;
-        }
-
-        (existingRows || []).forEach((row) => {
-          const key = makeMatchKey(row.email, row.phone_number);
-          if (!existingByMatchKey.has(key)) {
-            existingByMatchKey.set(key, row);
-          }
-        });
+      if (error) {
+        console.error("[csv_upload] update existing row failed", { error, existing, payload });
+        continue;
       }
 
-      const rowsToInsert = [];
-      const rowsToUpdate = [];
+      updatedRows.push({ ...data, _oldStatus: existing.status || null });
+    }
 
-      decoratedRows.forEach((row) => {
-        const cleanRow = {
-          sl_no: row.sl_no,
-          record_date: row.record_date,
-          recruiter: row.recruiter,
-          client_name: row.client_name,
-          requirement: row.requirement,
-          location: row.location,
-          candidate_name: row.candidate_name,
-          phone_number: row.phone_number,
-          email: row.email,
-          ctc: row.ctc,
-          ectc: row.ectc,
-          hire_mode: row.hire_mode,
-          status: row.status,
-          remarks: row.remarks,
-          interview_date: row.interview_date,
-          interview_time: row.interview_time,
-        };
+    const historyRows = [
+      ...insertedRows.map((r) =>
+        buildHistoryRow({
+          candidateId: r.sl_no,
+          recruiterName: r.recruiter || user?.name,
+          candidateName: r.candidate_name,
+          clientName: r.client_name,
+          requirement: r.requirement,
+          oldStatus: null,
+          newStatus: r.status || "Profile Submitted",
+        })
+      ),
+      ...updatedRows.map((r) =>
+        buildHistoryRow({
+          candidateId: r.sl_no,
+          recruiterName: r.recruiter || user?.name,
+          candidateName: r.candidate_name,
+          clientName: r.client_name,
+          requirement: r.requirement,
+          oldStatus: r._oldStatus,
+          newStatus: r.status || "Profile Submitted",
+        })
+      ),
+    ];
 
-        if (row._isMatchable && existingByMatchKey.has(row._matchKey)) {
-          rowsToUpdate.push({ existing: existingByMatchKey.get(row._matchKey), payload: cleanRow });
-        } else {
-          rowsToInsert.push(cleanRow);
-        }
-      });
+    if (historyRows.length) {
+      await insertStatusHistoryRows(historyRows, "csv_upload");
+    }
+    await touchUserLastSeen(user?.id, "csv_upload");
 
-      let insertedRows = [];
-      if (rowsToInsert.length) {
-        const { data, error } = await supabase
-          .from("candidate_records")
-          .insert(rowsToInsert)
-          .select("id,sl_no,recruiter,candidate_name,client_name,requirement,status");
-
-        if (error) {
-          alert(error.message);
-          console.error(error);
-          return;
-        }
-        insertedRows = data || [];
-      }
-
-      const updatedRows = [];
-      for (const item of rowsToUpdate) {
-        const { existing, payload } = item;
-        const { data, error } = await supabase
-          .from("candidate_records")
-          .update(payload)
-          .eq("id", existing.id)
-          .select("id,sl_no,recruiter,candidate_name,client_name,requirement,status")
-          .single();
-
-        if (error) {
-          console.error("[csv_upload] update existing row failed", { error, existing, payload });
-          continue;
-        }
-
-        updatedRows.push({ ...data, _oldStatus: existing.status || null });
-      }
-
-      const historyRows = [
-        ...insertedRows.map((r) =>
-          buildHistoryRow({
-            candidateId: r.sl_no,
-            recruiterName: r.recruiter || user?.name,
-            candidateName: r.candidate_name,
-            clientName: r.client_name,
-            requirement: r.requirement,
-            oldStatus: null,
-            newStatus: r.status || "Profile Submitted",
-          })
-        ),
-        ...updatedRows.map((r) =>
-          buildHistoryRow({
-            candidateId: r.sl_no,
-            recruiterName: r.recruiter || user?.name,
-            candidateName: r.candidate_name,
-            clientName: r.client_name,
-            requirement: r.requirement,
-            oldStatus: r._oldStatus,
-            newStatus: r.status || "Profile Submitted",
-          })
-        ),
-      ];
-
-      if (historyRows.length) {
-        await insertStatusHistoryRows(historyRows, "csv_upload");
-      }
-      await touchUserLastSeen(user?.id, "csv_upload");
-
-      alert("CSV uploaded successfully ✅");
-      fetchRecords();
-};
+    alert("CSV uploaded successfully ✅");
+    fetchRecords();
+  };
 
 
 
 
-const handleSave = async (form) => {
+  const handleSave = async (form) => {
     const payload = {
       record_date: form.record_date,
       recruiter: isManagerView ? "manager" : user?.name,
@@ -617,28 +617,28 @@ const handleSave = async (form) => {
 
 
   const handleDelete = async (id) => {
-  if (!id || deletingId) return;
+    if (!id || deletingId) return;
 
-  const target = records.find((r) => r.id === id);
-  const ok = window.confirm(`Delete candidate "${target?.candidate_name || "-"}"?`);
-  if (!ok) return;
+    const target = records.find((r) => r.id === id);
+    const ok = window.confirm(`Delete candidate "${target?.candidate_name || "-"}"?`);
+    if (!ok) return;
 
-  setDeletingId(id);
+    setDeletingId(id);
 
-  let query = supabase.from("candidate_records").delete().eq("id", id);
-  query = isManagerView ? query.eq("recruiter", "manager") : query.eq("recruiter", user?.name);
+    let query = supabase.from("candidate_records").delete().eq("id", id);
+    query = isManagerView ? query.eq("recruiter", "manager") : query.eq("recruiter", user?.name);
 
-  const { error } = await query;
-  if (error) {
-    alert(error.message);
-    console.error("[candidate_records] delete failed", error);
+    const { error } = await query;
+    if (error) {
+      alert(error.message);
+      console.error("[candidate_records] delete failed", error);
+      setDeletingId(null);
+      return;
+    }
+
+    setRecords((prev) => prev.filter((r) => r.id !== id));
     setDeletingId(null);
-    return;
-  }
-
-  setRecords((prev) => prev.filter((r) => r.id !== id));
-  setDeletingId(null);
-};
+  };
 
   /* ----------------------------- UI ----------------------------- */
 
@@ -815,74 +815,83 @@ function AddCandidateModal({ user, onClose, onSaved }) {
 
   const handleChange = (e) =>
     setForm({ ...form, [e.target.name]: e.target.value });
-  
+
 
   const handleSubmit = async (e) => {
-  e.preventDefault();
+    e.preventDefault();
 
-  if (!user?.id) {
-    alert("Session error. Please login again.");
-    return;
-  }
-
-  const payload = {
-  sl_no: Number(form.sl_no),
-  record_date: form.record_date,
-  recruiter: user?.role === "manager" ? "manager" : user?.name,
-
-  client_name: form.client_name,
-  requirement: form.requirement,
-  location: form.location,
-
-  candidate_name: form.candidate_name,
-  phone_number: form.phone_number,
-  email: form.email,
-
-  ctc: form.ctc || null,
-  ectc: form.ectc || null,
-
-  hire_mode: form.hire_mode,
-  status: form.status || "Profile Submitted",
-  remarks: form.remarks || null,
-
-  interview_date: form.interview_date || null,
-  interview_time: form.interview_time || null,
-};
-
-  const emailKey = String(payload.email || "").trim().toLowerCase();
-  const phoneKey = String(payload.phone_number || "").trim();
-  const recruiterScope = payload.recruiter;
-
-  let upsertedRow = null;
-  let error = null;
-
-  if (emailKey && phoneKey) {
-    const { data: existingRows, error: existingError } = await supabase
-      .from("candidate_records")
-      .select("id,sl_no,recruiter,candidate_name,client_name,requirement,status")
-      .eq("recruiter", recruiterScope)
-      .eq("email", emailKey)
-      .eq("phone_number", phoneKey)
-      .limit(1);
-
-    if (existingError) {
-      console.log("EXISTING LOOKUP ERROR ", existingError);
-      alert(existingError.message);
+    if (!user?.id) {
+      alert("Session error. Please login again.");
       return;
     }
 
-    const existingRow = existingRows?.[0] || null;
+    const payload = {
+      sl_no: Number(form.sl_no),
+      record_date: form.record_date,
+      recruiter: user?.role === "manager" ? "manager" : user?.name,
 
-    if (existingRow) {
-      const { data: updatedRow, error: updateError } = await supabase
+      client_name: form.client_name,
+      requirement: form.requirement,
+      location: form.location,
+
+      candidate_name: form.candidate_name,
+      phone_number: form.phone_number,
+      email: form.email,
+
+      ctc: form.ctc || null,
+      ectc: form.ectc || null,
+
+      hire_mode: form.hire_mode,
+      status: form.status || "Profile Submitted",
+      remarks: form.remarks || null,
+
+      interview_date: form.interview_date || null,
+      interview_time: form.interview_time || null,
+    };
+
+    const emailKey = String(payload.email || "").trim().toLowerCase();
+    const phoneKey = String(payload.phone_number || "").trim();
+    const recruiterScope = payload.recruiter;
+
+    let upsertedRow = null;
+    let error = null;
+
+    if (emailKey && phoneKey) {
+      const { data: existingRows, error: existingError } = await supabase
         .from("candidate_records")
-        .update(payload)
-        .eq("id", existingRow.id)
-        .select("sl_no,recruiter,candidate_name,client_name,requirement,status")
-        .single();
+        .select("id,sl_no,recruiter,candidate_name,client_name,requirement,status")
+        .eq("recruiter", recruiterScope)
+        .eq("email", emailKey)
+        .eq("phone_number", phoneKey)
+        .limit(1);
 
-      upsertedRow = updatedRow;
-      error = updateError;
+      if (existingError) {
+        console.log("EXISTING LOOKUP ERROR ", existingError);
+        alert(existingError.message);
+        return;
+      }
+
+      const existingRow = existingRows?.[0] || null;
+
+      if (existingRow) {
+        const { data: updatedRow, error: updateError } = await supabase
+          .from("candidate_records")
+          .update(payload)
+          .eq("id", existingRow.id)
+          .select("sl_no,recruiter,candidate_name,client_name,requirement,status")
+          .single();
+
+        upsertedRow = updatedRow;
+        error = updateError;
+      } else {
+        const { data: insertedRows, error: insertError } = await supabase
+          .from("candidate_records")
+          .insert([payload])
+          .select("sl_no,recruiter,candidate_name,client_name,requirement,status");
+
+        upsertedRow = insertedRows?.[0] || null;
+        error = insertError;
+      }
     } else {
       const { data: insertedRows, error: insertError } = await supabase
         .from("candidate_records")
@@ -892,46 +901,37 @@ function AddCandidateModal({ user, onClose, onSaved }) {
       upsertedRow = insertedRows?.[0] || null;
       error = insertError;
     }
-  } else {
-    const { data: insertedRows, error: insertError } = await supabase
-      .from("candidate_records")
-      .insert([payload])
-      .select("sl_no,recruiter,candidate_name,client_name,requirement,status");
 
-    upsertedRow = insertedRows?.[0] || null;
-    error = insertError;
-  }
+    console.log("UPSERT DATA ", upsertedRow);
+    console.log("UPSERT ERROR ", error);
+    console.log("Auth user", user);
 
-  console.log("UPSERT DATA ", upsertedRow);
-  console.log("UPSERT ERROR ", error);
-  console.log("Auth user", user);
-  
 
-  if (error) {
-    alert(error.message);
-    return;
-  }
+    if (error) {
+      alert(error.message);
+      return;
+    }
 
-  if (upsertedRow) {
-    const created = upsertedRow;
-    await insertStatusHistoryRows(
-      buildHistoryRow({
-        candidateId: created.sl_no,
-        recruiterName: created.recruiter || user?.name,
-        candidateName: created.candidate_name,
-        clientName: created.client_name,
-        requirement: created.requirement,
-        oldStatus: null,
-        newStatus: created.status || "Profile Submitted",
-      }),
-      "manual_add"
-    );
-  }
-  await touchUserLastSeen(user?.id, "manual_add");
+    if (upsertedRow) {
+      const created = upsertedRow;
+      await insertStatusHistoryRows(
+        buildHistoryRow({
+          candidateId: created.sl_no,
+          recruiterName: created.recruiter || user?.name,
+          candidateName: created.candidate_name,
+          clientName: created.client_name,
+          requirement: created.requirement,
+          oldStatus: null,
+          newStatus: created.status || "Profile Submitted",
+        }),
+        "manual_add"
+      );
+    }
+    await touchUserLastSeen(user?.id, "manual_add");
 
-  onSaved();
-  onClose();
-};
+    onSaved();
+    onClose();
+  };
 
   const formId = "add-candidate-form";
 
@@ -1117,7 +1117,70 @@ function EditCandidateModal({ record, onClose, onUpdated }) {
       onClose();
       return;
     }
+    if (!statusChanged && !nonStatusChanged) {
+      onClose();
+      return;
+    }
 
+    // AUTO CLOSURE: Move to revenue_tracker and delete from candidate_records
+    if ((form.status || "").trim().toLowerCase() === "closure") {
+      const revenuePayload = {
+        s_no: record.sl_no,
+        doj: new Date().toISOString().split("T")[0],
+        recruiter_name: record.recruiter || user?.name,
+        candidate_name: form.candidate_name || record.candidate_name || "",
+        client_name: form.client_name || record.client_name || "",
+        position: form.requirement || record.requirement || "",
+        location: form.location || record.location || "",
+        hire: form.hire_mode || record.hire_mode || "",
+        ctc: toNullableNumber(form.ctc) || record.ctc || null,
+        offered_ctc: toNullableNumber(form.ectc) || record.ectc || null,
+        billing_rate: null,
+        margin_value: null,
+        margin_percent: null,
+      };
+      // Check if already exists in revenue_tracker
+      const { data: existing } = await supabase
+        .from("revenue_tracker")
+        .select("id")
+        .eq("candidate_name", revenuePayload.candidate_name)
+        .eq("client_name", revenuePayload.client_name)
+        .eq("recruiter_name", revenuePayload.recruiter_name)
+        .limit(1);
+
+      if (existing && existing.length > 0) {
+        alert("Candidate already exists in Revenue Tracker!");
+        onUpdated();
+        onClose();
+        return;
+      }
+
+      const { error: revenueError } = await supabase
+        .from("revenue_tracker")
+        .insert([revenuePayload]);
+
+      if (revenueError) {
+        console.error("[closure] revenue_tracker insert failed", revenueError);
+        alert("Failed to add to Revenue Tracker: " + revenueError.message);
+        return;
+      }
+      // Update status to Closure in candidate_records (monthly report)
+      const { error: updateError } = await supabase
+        .from("candidate_records")
+        .update({ status: "Closure" })
+        .eq("id", record.id);
+
+      if (updateError) {
+        console.error("[closure] candidate_records update failed", updateError);
+        alert("Added to Revenue Tracker but failed to update Monthly Report status: " + updateError.message);
+        return;
+      }
+
+      alert("Candidate added to Revenue Tracker and status updated to Closure ✅");
+      onUpdated();
+      onClose();
+      return;
+    }
     if (nonStatusChanged) {
       const nonStatusPayload = {
         candidate_name: form.candidate_name,
@@ -1327,6 +1390,7 @@ function EditCandidateModal({ record, onClose, onUpdated }) {
                     <option value="Shortlisted">Shortlisted</option>
                     <option value="Position Hold">Position Hold</option>
                     <option value="Position Closed">Position Closed</option>
+                    <option value="Interview Scheduled">Interview Scheduled</option>
                   </select>
                 </label>
               </div>

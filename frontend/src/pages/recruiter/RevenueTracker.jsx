@@ -20,6 +20,8 @@ const columns = [
   { key: "billing_rate", label: "Billing Rate" },
   { key: "margin_value", label: "Margin Value", readOnly: true },
   { key: "margin_percent", label: "Margin %", readOnly: true },
+  { key: "offer_status", label: "Offer" },
+  { key: "status", label: "Status" },
 ];
 
 const headerMap = {
@@ -44,6 +46,8 @@ const headerMap = {
   "margin value": "margin_value",
   "margin %": "margin_percent",
   "margin percent": "margin_percent",
+  "offer_status": "offer_status",
+  "status": "status"
 };
 
 const normalize = (value) =>
@@ -195,7 +199,7 @@ export default function RRevenueTracker() {
     if (toDate) query = query.lte("doj", toDate);
     if (searchText.trim()) {
       const q = searchText.trim().replace(/,/g, "");
-      query = query.or(`candidate_name.ilike.%${q}%,client.ilike.%${q}%`);
+      query = query.or(`candidate_name.ilike.%${q}%,client_name.ilike.%${q}%`);
     }
 
     const { data, error } = await query;
@@ -210,7 +214,7 @@ export default function RRevenueTracker() {
 
   useEffect(() => {
     if (user?.name) fetchRecords();
-  }, [user?.name]);
+  }, [user?.name, fromDate, toDate, searchText]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -460,9 +464,9 @@ export default function RRevenueTracker() {
                         {c.type === "date"
                           ? formatDate(row[c.key])
                           : c.key === "ctc" ||
-                              c.key === "offered_ctc" ||
-                              c.key === "billing_rate" ||
-                              c.key === "margin_value"
+                            c.key === "offered_ctc" ||
+                            c.key === "billing_rate" ||
+                            c.key === "margin_value"
                             ? formatCurrency(row[c.key])
                             : c.key === "margin_percent"
                               ? row[c.key] == null || row[c.key] === ""
@@ -542,14 +546,41 @@ function RevenueModal({ form, saving, editing, onChange, onClose, onSave }) {
                 {columns.map((col) => (
                   <label key={col.key} style={styles.fieldLabel}>
                     {col.label}
-                    <input
-                      style={styles.modalInput}
-                      type={col.type === "date" ? "date" : "text"}
-                      name={col.key}
-                      value={form[col.key] ?? ""}
-                      onChange={onChange}
-                      readOnly={col.key === "recruiter_name" || col.readOnly}
-                    />
+
+                    {col.key === "offer_status" ? (
+                      <select
+                        name={col.key}
+                        value={form[col.key] ?? ""}
+                        onChange={onChange}
+                        style={styles.modalInput}
+                      >
+                        <option value="">Select</option>
+                        <option value="YES">YES</option>
+                        <option value="NO">NO</option>
+                      </select>
+
+                    ) : col.key === "status" ? (
+                      <select
+                        name={col.key}
+                        value={form[col.key] ?? ""}
+                        onChange={onChange}
+                        style={styles.modalInput}
+                      >
+                        <option value="">Select</option>
+                        <option value="Joined">Joined</option>
+                        <option value="Backout">Backout</option>
+                      </select>
+
+                    ) : (
+                      <input
+                        style={styles.modalInput}
+                        type={col.type === "date" ? "date" : "text"}
+                        name={col.key}
+                        value={form[col.key] ?? ""}
+                        onChange={onChange}
+                        readOnly={col.key === "recruiter_name" || col.readOnly}
+                      />
+                    )}
                   </label>
                 ))}
               </div>

@@ -36,6 +36,7 @@ const INTERVIEW_STATUSES = new Set([
   "AI Interview",
   "Assessment Round",
   "HR Round",
+  "Interview Scheduled",
 ]);
 
 const REJECTED_STATUSES = new Set([
@@ -44,6 +45,7 @@ const REJECTED_STATUSES = new Set([
   "Final Round Rejected",
   "Drop Out By Client",
   "Drop Out By Candidate",
+  "Backout",
 ]);
 
 const emptyDashboard = {
@@ -153,9 +155,9 @@ const buildDashboardData = (candidateRows, revenueRows) => {
   const revenue = revenueRows || [];
 
   const interviewsScheduled = candidates.filter((row) => isInterviewStatus(row.status)).length;
-  const offers = candidates.filter((row) => String(row.status || "").trim() === "Offered").length;
+  const offers = revenue.filter((row) => String(row.offer_status || "").trim().toUpperCase() === "YES").length;
   const activeClients = new Set(
-    candidates.map((row) => String(row.client_name || "").trim()).filter(Boolean)
+    candidates.map((row) => String(row.client_name || "").trim().toLowerCase()).filter(Boolean)
   ).size;
 
   const funnelStages = [
@@ -173,31 +175,48 @@ const buildDashboardData = (candidateRows, revenueRows) => {
     ["Rejected", 0],
   ]);
   candidates.forEach((row) => {
-    const status = String(row.status || "").trim();
-    const normalizedStatus = normalizeText(status);
+    const normalizedStatus = normalizeText(row.status);
 
-    if (status === "Profile Submitted") {
+    // Profile Submitted
+    if (["profile submitted", "profile submission", "feedback pending"].includes(normalizedStatus)) {
       funnelMap.set("Profile Submitted", (funnelMap.get("Profile Submitted") || 0) + 1);
     }
-    if (status === "Shortlisted") {
+
+    // Shortlisted
+    if (normalizedStatus === "shortlisted") {
       funnelMap.set("Shortlisted", (funnelMap.get("Shortlisted") || 0) + 1);
     }
-    if (isInterviewStatus(status)) {
+
+    // Interview Stage
+    if ([
+      "l1 scheduled",
+      "l2 scheduled",
+      "ai interview",
+      "assessment round",
+      "hr round",
+      "interview scheduled"
+    ].includes(normalizedStatus)) {
       funnelMap.set("Interview Stage", (funnelMap.get("Interview Stage") || 0) + 1);
     }
-    if (status === "Offered") {
-      funnelMap.set("Offered", (funnelMap.get("Offered") || 0) + 1);
-    }
-    if (
-      REJECTED_STATUSES.has(status) ||
-      Array.from(REJECTED_STATUSES).some(
-        (rejectedStatus) => normalizeText(rejectedStatus) === normalizedStatus
-      )
-    ) {
+
+    // Offered - counted separately from revenue
+
+    // Rejected
+    if ([
+      "drop out by client",
+      "backout",
+      "l1 reject",
+      "l1 rejected",
+      "l2 reject",
+      "l2 rejected",
+      "final round rejected",
+      "drop out by candidate"
+    ].includes(normalizedStatus)) {
       funnelMap.set("Rejected", (funnelMap.get("Rejected") || 0) + 1);
     }
   });
-
+  // Offered comes from revenue tracker offer_status = YES
+  funnelMap.set("Offered", revenue.filter((row) => String(row.offer_status || "").trim().toUpperCase() === "YES").length);
   const activityMap = new Map(
     getLastSevenDays().map((day) => [
       day.key,
@@ -236,13 +255,13 @@ const buildDashboardData = (candidateRows, revenueRows) => {
   const avgMargin =
     revenue.length > 0
       ? revenue.reduce((sum, row) => {
-          const storedPercent = Number(row.margin_percent);
-          if (Number.isFinite(storedPercent)) return sum + storedPercent;
+        const storedPercent = Number(row.margin_percent);
+        if (Number.isFinite(storedPercent)) return sum + storedPercent;
 
-          const billing = sanitizeMarginValue(row.billing_rate);
-          const margin = sanitizeMarginValue(row.margin_value);
-          return sum + (billing > 0 ? (margin / billing) * 100 : 0);
-        }, 0) / revenue.length
+        const billing = sanitizeMarginValue(row.billing_rate);
+        const margin = sanitizeMarginValue(row.margin_value);
+        return sum + (billing > 0 ? (margin / billing) * 100 : 0);
+      }, 0) / revenue.length
       : 0;
   const avgBillingRate =
     revenue.length > 0
@@ -264,7 +283,7 @@ const buildDashboardData = (candidateRows, revenueRows) => {
       {
         label: "Offers",
         value: offers.toLocaleString("en-IN"),
-        note: "Monthly Report status = Offered",
+        note: "Offered candidates from Revenue Report",
       },
       {
         label: "Active Clients",
@@ -317,7 +336,7 @@ export default function RecruiterDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [dashboard, setDashboard] = useState(emptyDashboard);
-
+  const [revenueData, setRevenueData] = useState([]);
   const recruiterName = useMemo(() => user?.name || "", [user?.name]);
 
   const loadDashboard = useCallback(async () => {
@@ -340,7 +359,7 @@ export default function RecruiterDashboard() {
       supabase
         .from("revenue_tracker")
         .select(
-          "id,candidate_name,client_name,margin_value,margin_percent,billing_rate,doj"
+          "id,candidate_name,client_name,margin_value,margin_percent,billing_rate,doj,offer_status"
         )
         .eq("recruiter_name", recruiterName),
     ]);
@@ -355,6 +374,7 @@ export default function RecruiterDashboard() {
     }
 
     setDashboard(buildDashboardData(candidateRes.data, revenueRes.data));
+    setRevenueData(revenueRes.data || []);
     setLoading(false);
   }, [recruiterName]);
 
@@ -402,13 +422,7 @@ export default function RecruiterDashboard() {
             and Reports.
           </p>
         </div>
-        <div style={styles.sourcePills}>
-          {["Profile Database", "Monthly Report", "Revenue Tracker", "Reports"].map((label) => (
-            <span key={label} style={styles.sourcePill}>
-              {label}
-            </span>
-          ))}
-        </div>
+        <ReminderBell revenue={revenueData} />
       </div>
 
       <section style={styles.section}>
@@ -561,7 +575,130 @@ function SectionHeader({ title, subtitle }) {
     </div>
   );
 }
+function ReminderBell({ revenue }) {
+  const [open, setOpen] = useState(false);
 
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const seen = new Set();
+  const reminders = (revenue || [])
+    .filter((row) => {
+      if (!row.doj) return false;
+      const key = `${row.candidate_name}-${row.client_name}-${row.doj}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      const doj = new Date(row.doj);
+      doj.setHours(0, 0, 0, 0);
+      const diffDays = Math.ceil((doj - today) / (1000 * 60 * 60 * 24));
+      return diffDays >= 0 && diffDays <= 7;
+    })
+    .map((row) => {
+      const doj = new Date(row.doj);
+      doj.setHours(0, 0, 0, 0);
+      const diffDays = Math.ceil((doj - today) / (1000 * 60 * 60 * 24));
+      return { ...row, diffDays };
+    })
+    .sort((a, b) => a.diffDays - b.diffDays);
+  return (
+    <div style={{ position: "relative" }}>
+      <button
+        onClick={() => setOpen((prev) => !prev)}
+        style={{
+          position: "relative",
+          background: "rgba(255,255,255,0.82)",
+          border: "1px solid #dbeafe",
+          borderRadius: "999px",
+          padding: "8px 16px",
+          cursor: "pointer",
+          fontSize: "22px",
+          display: "flex",
+          alignItems: "center",
+          gap: "6px",
+        }}
+      >
+        🔔
+        {reminders.length > 0 && (
+          <span style={{
+            position: "absolute",
+            top: "2px",
+            right: "2px",
+            background: "#dc2626",
+            color: "#fff",
+            borderRadius: "999px",
+            fontSize: "10px",
+            fontWeight: 700,
+            padding: "1px 5px",
+            minWidth: "16px",
+            textAlign: "center",
+          }}>
+            {reminders.length}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div style={{
+          position: "absolute",
+          right: 0,
+          top: "48px",
+          background: "#fff",
+          border: "1px solid #e2e8f0",
+          borderRadius: "14px",
+          boxShadow: "0 12px 32px rgba(15,23,42,0.12)",
+          width: "320px",
+          zIndex: 100,
+          overflow: "hidden",
+        }}>
+          <div style={{
+            padding: "12px 16px",
+            borderBottom: "1px solid #e2e8f0",
+            fontWeight: 700,
+            fontSize: "14px",
+            color: "#0f172a",
+          }}>
+            🗓️ Upcoming DOJ Reminders
+          </div>
+
+          {reminders.length === 0 ? (
+            <div style={{ padding: "16px", color: "#64748b", fontSize: "13px" }}>
+              No upcoming DOJs in next 7 days
+            </div>
+          ) : (
+            <div style={{ maxHeight: "320px", overflowY: "auto" }}>
+              {reminders.map((row) => (
+                <div key={row.id} style={{
+                  padding: "12px 16px",
+                  borderBottom: "1px solid #f1f5f9",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "4px",
+                }}>
+                  <div style={{ fontWeight: 700, fontSize: "13px", color: "#0f172a" }}>
+                    {row.candidate_name || "-"}
+                  </div>
+                  <div style={{ fontSize: "12px", color: "#475569" }}>
+                    🏢 {row.client_name || "-"} · {row.position || "-"}
+                  </div>
+                  <div style={{
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    color: row.diffDays === 0 ? "#dc2626" : row.diffDays <= 2 ? "#f59e0b" : "#16a34a",
+                  }}>
+                    {row.diffDays === 0
+                      ? "🔴 Joining Today!"
+                      : row.diffDays === 1
+                        ? "🟡 Joining Tomorrow"
+                        : `🟢 Joining in ${row.diffDays} days · ${new Date(row.doj).toLocaleDateString("en-IN")}`}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 function MetricCard({ label, value, note, accent }) {
   const accentStyle = accent === "blue" ? styles.accentBlue : accent === "amber" ? styles.accentAmber : styles.accentTeal;
 
@@ -632,7 +769,7 @@ const styles = {
     background: "rgba(255,255,255,0.82)",
     border: "1px solid #dbeafe",
     color: "#0f172a",
-    fontSize: "12px",
+    fontSize: "12px",7.
     fontWeight: 700,
   },
   section: {
