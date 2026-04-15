@@ -75,7 +75,14 @@ const headerMap = {
   "candidate name": "candidate_name",
   "candidate": "candidate_name",
 
-  "contact number": "phone_number",
+  "phone number": "phone_number",
+  "mobile": "phone_number",
+  "mobile number": "phone_number",
+  "contact no": "phone_number",
+  "contact no.": "phone_number",
+  "phone no": "phone_number",
+  "phone no.": "phone_number",
+  "ph no": "phone_number",
   "phone": "phone_number",
 
   "email": "email",
@@ -415,10 +422,13 @@ export default function RecruiterData({ scopeRole }) {
         ? validRows.map((row) => ({ ...row, recruiter: "manager" }))
         : validRows.map((row) => ({ ...row, recruiter: user?.name }));
 
-    const makeMatchKey = (email, phone) => {
+    const makeMatchKey = (email, phone, client, role) => {
       const e = String(email || "").trim().toLowerCase();
       const p = String(phone || "").trim();
-      return `${e}__${p}`;
+      const c = String(client || "").trim().toLowerCase();
+      const r = String(role || "").trim().toLowerCase();
+
+      return `${e}__${p}__${c}__${r}`;
     };
 
     const scopedRecruiter = isManagerView ? "manager" : user?.name;
@@ -426,13 +436,17 @@ export default function RecruiterData({ scopeRole }) {
     const decoratedRows = payloadRows.map((row) => {
       const email = String(row.email || "").trim().toLowerCase();
       const phone = String(row.phone_number || "").trim();
-      const isMatchable = email !== "" && phone !== "";
+      const client = String(row.client_name || "").trim().toLowerCase();
+      const role = String(row.requirement || "").trim().toLowerCase();
+
+      const isMatchable = email && phone && client && role;
+
       return {
         ...row,
-        _emailKey: email,
-        _phoneKey: phone,
-        _isMatchable: isMatchable,
-        _matchKey: isMatchable ? makeMatchKey(email, phone) : null,
+        _matchKey: isMatchable
+          ? makeMatchKey(email, phone, client, role)
+          : null,
+        _isMatchable: Boolean(isMatchable),
       };
     });
 
@@ -445,10 +459,8 @@ export default function RecruiterData({ scopeRole }) {
 
       const { data: existingRows, error: existingError } = await supabase
         .from("candidate_records")
-        .select("id,sl_no,email,phone_number,status,recruiter")
-        .eq("recruiter", scopedRecruiter)
-        .in("email", emailKeys)
-        .in("phone_number", phoneKeys);
+        .select("id, sl_no, email, phone_number, client_name, requirement, status, recruiter")
+        .eq("recruiter", scopedRecruiter);
 
       if (existingError) {
         alert(existingError.message);
@@ -457,10 +469,13 @@ export default function RecruiterData({ scopeRole }) {
       }
 
       (existingRows || []).forEach((row) => {
-        const key = makeMatchKey(row.email, row.phone_number);
-        if (!existingByMatchKey.has(key)) {
-          existingByMatchKey.set(key, row);
-        }
+        const key = makeMatchKey(
+          row.email,
+          row.phone_number,
+          row.client_name,
+          row.requirement
+        );
+        existingByMatchKey.set(key, row);
       });
     }
 
@@ -476,7 +491,7 @@ export default function RecruiterData({ scopeRole }) {
         requirement: row.requirement,
         location: row.location,
         candidate_name: row.candidate_name,
-        phone_number: row.phone_number,
+        phone_number: row.phone_number || row.Phone || row.mobile || " ",
         email: row.email,
         ctc: row.ctc,
         ectc: row.ectc,
@@ -488,7 +503,10 @@ export default function RecruiterData({ scopeRole }) {
       };
 
       if (row._isMatchable && existingByMatchKey.has(row._matchKey)) {
-        rowsToUpdate.push({ existing: existingByMatchKey.get(row._matchKey), payload: cleanRow });
+        rowsToUpdate.push({
+          existing: existingByMatchKey.get(row._matchKey),
+          payload: cleanRow,
+        });
       } else {
         rowsToInsert.push(cleanRow);
       }
@@ -498,7 +516,10 @@ export default function RecruiterData({ scopeRole }) {
     if (rowsToInsert.length) {
       const { data, error } = await supabase
         .from("candidate_records")
-        .insert(rowsToInsert)
+        .upsert(rowsToInsert, {
+          onConflict: "email,phone_number,client_name,requirement",
+          ignoreDuplicates: true,
+        })
         .select("id,sl_no,recruiter,candidate_name,client_name,requirement,status");
 
       if (error) {
@@ -687,9 +708,7 @@ export default function RecruiterData({ scopeRole }) {
         <input type="date" placeholder="Interview From Date" value={interviewFromDate} onChange={(e) => setInterviewFromDate(e.target.value)} style={styles.dateInput} />
         <input type="date" placeholder="Interview To Date" value={interviewToDate} onChange={(e) => setInterviewToDate(e.target.value)} style={styles.dateInput} />
 
-        <button onClick={fetchRecords} style={styles.primaryBtn}>
-          Apply
-        </button>
+
 
         <button onClick={handleClearFilters} style={styles.secondaryBtn}>
           Clear Filters
@@ -863,6 +882,7 @@ function AddCandidateModal({ user, onClose, onSaved }) {
         .eq("recruiter", recruiterScope)
         .eq("email", emailKey)
         .eq("phone_number", phoneKey)
+        .eq("client_name", payload.client_name)   // ✅ ADD THIS LINE
         .limit(1);
 
       if (existingError) {

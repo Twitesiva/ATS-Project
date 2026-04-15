@@ -769,7 +769,7 @@ const styles = {
     background: "rgba(255,255,255,0.82)",
     border: "1px solid #dbeafe",
     color: "#0f172a",
-    fontSize: "12px",7.
+    fontSize: "12px",
     fontWeight: 700,
   },
   section: {

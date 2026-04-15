@@ -22,7 +22,75 @@ export default function SearchCRMPage() {
     if (filters.roleFilter.trim()) list.push(filters.roleFilter.trim());
     return list;
   }, [filters.skills, filters.location, filters.phoneNumber, filters.roleFilter]);
+  const ROLE_SKILL_MAP = {
+    // ================= DATA DOMAIN =================
+    "data analyst": [
+      "sql", "excel", "power bi", "tableau", "data visualization", "pandas"
+    ],
 
+    "business analyst": [
+      "sql", "excel", "requirements gathering", "power bi", "communication"
+    ],
+
+    "data scientist": [
+      "python", "machine learning", "deep learning", "pandas", "numpy",
+      "scikit-learn", "tensorflow", "statistics"
+    ],
+
+    "machine learning engineer": [
+      "python", "ml", "deep learning", "tensorflow", "pytorch", "numpy"
+    ],
+
+    "ai engineer": [
+      "python", "nlp", "transformers", "deep learning", "llm", "pytorch"
+    ],
+
+    "data engineer": [
+      "sql", "spark", "hadoop", "etl", "python", "airflow", "big data"
+    ],
+
+    // ================= SOFTWARE DOMAIN =================
+    "java developer": [
+      "java", "spring", "spring boot", "hibernate", "microservices"
+    ],
+
+    "python developer": [
+      "python", "django", "flask", "fastapi"
+    ],
+
+    "frontend developer": [
+      "html", "css", "javascript", "react", "typescript"
+    ],
+
+    "backend developer": [
+      "node", "express", "spring", "django"
+    ],
+
+    "full stack developer": [
+      "react", "node", "express", "mongodb", "sql"
+    ],
+
+    // ================= CLOUD / DEVOPS =================
+    "devops engineer": [
+      "aws", "azure", "docker", "kubernetes", "jenkins", "ci/cd", "linux"
+    ],
+
+    "cloud engineer": [
+      "aws", "gcp", "azure", "cloud", "terraform", "docker"
+    ]
+  };
+  const handleClearFilters = () => {
+    const resetFilters = {
+      location: "",
+      skills: "",
+      skillsMode: "any",
+      experienceYears: "",
+      phoneNumber: "",
+      roleFilter: ""
+    };
+
+    setFilters(resetFilters);
+  };
   const loadResumes = async () => {
     setLoading(true);
     setError("");
@@ -31,15 +99,23 @@ export default function SearchCRMPage() {
     setPreviewResume(null);
     try {
       const params = {};
-      if (filters.location.trim()) params.location = filters.location.trim();
-      if (filters.skills.trim()) {
-        params.skills = filters.skills.trim();
-        params.skills_mode = filters.skillsMode;
-      }
+      let expandedSkills = [];
       if (filters.roleFilter.trim()) {
-        params.role_filter = filters.roleFilter.trim();
-        // Enable strict role matching when role filter is used
-        params.strict_role_skill_match = "true";
+        const role = filters.roleFilter.trim().toLowerCase();
+        expandedSkills = ROLE_SKILL_MAP[role] || [];
+      }
+      if (filters.location.trim()) params.location = filters.location.trim();
+      if (filters.skills.trim() || expandedSkills.length) {
+        const manualSkills = filters.skills.trim();
+
+        params.skills = [
+          manualSkills,
+          ...expandedSkills
+        ]
+          .filter(Boolean)
+          .join(",");
+
+        params.skills_mode = filters.skillsMode;
       }
       if (filters.experienceYears !== "" && filters.experienceYears != null) {
         const n = parseFloat(filters.experienceYears);
@@ -62,11 +138,23 @@ export default function SearchCRMPage() {
   useEffect(() => {
     loadResumes();
   }, []);
+  useEffect(() => {
+    const delay = setTimeout(() => {
+      loadResumes();
+    }, 400);
+
+    return () => clearTimeout(delay);
+  }, [filters]);
 
   const handleBulkUploadClick = () => {
     if (bulkInputRef.current) bulkInputRef.current.click();
   };
-
+  const handleRemoveFilter = (key) => {
+    setFilters((prev) => ({
+      ...prev,
+      [key]: ""
+    }));
+  };
   const handleBulkFileChange = async (e) => {
     const selected = Array.from(e.target.files || []);
     e.target.value = "";
@@ -92,21 +180,15 @@ export default function SearchCRMPage() {
         <img className="header-logo-img" src="/logos/Twite AI PNG 1.png" alt="Twite AI ATS" />
         <strong className="header-page-title">Resume Search</strong>
         <div className="search-header-actions">
-          <input
-            ref={bulkInputRef}
-            type="file"
-            className="sr-only-input"
-            multiple
-            accept=".pdf,.docx,.zip"
-            onChange={handleBulkFileChange}
-          />
+
           <button type="button" className="btn btn-primary" disabled={bulkUploading} onClick={handleBulkUploadClick}>
             {bulkUploading ? "Uploading..." : "Bulk Upload Resumes"}
           </button>
           <NavToMatch />
         </div>
       </header>
-      <SearchFilters filters={filters} onChange={setFilters} onApply={loadResumes} loading={loading} />
+      <SearchFilters filters={filters} onChange={setFilters} loading={loading} onClear={handleClearFilters}
+        onRemoveFilter={handleRemoveFilter} />
       {bulkResult?.summary && (
         <section className="bulk-upload-summary">
           <div className="bulk-upload-summary-header">

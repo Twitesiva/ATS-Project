@@ -1,4 +1,4 @@
-export default function SearchFilters({ filters, onChange, onApply, loading }) {
+export default function SearchFilters({ filters, onChange, loading, onClear }) {
   const update = (key, value) => onChange({ ...filters, [key]: value });
 
   // UI SORTING – NON-BREAKING CHANGE: Location options sorted alphabetically (A → Z) for better usability
@@ -152,9 +152,16 @@ export default function SearchFilters({ filters, onChange, onApply, loading }) {
             onChange={(e) => update("experienceYears", e.target.value)}
           />
         </div>
-        <button type="button" className="btn btn-primary" onClick={onApply} disabled={loading}>
-          {loading ? "Loading…" : "Apply"}
-        </button>
+        <div className="filters-actions">
+          <button
+            type="button"
+            className="btn btn-outline-secondary"
+            onClick={onClear}
+            disabled={loading}
+          >
+            Clear All Filters
+          </button>
+        </div>
       </div>
     </section>
   );

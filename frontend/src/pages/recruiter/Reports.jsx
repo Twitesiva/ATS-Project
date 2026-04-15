@@ -33,7 +33,7 @@ export default function Reports() {
   const { user } = useAuth();
 
   const [filters, setFilters] = useState(defaultFilters);
-  const [appliedFilters, setAppliedFilters] = useState(defaultFilters);
+
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -48,8 +48,8 @@ export default function Reports() {
   const [tableRows, setTableRows] = useState([]);
 
   const scopedFilters = useMemo(
-    () => ({ ...appliedFilters, recruiter: user?.name || "" }),
-    [appliedFilters, user?.name]
+    () => ({ ...filters, recruiter: user?.name || "" }),
+    [filters, user?.name]
   );
 
   const loadReports = useCallback(async () => {
@@ -106,13 +106,8 @@ export default function Reports() {
     setFilters((prev) => ({ ...prev, [key]: value }));
   };
 
-  const handleApply = () => {
-    setAppliedFilters(filters);
-  };
-
   const handleReset = () => {
     setFilters(defaultFilters);
-    setAppliedFilters(defaultFilters);
   };
 
   const hasError = useMemo(() => Boolean(error), [error]);
@@ -124,13 +119,11 @@ export default function Reports() {
       <FiltersBar
         filters={filters}
         onChange={handleFilterChange}
-        onApply={handleApply}
         onReset={handleReset}
         clients={options.clients}
         statuses={options.statuses}
         showRecruiterFilter={false}
       />
-
       {loading ? (
         <Loader text="Loading reports..." />
       ) : hasError ? (

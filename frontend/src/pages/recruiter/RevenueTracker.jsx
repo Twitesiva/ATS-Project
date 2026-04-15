@@ -228,6 +228,12 @@ export default function RRevenueTracker() {
       };
     });
   };
+  const handleClearFilters = () => {
+    setSearchText("");
+    setFromDate("");
+    setToDate("");
+  };
+
 
   const openAdd = () => {
     setEditRecord(null);
@@ -427,8 +433,8 @@ export default function RRevenueTracker() {
         <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
         <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
 
-        <button onClick={fetchRecords} style={styles.primaryBtn}>
-          Apply
+        <button onClick={handleClearFilters} style={styles.secondaryBtn}>
+          Clear Filters
         </button>
       </div>
 
