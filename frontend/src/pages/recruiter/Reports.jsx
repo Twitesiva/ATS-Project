@@ -3,17 +3,13 @@ import Loader from "../../components/common/Loader";
 import FiltersBar from "../../components/reports/FiltersBar";
 import KpiCards from "../../components/reports/KpiCards";
 import RevenueTrendChart from "../../components/reports/RevenueTrendChart";
-import RecruiterPerformanceChart from "../../components/reports/RecruiterPerformanceChart";
-import StatusPieChart from "../../components/reports/StatusPieChart";
 import HiringFunnelChart from "../../components/reports/HiringFunnelChart";
 import ClientPerformanceChart from "../../components/reports/ClientPerformanceChart";
 import ReportsTable from "../../components/reports/ReportsTable";
 import {
   getCandidateStats,
   getRevenueTrend,
-  getRecruiterPerformance,
   getClientPerformance,
-  getStatusDistribution,
   getHiringFunnel,
   getReportsTableData,
   getFilterOptions,
@@ -41,8 +37,6 @@ export default function Reports() {
   const [options, setOptions] = useState({ clients: [], recruiters: [], statuses: [] });
   const [stats, setStats] = useState({});
   const [revenueTrend, setRevenueTrend] = useState([]);
-  const [recruiterPerformance, setRecruiterPerformance] = useState([]);
-  const [statusDistribution, setStatusDistribution] = useState([]);
   const [hiringFunnel, setHiringFunnel] = useState([]);
   const [clientPerformance, setClientPerformance] = useState([]);
   const [tableRows, setTableRows] = useState([]);
@@ -62,34 +56,21 @@ export default function Reports() {
     setError("");
 
     try {
-      const [
-        statsRes,
-        trendRes,
-        recruiterRes,
-        statusRes,
-        funnelRes,
-        clientRes,
-        tableRes,
-        optionsRes,
-      ] = await Promise.all([
+      const [statsRes, trendRes, funnelRes, clientRes, tableRes, optionsRes] = await Promise.all([
         getCandidateStats(scopedFilters),
         getRevenueTrend(scopedFilters),
-        getRecruiterPerformance(scopedFilters),
-        getStatusDistribution(scopedFilters),
         getHiringFunnel(scopedFilters),
         getClientPerformance(scopedFilters),
         getReportsTableData(scopedFilters),
         getFilterOptions(scopedFilters),
       ]);
 
-      setStats(statsRes);
+      setStats(statsRes || {});
       setRevenueTrend(groupByMonth(trendRes, "doj", "margin_value"));
-      setRecruiterPerformance(recruiterRes);
-      setStatusDistribution(statusRes);
       setHiringFunnel(funnelRes);
       setClientPerformance(clientRes);
       setTableRows(tableRes);
-      setOptions(optionsRes);
+      setOptions(optionsRes || { clients: [], recruiters: [], statuses: [] });
     } catch (err) {
       console.error("Failed to load recruiter reports", err);
       setError(err?.message || "Failed to load reports");
@@ -120,8 +101,8 @@ export default function Reports() {
         filters={filters}
         onChange={handleFilterChange}
         onReset={handleReset}
-        clients={options.clients}
-        statuses={options.statuses}
+        clients={options?.clients || []}
+        statuses={options?.statuses || []}
         showRecruiterFilter={false}
       />
       {loading ? (
@@ -133,14 +114,9 @@ export default function Reports() {
           <KpiCards stats={stats} />
 
           <div style={styles.grid2}>
-            <RevenueTrendChart data={revenueTrend} />
-            <RecruiterPerformanceChart data={recruiterPerformance} />
-          </div>
-
-          <div style={styles.grid2}>
-            <HiringFunnelChart data={hiringFunnel} />
-            <StatusPieChart data={statusDistribution} />
-          </div>
+  <RevenueTrendChart data={revenueTrend} />
+  <HiringFunnelChart data={hiringFunnel} />
+</div>
 
           <ClientPerformanceChart data={clientPerformance} />
 

@@ -26,6 +26,8 @@ const defaultFilters = {
   client: "",
   recruiter: "",
   status: "",
+  filterType: "client",
+  filterValue: "",
 };
 
 export default function Reports() {
@@ -44,11 +46,26 @@ export default function Reports() {
   const [clientPerformance, setClientPerformance] = useState([]);
   const [tableRows, setTableRows] = useState([]);
 
+  // Helper: Convert combined filter to client/recruiter fields
+  const getApiFilters = (filterObj) => {
+    const apiFilters = { ...filterObj };
+    if (filterObj.filterType === "recruiter") {
+      apiFilters.recruiter = filterObj.filterValue || "";
+      apiFilters.client = "";
+    } else {
+      apiFilters.client = filterObj.filterValue || "";
+      apiFilters.recruiter = "";
+    }
+    return apiFilters;
+  };
+
   const loadReports = useCallback(async () => {
     setLoading(true);
     setError("");
 
     try {
+      const apiFilters = getApiFilters(appliedFilters);
+
       const [
         statsRes,
         trendRes,
@@ -59,14 +76,14 @@ export default function Reports() {
         tableRes,
         optionsRes,
       ] = await Promise.all([
-        getCandidateStats(appliedFilters),
-        getRevenueTrend(appliedFilters),
-        getRecruiterPerformance({ ...appliedFilters }),
-        getStatusDistribution(appliedFilters),
-        getHiringFunnel(appliedFilters),
-        getClientPerformance(appliedFilters),
-        getReportsTableData(appliedFilters),
-        getFilterOptions(appliedFilters),
+        getCandidateStats(apiFilters),
+        getRevenueTrend(apiFilters),
+        getRecruiterPerformance({ ...apiFilters }),
+        getStatusDistribution(apiFilters),
+        getHiringFunnel(apiFilters),
+        getClientPerformance(apiFilters),
+        getReportsTableData(apiFilters),
+        getFilterOptions(apiFilters),
       ]);
 
       setStats(statsRes);
@@ -113,10 +130,9 @@ export default function Reports() {
         onChange={handleFilterChange}
         onApply={handleApply}
         onReset={handleReset}
-        clients={options.clients}
-        recruiters={options.recruiters}
-        statuses={options.statuses}
-        showRecruiterFilter
+        clients={options?.clients || []}
+        recruiters={options?.recruiters || []}
+        statuses={options?.statuses || []}
       />
 
       {loading ? (
@@ -139,7 +155,11 @@ export default function Reports() {
 
           <ClientPerformanceChart data={clientPerformance} />
 
-          <ReportsTable data={tableRows} />
+          <ReportsTable
+            data={tableRows}
+            clients={options?.clients || []}
+            recruiters={options?.recruiters || []}
+          />
         </>
       )}
     </div>

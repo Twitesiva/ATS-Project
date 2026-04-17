@@ -51,7 +51,9 @@ def _get_text_hash(text, length=10000):
 
 def _normalize_skill(s):
     s = (s or "").strip().lower()
-    return s if len(s) > 1 else ""
+    # Keep skills of length >= 1, including single-letter languages like R, C, Go
+    # But filter out empty strings
+    return s if len(s) >= 1 else ""
 
 
 def _merge_similar_skills(skills, threshold=0.85):

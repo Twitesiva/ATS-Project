@@ -1101,6 +1101,61 @@ body {
   border: 1px solid #e2e8f0;
 }
 
+.role-expanded-skills {
+  margin-bottom: 1.5rem;
+  padding: 1rem 1.25rem;
+  background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+  border-radius: 10px;
+  border: 1px solid #86efac;
+  box-shadow: 0 2px 4px rgba(34, 197, 94, 0.1);
+}
+
+.expanded-skills-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 0.75rem;
+  font-size: 0.9rem;
+  color: #166534;
+  font-weight: 600;
+}
+
+.expanded-skills-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.skill-badge {
+  display: inline-block;
+  background: #bbf7d0;
+  color: #166534;
+  padding: 0.4rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  border: 1px solid #86efac;
+  animation: slideInUp 0.3s ease-out;
+}
+
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.expanded-skills-info {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #166534;
+  opacity: 0.8;
+}
+
 .filters-row {
   display: flex;
   flex-wrap: wrap;

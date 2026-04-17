@@ -79,12 +79,14 @@ from backend.api.upload import bp as upload_bp
 from backend.api.match import bp as match_bp
 from backend.api.store import bp as store_bp
 from backend.api.resumes import bp as resumes_bp
+from backend.api.bde import bp as bde_bp
 
 # Canonical API routes used by frontend and local direct tests
 app.register_blueprint(upload_bp, url_prefix="/api")
 app.register_blueprint(match_bp, url_prefix="/api")
 app.register_blueprint(store_bp, url_prefix="/api")
 app.register_blueprint(resumes_bp, url_prefix="/api")
+app.register_blueprint(bde_bp, url_prefix="/api")
 
 # Compatibility registration for deployments where Nginx rewrites /api/* -> /*
 # This keeps both forms working:
@@ -94,6 +96,7 @@ app.register_blueprint(upload_bp, url_prefix="", name="upload_plain")
 app.register_blueprint(match_bp, url_prefix="", name="match_plain")
 app.register_blueprint(store_bp, url_prefix="", name="store_plain")
 app.register_blueprint(resumes_bp, url_prefix="", name="resumes_plain")
+app.register_blueprint(bde_bp, url_prefix="", name="bde_plain")
 
 
 @app.route("/health")

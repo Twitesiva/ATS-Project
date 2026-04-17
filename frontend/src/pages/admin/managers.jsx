@@ -4,7 +4,7 @@ import Loader from "../../components/common/Loader";
 import { addRecruiter, normalizeAllUserRoles } from "../../services/authService";
 import { canonicalizeRole, getRoleLabel, getRoleQueryValues } from "../../utils/roles";
 
-const MANAGED_ROLES = ["manager", "recruiter", "tl"];
+const MANAGED_ROLES = ["manager", "recruiter", "tl","bde"];
 
 const emptyForm = {
   name: "",
@@ -105,6 +105,7 @@ export default function AdminManagers() {
     manager: [],
     recruiter: [],
     tl: [],
+    bde: [],
   });
   const [form, setForm] = useState(emptyForm);
   const [passwordTarget, setPasswordTarget] = useState(null);
@@ -140,6 +141,7 @@ export default function AdminManagers() {
       manager: results[0].data || [],
       recruiter: results[1].data || [],
       tl: results[2].data || [],
+      bde: results[3].data || [],
     });
     setLoading(false);
   }, []);
@@ -399,6 +401,15 @@ export default function AdminManagers() {
         onDeleteUser={handleDeleteUser}
         actionBusyId={actionBusyId}
       />
+     <UsersTable
+        title="BDE"
+        role="bde"
+        users={usersByRole.bde}
+        onEditUser={handleOpenEdit}
+        onChangePassword={handleOpenPassword}
+        onDeleteUser={handleDeleteUser}
+        actionBusyId={actionBusyId}
+      />
 
       {passwordTarget && (
         <div style={styles.overlay}>
@@ -455,6 +466,7 @@ export default function AdminManagers() {
                 onChange={(e) => setEditForm((prev) => ({ ...prev, role: e.target.value }))}
               >
                 {MANAGED_ROLES.map((role) => (
+        
                   <option key={role} value={role}>
                     {getRoleLabel(role)}
                   </option>

@@ -6,7 +6,6 @@ export default function FiltersBar({
   clients = [],
   recruiters = [],
   statuses = [],
-  showRecruiterFilter = false,
 }) {
   return (
     <div style={styles.wrap}>
@@ -16,6 +15,7 @@ export default function FiltersBar({
           value={filters.fromDate || ""}
           onChange={(e) => onChange("fromDate", e.target.value)}
           style={styles.input}
+          placeholder="From Date"
         />
 
         <input
@@ -23,35 +23,41 @@ export default function FiltersBar({
           value={filters.toDate || ""}
           onChange={(e) => onChange("toDate", e.target.value)}
           style={styles.input}
+          placeholder="To Date"
         />
 
-        <select
-          value={filters.client || ""}
-          onChange={(e) => onChange("client", e.target.value)}
-          style={styles.input}
-        >
-          <option value="">All Clients</option>
-          {clients.map((client) => (
-            <option key={client} value={client}>
-              {client}
-            </option>
-          ))}
-        </select>
-
-        {showRecruiterFilter && (
+        {/* Combined Client/Recruiter Filter */}
+        <div style={styles.combinedFilterContainer}>
           <select
-            value={filters.recruiter || ""}
-            onChange={(e) => onChange("recruiter", e.target.value)}
-            style={styles.input}
+            value={filters.filterType || "client"}
+            onChange={(e) => {
+              onChange("filterType", e.target.value);
+              // Clear the search value when switching types
+              onChange("filterValue", "");
+            }}
+            style={styles.filterTypeSelect}
           >
-            <option value="">All Recruiters</option>
-            {recruiters.map((recruiter) => (
-              <option key={recruiter} value={recruiter}>
-                {recruiter}
-              </option>
-            ))}
+            <option value="client">Client</option>
+            <option value="recruiter">Recruiter</option>
           </select>
-        )}
+
+          <select
+            value={filters.filterValue || ""}
+            onChange={(e) => onChange("filterValue", e.target.value)}
+            style={styles.filterValueSelect}
+          >
+            <option value="">
+              {filters.filterType === "recruiter" ? "All Recruiters" : "All Clients"}
+            </option>
+            {(filters.filterType === "recruiter" ? recruiters : clients).map(
+              (item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              )
+            )}
+          </select>
+        </div>
 
         <select
           value={filters.status || ""}
@@ -102,6 +108,31 @@ const styles = {
     fontSize: "14px",
     boxSizing: "border-box",
     background: "#fff",
+  },
+  combinedFilterContainer: {
+    display: "grid",
+    gridTemplateColumns: "120px 1fr",
+    gap: "8px",
+    width: "100%",
+  },
+  filterTypeSelect: {
+    border: "1px solid #cbd5e1",
+    borderRadius: "8px",
+    padding: "9px 10px",
+    fontSize: "14px",
+    boxSizing: "border-box",
+    background: "#fff",
+    cursor: "pointer",
+    fontWeight: 500,
+  },
+  filterValueSelect: {
+    border: "1px solid #cbd5e1",
+    borderRadius: "8px",
+    padding: "9px 10px",
+    fontSize: "14px",
+    boxSizing: "border-box",
+    background: "#fff",
+    cursor: "pointer",
   },
   actions: {
     display: "flex",

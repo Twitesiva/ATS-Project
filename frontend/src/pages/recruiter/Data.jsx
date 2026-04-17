@@ -710,7 +710,7 @@ export default function RecruiterData({ scopeRole }) {
 
 
 
-        <button onClick={handleClearFilters} style={styles.secondaryBtn}>
+        <button onClick={handleClearFilters} style={styles.secondaryBtnSolid}>
           Clear Filters
         </button>
       </div>
@@ -1488,7 +1488,7 @@ const styles = {
     cursor: "pointer",
     fontWeight: 600,
   },
-  secondaryBtn: {
+  secondaryBtnSolid: {
     padding: "10px 18px",
     background: "#64748b",
     color: "#fff",

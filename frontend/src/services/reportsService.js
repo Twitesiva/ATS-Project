@@ -215,7 +215,71 @@ export const getHiringFunnel = async (filters = {}) => {
 };
 
 export const getReportsTableData = async (filters = {}) => {
-  return getClientPerformance(filters);
+  const [candidateRes, revenueRes] = await Promise.all([
+    applyCandidateFilters(
+      supabase.from("candidate_records").select("client_name,id,status,recruiter"),
+      filters
+    ),
+    applyRevenueFilters(
+      supabase.from("revenue_tracker").select("client_name,margin_value,recruiter_name,doj"),
+      filters
+    ),
+  ]);
+
+  if (candidateRes.error) throw candidateRes.error;
+  if (revenueRes.error) throw revenueRes.error;
+
+  // Single normalization function used everywhere
+  const normalizeKey = (str) =>
+    String(str || "").toLowerCase().replace(/[\s\-\[\]()_.,]/g, "");
+
+  const map = new Map();
+
+  (candidateRes.data || []).forEach((row) => {
+    const clientRaw = String(row.client_name || "Unknown").trim() || "Unknown";
+    const recruiter = String(row.recruiter || "Unknown").trim() || "Unknown";
+    const key = `${normalizeKey(clientRaw)}||${normalizeKey(recruiter)}`;
+
+    const current = map.get(key) || {
+      client: clientRaw,
+      recruiter,
+      candidates: 0,
+      interviews: 0,
+      shortlisted: 0,
+      closures: 0,
+      revenue: 0,
+    };
+
+    current.candidates += 1;
+    if (row.status === "Interview Scheduled") current.interviews += 1;
+    if (row.status === "Shortlisted") current.shortlisted += 1;
+    if (row.status === "Joined") current.closures += 1;
+
+    map.set(key, current);
+  });
+
+  (revenueRes.data || []).forEach((row) => {
+    const clientRaw = String(row.client_name || "Unknown").trim() || "Unknown";
+    const recruiter = String(row.recruiter_name || "Unknown").trim() || "Unknown";
+    const key = `${normalizeKey(clientRaw)}||${normalizeKey(recruiter)}`;
+
+    const current = map.get(key) || {
+      client: clientRaw,
+      recruiter,
+      candidates: 0,
+      interviews: 0,
+      shortlisted: 0,
+      closures: 0,
+      revenue: 0,
+    };
+
+    current.revenue += sanitizeMarginValue(row.margin_value);
+    map.set(key, current);
+  });
+
+  return Array.from(map.values()).sort((a, b) =>
+    a.client.localeCompare(b.client) || a.recruiter.localeCompare(b.recruiter)
+  );
 };
 
 export const getFilterOptions = async (filters = {}) => {

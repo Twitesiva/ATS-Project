@@ -1,9 +1,10 @@
 """GET /fetch-resumes: optional filters. GET /resume-file/<path>: serve original file for preview."""
 import os
 import mimetypes
-from flask import Blueprint, request, jsonify, send_from_directory
+from flask import Blueprint, request, jsonify, send_from_directory, Response
 from backend.services.storage import fetch_resumes
-from backend.config import UPLOAD_FOLDER
+from backend.config import UPLOAD_FOLDER, SUPABASE_RESUME_BUCKET
+from backend.services.supabase_client import get_supabase_client
 import numpy as np
 
 bp = Blueprint("resumes", __name__)
@@ -38,16 +39,37 @@ def serve_resume_file(filename):
         return jsonify({"error": "Invalid file path"}), 400
     safe_name = os.path.basename(filename)
     path = os.path.join(UPLOAD_FOLDER, safe_name)
-    if not os.path.isfile(path):
-        return jsonify({"error": "File not found"}), 404
     guessed_mime, _ = mimetypes.guess_type(safe_name)
-    return send_from_directory(
-        UPLOAD_FOLDER,
-        safe_name,
-        mimetype=guessed_mime or "application/octet-stream",
-        as_attachment=False,
-        download_name=safe_name,
-    )
+
+    # Primary: local uploads folder (fast path).
+    if os.path.isfile(path):
+        return send_from_directory(
+            UPLOAD_FOLDER,
+            safe_name,
+            mimetype=guessed_mime or "application/octet-stream",
+            as_attachment=False,
+            download_name=safe_name,
+        )
+
+    # Fallback: Supabase Storage (when uploads folder is missing/ephemeral).
+    bucket = (SUPABASE_RESUME_BUCKET or "").strip()
+    if bucket:
+        try:
+            supabase = get_supabase_client()
+            downloaded = supabase.storage.from_(bucket).download(safe_name)
+
+            if isinstance(downloaded, (bytes, bytearray)):
+                data = bytes(downloaded)
+            elif hasattr(downloaded, "read"):
+                data = downloaded.read()
+            else:
+                data = bytes(downloaded)
+
+            return Response(data, mimetype=guessed_mime or "application/octet-stream")
+        except Exception:
+            pass
+
+    return jsonify({"error": "File not found"}), 404
 
 
 @bp.route("/fetch-resumes", methods=["GET"])
@@ -76,6 +98,7 @@ def fetch():
     
     location = (request.args.get("location") or "").strip()
     skills_str = (request.args.get("skills") or "").strip()
+    role_skills_str = (request.args.get("role_skills") or "").strip()  # NEW: Role-specific skills
     skills_mode = (request.args.get("skills_mode") or "any").strip().lower()
     if skills_mode not in ("any", "all"):
         skills_mode = "any"
@@ -89,12 +112,13 @@ def fetch():
     semantic_threshold = request.args.get("semantic_threshold", type=float, default=0.75)
     use_strict_role_skill_match = request.args.get("strict_role_skill_match", "false").lower() == "true"
     
-    print(f"[API DEBUG] Parsed filters: location={location}, skills={skills_str}, role={role_filter}")
+    print(f"[API DEBUG] Parsed filters: location={location}, skills={skills_str}, role_skills={role_skills_str}, role={role_filter}")
     
     try:
         rows = fetch_resumes(
             location=location or None,
             skills=skills_str or None,
+            role_skills=role_skills_str or None,  # NEW: Pass role skills separately
             skills_mode=skills_mode,
             experience_years=experience,
             phone_number=phone_number or None,

@@ -6,6 +6,7 @@ import os
 import uuid
 import re
 import zipfile
+import mimetypes
 from concurrent.futures import ThreadPoolExecutor
 
 # EXTENSION - SAFE TO REMOVE: Import JD extraction utility
@@ -157,7 +158,46 @@ def _save_uploaded_resume_file(file_obj):
     unique_name = f"{uuid.uuid4().hex}{ext}"
     target_path = os.path.join(UPLOAD_FOLDER, unique_name)
     file_obj.save(target_path)
-    return {"path": unique_name, "original_name": os.path.basename(file_obj.filename or unique_name)}
+
+    resume_file_url = _maybe_upload_to_supabase(target_path, unique_name)
+    entry = {"path": unique_name, "original_name": os.path.basename(file_obj.filename or unique_name)}
+    if resume_file_url:
+        entry["resume_file_url"] = resume_file_url
+    return entry
+
+
+def _maybe_upload_to_supabase(local_path, object_name):
+    """
+    Best-effort: also persist resumes into Supabase Storage so previews work even if the backend
+    uploads folder is missing/ephemeral. Returns a public URL when available.
+    """
+    try:
+        from backend.services.supabase_client import get_supabase_client
+        from backend.config import SUPABASE_RESUME_BUCKET
+
+        bucket = (SUPABASE_RESUME_BUCKET or "").strip()
+        if not bucket:
+            return None
+
+        mime, _ = mimetypes.guess_type(object_name)
+        with open(local_path, "rb") as f:
+            data = f.read()
+
+        supabase = get_supabase_client()
+        supabase.storage.from_(bucket).upload(
+            object_name,
+            data,
+            {
+                "content-type": mime or "application/octet-stream",
+                # Allow re-uploading the same name during retries.
+                "upsert": "true",
+            },
+        )
+        return supabase.storage.from_(bucket).get_public_url(object_name)
+    except Exception as e:
+        # Non-fatal: local file preview can still work.
+        print(f"[UPLOAD WARN] Supabase storage upload failed for {object_name}: {e}")
+        return None
 
 
 def _extract_resumes_from_zip(zip_file):
@@ -188,7 +228,11 @@ def _extract_resumes_from_zip(zip_file):
                     target_path = os.path.join(UPLOAD_FOLDER, unique_name)
                     with open(target_path, "wb") as out:
                         out.write(content)
-                    extracted.append({"path": unique_name, "original_name": member_name})
+                    resume_file_url = _maybe_upload_to_supabase(target_path, unique_name)
+                    entry = {"path": unique_name, "original_name": member_name}
+                    if resume_file_url:
+                        entry["resume_file_url"] = resume_file_url
+                    extracted.append(entry)
                 except Exception:
                     failures.append({"file": member_name, "reason": "Corrupted file inside ZIP"})
     except zipfile.BadZipFile:
@@ -264,6 +308,11 @@ def bulk_upload_resumes():
         from backend.utils.model_loader import get_encoder
 
         # Stage 2: parse text.
+        resume_url_by_path = {
+            e.get("path"): e.get("resume_file_url")
+            for e in (saved_resume_entries or [])
+            if e.get("path") and e.get("resume_file_url")
+        }
         parsed_resumes = parse_resumes_from_paths(saved_resume_entries, max_workers=8)
 
         valid_parsed = []
@@ -344,6 +393,7 @@ def bulk_upload_resumes():
                 "name": entities["name"],
                 "original_name": parsed["original_name"],
                 "path": parsed["path"],
+                "resume_file_url": resume_url_by_path.get(parsed["path"]) if resume_url_by_path else None,
                 "raw_text": parsed["text"],
                 "text_preview": parsed["text"],
                 "location_display": location_display,

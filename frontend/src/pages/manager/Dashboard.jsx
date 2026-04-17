@@ -1,6 +1,28 @@
 import { useCallback, useEffect, useState } from "react";
 import Loader from "../../components/common/Loader";
 import { supabase } from "../../services/supabaseClient";
+import {
+  BarChart,
+  Bar,
+  PieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from "recharts";
+
+const INTERVIEW_STATUSES = new Set([
+  "L1 Scheduled",
+  "L2 Scheduled",
+  "AI Interview",
+  "Assessment Round",
+  "HR Round",
+  "Interview Scheduled",
+]);
 
 const getMonthBounds = () => {
   const now = new Date();
@@ -51,8 +73,6 @@ const getDayDiff = (startValue, endValue) => {
 export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [analyticsLoading, setAnalyticsLoading] = useState(true);
-  const [clientIntelLoading, setClientIntelLoading] = useState(true);
-  const [riskLoading, setRiskLoading] = useState(true);
 
   const [kpis, setKpis] = useState({
     totalActiveCandidates: 0,
@@ -63,17 +83,10 @@ export default function Dashboard() {
     overallMarginPercent: 0,
   });
   const [recruiterAnalytics, setRecruiterAnalytics] = useState([]);
-  const [clientIntelligence, setClientIntelligence] = useState({
-    topHiringClient: { client: "-", metric: "0 Closures" },
-    fastestClosingClient: { client: "-", metric: "Avg 0 days" },
-    slowestDecisionClient: { client: "-", metric: "Avg 0 days" },
-    highestOfferRejectionRate: { client: "-", metric: "0% rejection" },
-  });
-  const [riskAlerts, setRiskAlerts] = useState({
-    stuckCandidates: 0,
-    inactiveRecruiters: 0,
-    duplicateCandidates: 0,
-  });
+  const [hoveredCard, setHoveredCard] = useState(null);
+  const [selectedRecruiter, setSelectedRecruiter] = useState("all");
+  const [activeIndex, setActiveIndex] = useState(null);
+  const [selectedMetric, setSelectedMetric] = useState(null);
 
   const loadDashboardKPIs = useCallback(async () => {
     setLoading(true);
@@ -82,8 +95,8 @@ export default function Dashboard() {
     const [
       activeCandidatesRes,
       openPositionsRes,
-      interviewsRes,
-      closuresRes,
+      interviewHistoryRes,
+      closureHistoryRes,
       revenueRes,
       overallMarginRes,
     ] = await Promise.all([
@@ -91,19 +104,18 @@ export default function Dashboard() {
         .from("candidate_records")
         .select("*", { count: "exact" })
         .neq("status", "Joined")
+        .neq("status", "Closure")
         ,
-      supabase.from("client_records").select("number_of_openings"),
+      supabase.from("client_records").select("number_of_openings,closure"),
       supabase
-        .from("candidate_records")
-        .select("*", { count: "exact" })
-        .eq("status", "Interview Scheduled")
+        .from("status_history")
+        .select("new_status", { count: "exact" })
+        .in("new_status", Array.from(INTERVIEW_STATUSES))
         ,
       supabase
-        .from("candidate_records")
+        .from("status_history")
         .select("*", { count: "exact" })
-        .eq("status", "Joined")
-        .gte("record_date", start)
-        .lte("record_date", end)
+        .eq("new_status", "Closure")
         ,
       supabase
         .from("revenue_tracker")
@@ -111,14 +123,14 @@ export default function Dashboard() {
         .gte("doj", start)
         .lte("doj", end)
         ,
-      supabase.from("revenue_tracker").select("margin_value,offered_ctc"),
+      supabase.from("revenue_tracker").select("margin_value,billing_rate"),
     ]);
 
     const errors = [
       activeCandidatesRes.error,
       openPositionsRes.error,
-      interviewsRes.error,
-      closuresRes.error,
+      interviewHistoryRes.error,
+      closureHistoryRes.error,
       revenueRes.error,
       overallMarginRes.error,
     ].filter(Boolean);
@@ -130,7 +142,7 @@ export default function Dashboard() {
     }
 
     const totalOpenPositions = (openPositionsRes.data || []).reduce(
-      (sum, row) => sum + toNumber(row.number_of_openings),
+      (sum, row) => sum + toNumber(row.number_of_openings) - toNumber(row.closure),
       0
     );
 
@@ -142,22 +154,22 @@ export default function Dashboard() {
     const overallSums = (overallMarginRes.data || []).reduce(
       (acc, row) => {
         acc.margin += parseRevenueValue(row.margin_value);
-        acc.offeredCTC += parseRevenueValue(row.offered_ctc);
+        acc.billingRate += parseRevenueValue(row.billing_rate);
         return acc;
       },
-      { margin: 0, offeredCTC: 0 }
+      { margin: 0, billingRate: 0 }
     );
 
     const overallMarginPercent =
-      overallSums.offeredCTC > 0
-        ? (overallSums.margin / overallSums.offeredCTC) * 100
+      overallSums.billingRate > 0
+        ? (overallSums.margin / overallSums.billingRate) * 100
         : 0;
 
     setKpis({
       totalActiveCandidates: activeCandidatesRes.count || 0,
       totalOpenPositions,
-      totalInterviewsScheduled: interviewsRes.count || 0,
-      totalClosuresThisMonth: closuresRes.count || 0,
+      totalInterviewsScheduled: interviewHistoryRes.count || 0,
+      totalClosuresThisMonth: closureHistoryRes.count || 0,
       revenueThisMonth,
       overallMarginPercent,
     });
@@ -168,22 +180,40 @@ export default function Dashboard() {
   const loadRecruiterAnalytics = useCallback(async () => {
     setAnalyticsLoading(true);
 
-    const [candidateRes, revenueRes] = await Promise.all([
-      supabase.from("candidate_records").select("recruiter,status,created_at"),
-      supabase.from("revenue_tracker").select("recruiter_name,margin_value,doj"),
+    const [profilesRes, interviewsRes, closuresRes, revenueRes] = await Promise.all([
+      supabase
+        .from("status_history")
+        .select("recruiter_name,new_status")
+        .eq("new_status", "Profile Submitted"),
+      supabase
+        .from("status_history")
+        .select("recruiter_name,new_status")
+        .in("new_status", Array.from(INTERVIEW_STATUSES)),
+      supabase
+        .from("status_history")
+        .select("recruiter_name,new_status")
+        .eq("new_status", "Closure"),
+      supabase.from("revenue_tracker").select("recruiter_name,margin_value"),
     ]);
 
-    const queryError = candidateRes.error || revenueRes.error;
-    if (queryError) {
-      console.error("Failed to load recruiter analytics", queryError);
+    const errors = [
+      profilesRes.error,
+      interviewsRes.error,
+      closuresRes.error,
+      revenueRes.error,
+    ].filter(Boolean);
+
+    if (errors.length) {
+      console.error("Failed to load recruiter analytics", errors);
       setAnalyticsLoading(false);
       return;
     }
 
     const recruiterMap = {};
 
-    (candidateRes.data || []).forEach((row) => {
-      const recruiter = normalizeRecruiter(row.recruiter);
+    // Count profile submissions per recruiter
+    (profilesRes.data || []).forEach((row) => {
+      const recruiter = normalizeRecruiter(row.recruiter_name);
       if (!recruiterMap[recruiter]) {
         recruiterMap[recruiter] = {
           recruiter,
@@ -193,18 +223,40 @@ export default function Dashboard() {
           revenue: 0,
         };
       }
-
       recruiterMap[recruiter].candidatesAdded += 1;
-
-      if (row.status === "Interview Scheduled") {
-        recruiterMap[recruiter].interviews += 1;
-      }
-
-      if (row.status === "Joined") {
-        recruiterMap[recruiter].closures += 1;
-      }
     });
 
+    // Count interviews per recruiter
+    (interviewsRes.data || []).forEach((row) => {
+      const recruiter = normalizeRecruiter(row.recruiter_name);
+      if (!recruiterMap[recruiter]) {
+        recruiterMap[recruiter] = {
+          recruiter,
+          candidatesAdded: 0,
+          interviews: 0,
+          closures: 0,
+          revenue: 0,
+        };
+      }
+      recruiterMap[recruiter].interviews += 1;
+    });
+
+    // Count closures per recruiter
+    (closuresRes.data || []).forEach((row) => {
+      const recruiter = normalizeRecruiter(row.recruiter_name);
+      if (!recruiterMap[recruiter]) {
+        recruiterMap[recruiter] = {
+          recruiter,
+          candidatesAdded: 0,
+          interviews: 0,
+          closures: 0,
+          revenue: 0,
+        };
+      }
+      recruiterMap[recruiter].closures += 1;
+    });
+
+    // Sum revenue per recruiter
     (revenueRes.data || []).forEach((row) => {
       const recruiter = normalizeRecruiter(row.recruiter_name);
       if (!recruiterMap[recruiter]) {
@@ -216,8 +268,7 @@ export default function Dashboard() {
           revenue: 0,
         };
       }
-
-      recruiterMap[recruiter].revenue += toNumber(row.margin_value);
+      recruiterMap[recruiter].revenue += parseRevenueValue(row.margin_value);
     });
 
     const mergedRows = Object.values(recruiterMap).sort((a, b) =>
@@ -226,193 +277,6 @@ export default function Dashboard() {
 
     setRecruiterAnalytics(mergedRows);
     setAnalyticsLoading(false);
-  }, []);
-
-  const loadClientIntelligence = useCallback(async () => {
-    setClientIntelLoading(true);
-
-    const { data, error } = await supabase
-      .from("candidate_records")
-      .select("client_name,status,created_at,interview_date")
-      ;
-
-    if (error) {
-      console.error("Failed to load client intelligence", error);
-      setClientIntelLoading(false);
-      return;
-    }
-
-    const clientMap = {};
-
-    (data || []).forEach((row) => {
-      const client = normalizeClient(row.client_name);
-      if (!clientMap[client]) {
-        clientMap[client] = {
-          client,
-          totalCandidates: 0,
-          joinedCount: 0,
-          rejectedCount: 0,
-          totalDays: 0,
-          daysCount: 0,
-        };
-      }
-
-      clientMap[client].totalCandidates += 1;
-
-      if (row.status === "Joined") {
-        clientMap[client].joinedCount += 1;
-      }
-
-      if (/reject/i.test(String(row.status || ""))) {
-        clientMap[client].rejectedCount += 1;
-      }
-
-      const days = getDayDiff(row.created_at, row.interview_date);
-      if (days != null) {
-        clientMap[client].totalDays += days;
-        clientMap[client].daysCount += 1;
-      }
-    });
-
-    const clients = Object.values(clientMap);
-
-    const topHiring = clients.reduce(
-      (best, current) =>
-        current.joinedCount > best.joinedCount ? current : best,
-      { client: "-", joinedCount: 0 }
-    );
-
-    const withAvgDays = clients
-      .filter((c) => c.daysCount > 0)
-      .map((c) => ({ ...c, avgDays: c.totalDays / c.daysCount }));
-
-    const fastest = withAvgDays.reduce(
-      (best, current) =>
-        current.avgDays < best.avgDays ? current : best,
-      { client: "-", avgDays: Number.POSITIVE_INFINITY }
-    );
-
-    const slowest = withAvgDays.reduce(
-      (best, current) =>
-        current.avgDays > best.avgDays ? current : best,
-      { client: "-", avgDays: Number.NEGATIVE_INFINITY }
-    );
-
-    const withRejectionRate = clients
-      .filter((c) => c.totalCandidates > 0)
-      .map((c) => ({
-        ...c,
-        rejectionRate: c.rejectedCount / c.totalCandidates,
-      }));
-
-    const highestRejection = withRejectionRate.reduce(
-      (best, current) =>
-        current.rejectionRate > best.rejectionRate ? current : best,
-      { client: "-", rejectionRate: 0 }
-    );
-
-    setClientIntelligence({
-      topHiringClient: {
-        client: topHiring.client,
-        metric: `${topHiring.joinedCount || 0} Closures`,
-      },
-      fastestClosingClient: {
-        client: fastest.client,
-        metric:
-          Number.isFinite(fastest.avgDays) && fastest.avgDays !== Number.POSITIVE_INFINITY
-            ? `Avg ${fastest.avgDays.toFixed(1)} days`
-            : "Avg 0 days",
-      },
-      slowestDecisionClient: {
-        client: slowest.client,
-        metric:
-          Number.isFinite(slowest.avgDays) && slowest.avgDays !== Number.NEGATIVE_INFINITY
-            ? `Avg ${slowest.avgDays.toFixed(1)} days`
-            : "Avg 0 days",
-      },
-      highestOfferRejectionRate: {
-        client: highestRejection.client,
-        metric: `${(highestRejection.rejectionRate * 100 || 0).toFixed(1)}% rejection`,
-      },
-    });
-
-    setClientIntelLoading(false);
-  }, []);
-
-  const loadRiskAlerts = useCallback(async () => {
-    setRiskLoading(true);
-
-    const now = new Date();
-
-    const stuckThreshold = new Date(now);
-    stuckThreshold.setDate(stuckThreshold.getDate() - 7);
-
-    const inactiveThreshold = new Date(now);
-    inactiveThreshold.setDate(inactiveThreshold.getDate() - 7);
-
-    const [stuckRes, inactiveRes, duplicateRes] = await Promise.all([
-      supabase
-        .from("candidate_records")
-        .select("*", { count: "exact" })
-        .not("status", "in", '("Joined","Rejected")')
-        .lt("updated_at", stuckThreshold.toISOString())
-        ,
-      supabase
-        .from("users")
-        .select("*", { count: "exact" })
-        .eq("role", "recruiter")
-        .lt("last_seen_at", inactiveThreshold.toISOString()),
-      supabase
-        .from("candidate_records")
-        .select("id,email,phone_number")
-        ,
-    ]);
-
-    const riskError = stuckRes.error || inactiveRes.error || duplicateRes.error;
-
-    if (riskError) {
-      console.error("Failed to load risk alerts", riskError);
-      setRiskLoading(false);
-      return;
-    }
-
-    const emailCounts = {};
-    const phoneCounts = {};
-
-    (duplicateRes.data || []).forEach((row) => {
-      const email = String(row.email || "").trim().toLowerCase();
-      const phone = String(row.phone_number || "").trim();
-
-      if (email) {
-        emailCounts[email] = (emailCounts[email] || 0) + 1;
-      }
-
-      if (phone) {
-        phoneCounts[phone] = (phoneCounts[phone] || 0) + 1;
-      }
-    });
-
-    let duplicateCandidates = 0;
-
-    (duplicateRes.data || []).forEach((row) => {
-      const email = String(row.email || "").trim().toLowerCase();
-      const phone = String(row.phone_number || "").trim();
-
-      const isDuplicateEmail = email && emailCounts[email] > 1;
-      const isDuplicatePhone = phone && phoneCounts[phone] > 1;
-
-      if (isDuplicateEmail || isDuplicatePhone) {
-        duplicateCandidates += 1;
-      }
-    });
-
-    setRiskAlerts({
-      stuckCandidates: stuckRes.count || 0,
-      inactiveRecruiters: inactiveRes.count || 0,
-      duplicateCandidates,
-    });
-
-    setRiskLoading(false);
   }, []);
 
   useEffect(() => {
@@ -435,6 +299,11 @@ export default function Dashboard() {
         { event: "*", schema: "public", table: "revenue_tracker" },
         loadDashboardKPIs
       )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "status_history" },
+        loadDashboardKPIs
+      )
       .subscribe();
 
     return () => {
@@ -449,7 +318,7 @@ export default function Dashboard() {
       .channel("manager-dashboard-recruiter-analytics")
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "candidate_records" },
+        { event: "*", schema: "public", table: "status_history" },
         loadRecruiterAnalytics
       )
       .on(
@@ -464,60 +333,6 @@ export default function Dashboard() {
     };
   }, [loadRecruiterAnalytics]);
 
-  useEffect(() => {
-    loadClientIntelligence();
-
-    const clientIntelChannel = supabase
-      .channel("manager-dashboard-client-intelligence")
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "candidate_records" },
-        loadClientIntelligence
-      )
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "candidate_records" },
-        loadClientIntelligence
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(clientIntelChannel);
-    };
-  }, [loadClientIntelligence]);
-
-  useEffect(() => {
-    loadRiskAlerts();
-
-    const riskChannel = supabase
-      .channel("manager-dashboard-risk-alerts")
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "candidate_records" },
-        loadRiskAlerts
-      )
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "candidate_records" },
-        loadRiskAlerts
-      )
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "users" },
-        loadRiskAlerts
-      )
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "users" },
-        loadRiskAlerts
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(riskChannel);
-    };
-  }, [loadRiskAlerts]);
-
   if (loading) {
     return <Loader text="Loading dashboard KPIs..." />;
   }
@@ -527,11 +342,6 @@ export default function Dashboard() {
       title: "Total Active Candidates",
       value: kpis.totalActiveCandidates,
       subtitle: "Candidates not joined yet",
-    },
-    {
-      title: "Total Open Positions",
-      value: kpis.totalOpenPositions,
-      subtitle: "Current openings across clients",
     },
     {
       title: "Total Interviews Scheduled",
@@ -555,46 +365,9 @@ export default function Dashboard() {
     },
   ];
 
-  const clientCards = [
-    {
-      title: "Top Hiring Client",
-      client: clientIntelligence.topHiringClient.client,
-      metric: clientIntelligence.topHiringClient.metric,
-    },
-    {
-      title: "Fastest Closing Client",
-      client: clientIntelligence.fastestClosingClient.client,
-      metric: clientIntelligence.fastestClosingClient.metric,
-    },
-    {
-      title: "Slowest Decision Client",
-      client: clientIntelligence.slowestDecisionClient.client,
-      metric: clientIntelligence.slowestDecisionClient.metric,
-    },
-    {
-      title: "Highest Offer Rejection Rate",
-      client: clientIntelligence.highestOfferRejectionRate.client,
-      metric: clientIntelligence.highestOfferRejectionRate.metric,
-    },
-  ];
-
-  const riskCards = [
-    {
-      title: "Candidates Stuck > 7 Days",
-      value: riskAlerts.stuckCandidates,
-      subtitle: `${riskAlerts.stuckCandidates} candidates waiting too long`,
-    },
-    {
-      title: "Recruiter Inactivity",
-      value: riskAlerts.inactiveRecruiters,
-      subtitle: `${riskAlerts.inactiveRecruiters} recruiter inactive`,
-    },
-    {
-      title: "Duplicate Candidates",
-      value: riskAlerts.duplicateCandidates,
-      subtitle: `${riskAlerts.duplicateCandidates} duplicates detected`,
-    },
-  ];
+  if (loading) {
+    return <Loader text="Loading dashboard KPIs..." />;
+  }
 
   return (
     <div>
@@ -603,19 +376,25 @@ export default function Dashboard() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          gridTemplateColumns: "repeat(5, 1fr)",
           gap: "14px",
         }}
       >
         {cards.map((card) => (
           <div
             key={card.title}
+            onMouseEnter={() => setHoveredCard(card.title)}
+            onMouseLeave={() => setHoveredCard(null)}
             style={{
-              background: "#fff",
-              border: "1px solid #e2e8f0",
+              background: hoveredCard === card.title ? "#f0f4ff" : "#fff",
+              border: hoveredCard === card.title ? "2px solid #1e40af" : "1px solid #e2e8f0",
               borderRadius: "12px",
               padding: "16px",
-              boxShadow: "0 2px 8px rgba(15, 23, 42, 0.06)",
+              boxShadow: hoveredCard === card.title 
+                ? "0 8px 16px rgba(30, 64, 175, 0.15)" 
+                : "0 2px 8px rgba(15, 23, 42, 0.06)",
+              transition: "all 0.2s ease",
+              cursor: "pointer",
             }}
           >
             <p
@@ -656,75 +435,185 @@ export default function Dashboard() {
         ) : recruiterAnalytics.length === 0 ? (
           <div style={styles.emptyState}>No recruiter analytics found.</div>
         ) : (
-          <div style={styles.tableWrap}>
-            <table style={styles.table}>
-              <thead>
-                <tr>
-                  <th style={styles.th}>Recruiter</th>
-                  <th style={styles.th}>Candidates Added</th>
-                  <th style={styles.th}>Interviews</th>
-                  <th style={styles.th}>Closures</th>
-                  <th style={styles.th}>Revenue</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recruiterAnalytics.map((row) => (
-                  <tr key={row.recruiter}>
-                    <td style={styles.td}>{row.recruiter}</td>
-                    <td style={styles.td}>{row.candidatesAdded}</td>
-                    <td style={styles.td}>{row.interviews}</td>
-                    <td style={styles.td}>{row.closures}</td>
-                    <td style={styles.td}>{`INR ${row.revenue.toLocaleString("en-IN")}`}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
 
-      <section style={styles.clientIntelSection}>
-        <h3 style={styles.clientIntelTitle}>Client Intelligence</h3>
+<div style={styles.chartsContainer}>
+            {/* Left: Bar Chart */}
 
-        {clientIntelLoading ? (
-          <div style={styles.clientIntelLoaderWrap}>
-            <Loader text="Loading client intelligence..." />
-          </div>
-        ) : (
-          <div style={styles.clientGrid}>
-            {clientCards.map((card) => (
-              <div key={card.title} style={styles.clientCard}>
-                <p style={styles.clientCardTitle}>{card.title}</p>
-                <p style={styles.clientName}>{card.client}</p>
-                <p style={styles.clientMetric}>{card.metric}</p>
+            <div style={styles.chartWrapper}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                <h4 style={styles.chartTitle}>Recruiter Performance Overview</h4>
+                <div style={{ display: "flex", gap: "10px" }}>
+                  {selectedMetric && (
+                    <button
+                      onClick={() => setSelectedMetric(null)}
+                      style={{
+                        padding: "6px 12px",
+                        background: "#f59e0b",
+                        color: "#fff",
+                        border: "none",
+                        borderRadius: "6px",
+                        cursor: "pointer",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                      }}
+                    >
+                      Reset Metric
+                    </button>
+                  )}
+                  {selectedRecruiter !== "all" && (
+                    <button
+                      onClick={() => setSelectedRecruiter("all")}
+                      style={{
+                        padding: "6px 12px",
+                        background: "#1e40af",
+                        color: "#fff",
+                        border: "none",
+                        borderRadius: "6px",
+                        cursor: "pointer",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                      }}
+                    >
+                      Reset Recruiter
+                    </button>
+                  )}
+                </div>
               </div>
-            ))}
-          </div>
-        )}
-      </section>
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart 
+                  data={selectedRecruiter === "all" ? recruiterAnalytics : recruiterAnalytics.filter(r => r.recruiter === selectedRecruiter)}
+                  margin={{ top: 20, right: 30, left: 0, bottom: 60 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis 
+                    dataKey="recruiter" 
+                    angle={-45} 
+                    textAnchor="end" 
+                    height={100}
+                    tick={{ fontSize: 12 }}
+                  />
+                  <YAxis tick={{ fontSize: 12 }} />
+                  <Tooltip 
+                    contentStyle={{
+                      background: "#fff",
+                      border: "1px solid #e2e8f0",
+                      borderRadius: "8px",
+                    }}
+                    formatter={(value) => value}
+                    cursor={{ fill: "rgba(30, 64, 175, 0.1)" }}
+                  />
+                  <Legend 
+                    wrapperStyle={{ paddingTop: "20px" }}
+                    onClick={(e) => {
+                      const key = e.dataKey;
+                      setSelectedMetric(selectedMetric === key ? null : key);
+                    }}
+                    style={{ cursor: "pointer" }}
+                  />
+                  {(selectedMetric === null || selectedMetric === "candidatesAdded") && <Bar dataKey="candidatesAdded" fill="#1e40af" name="Candidates Added" />}
+                  {(selectedMetric === null || selectedMetric === "interviews") && <Bar dataKey="interviews" fill="#f59e0b" name="Interviews" />}
+                  {(selectedMetric === null || selectedMetric === "closures") && <Bar dataKey="closures" fill="#10b981" name="Closures" />}
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
 
-      <section style={styles.riskSection}>
-        <h3 style={styles.riskTitle}>Risk & Alerts</h3>
-
-        {riskLoading ? (
-          <div style={styles.riskLoaderWrap}>
-            <Loader text="Loading risk alerts..." />
-          </div>
-        ) : (
-          <div style={styles.riskGrid}>
-            {riskCards.map((card) => (
-              <div key={card.title} style={styles.riskCard}>
-                <p style={styles.riskCardTitle}>{card.title}</p>
-                <p style={styles.riskValue}>{card.value}</p>
-                <p style={styles.riskSub}>{card.subtitle}</p>
+            {/* Right: Pie Chart */}
+            <div style={styles.chartWrapper}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                <h4 style={styles.chartTitle}>Revenue Contribution by Recruiter</h4>
+                {selectedRecruiter !== "all" && (
+                  <button
+                    onClick={() => setSelectedRecruiter("all")}
+                    style={{
+                      padding: "6px 12px",
+                      background: "#10b981",
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: "6px",
+                      cursor: "pointer",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                    }}
+                  >
+                    Show All Recruiters
+                  </button>
+                )}
               </div>
-            ))}
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={selectedRecruiter === "all" ? recruiterAnalytics : recruiterAnalytics.filter(r => r.recruiter === selectedRecruiter)}
+                    dataKey="revenue"
+                    nameKey="recruiter"   
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={80}
+                    outerRadius={130}
+                    paddingAngle={2}
+                    label={false}
+                    onMouseEnter={(_, index) => setActiveIndex(index)}
+                    onMouseLeave={() => setActiveIndex(null)}
+                    onClick={(data) => {
+                      setSelectedRecruiter(selectedRecruiter === data.recruiter ? "all" : data.recruiter);
+                    }}
+                  >
+                    {recruiterAnalytics.map((entry, index) => (
+                      <Cell 
+                        key={`cell-${index}`} 
+                        fill={COLORS[index % COLORS.length]}
+                        opacity={activeIndex === null || index === activeIndex ? 1 : 0.5}
+                        style={{
+                          filter: index === activeIndex ? "drop-shadow(0 0 12px rgba(0, 0, 0, 0.3))" : "none",
+                          transition: "all 0.3s ease",
+                          cursor: "pointer",
+                          transform: index === activeIndex ? "scale(1.05)" : "scale(1)",
+                          transformOrigin: "center",
+                        }}
+                      />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    contentStyle={{
+                      background: "#fff",
+                      border: "1px solid #e2e8f0",
+                      borderRadius: "8px",
+                    }}
+                    formatter={(value) => `INR ${value.toLocaleString("en-IN")}`}
+                    labelFormatter={(label) => `Recruiter: ${label}`}
+                  />
+                  <Legend
+                    verticalAlign="bottom"
+                    height={36}
+                    wrapperStyle={{ paddingTop: "20px", cursor: "pointer" }}
+                    onMouseEnter={(e) => {
+                      const index = recruiterAnalytics.findIndex(
+                        (r) => r.recruiter === e.dataKey
+                      );
+                      setActiveIndex(index);
+                    }}
+                    onMouseLeave={() => setActiveIndex(null)}
+                    onClick={(e) => {
+                      setSelectedRecruiter(selectedRecruiter === e.dataKey ? "all" : e.dataKey);
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+              <div style={styles.centerLabel}>
+                <div style={styles.totalRevenue}>
+                  INR {recruiterAnalytics
+                    .reduce((sum, r) => sum + r.revenue, 0)
+                    .toLocaleString("en-IN")}
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </section>
     </div>
   );
 }
+
+const COLORS = ["#1e40af", "#f59e0b", "#10b981", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899", "#84cc16"];
 
 const styles = {
   analyticsSection: {
@@ -749,6 +638,38 @@ const styles = {
     background: "#fff",
     color: "#64748b",
     fontSize: "14px",
+  },
+  chartsContainer: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: "20px",
+  },
+  chartWrapper: {
+    border: "1px solid #e2e8f0",
+    borderRadius: "12px",
+    background: "#fff",
+    padding: "18px",
+    position: "relative",
+  },
+  chartTitle: {
+    margin: "0 0 16px",
+    fontSize: "16px",
+    fontWeight: 600,
+    color: "#0f172a",
+  },
+  centerLabel: {
+    position: "absolute",
+    top: "50%",
+    left: "50%",
+    transform: "translate(-50%, -50%)",
+    textAlign: "center",
+    width: "100%",
+    pointerEvents: "none",
+  },
+  totalRevenue: {
+    fontSize: "20px",
+    fontWeight: 700,
+    color: "#0f172a",
   },
   tableWrap: {
     overflowX: "auto",

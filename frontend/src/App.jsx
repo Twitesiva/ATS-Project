@@ -33,6 +33,16 @@ import AdminManagers from "./pages/admin/managers";
 import AdminActivity from "./pages/admin/activity";
 import AdminReports from "./pages/admin/reports";
 
+import BDELayout from "./components/layout/BDELayout";
+
+import BDEDashboard from "./pages/bde/BDEDashboard";
+import LeadsManagement from "./pages/bde/LeadsManagement";
+import ClientConversion from "./pages/bde/ClientConversion";
+import JobRequirements from "./pages/bde/JobRequirements";
+import FollowUps from "./pages/bde/FollowUps";
+import RevenueAndPipeline from "./pages/bde/RevenueAndPipeline";
+import CommunicationLog from "./pages/bde/CommunicationLog";
+
 export default function App() {
   return (
     <AuthProvider>
@@ -94,6 +104,24 @@ export default function App() {
               <Route path="reports" element={<RecruiterReports />} />
             </Route>
           </Route>
+
+          <Route element={<ProtectedRoute role="bde" />}>
+  <Route path="/bde" element={<BDELayout />}>
+    <Route index element={<Navigate to="dashboard" />} />
+
+    <Route path="dashboard" element={<BDEDashboard />} />
+    <Route path="leads" element={<LeadsManagement />} />
+    <Route path="leads/new" element={<LeadsManagement />} />
+    <Route path="clients" element={<ClientConversion />} />
+    <Route path="clients/:id" element={<ClientConversion />} />
+    <Route path="requirements" element={<JobRequirements />} />
+    <Route path="requirements/new" element={<JobRequirements />} />
+    <Route path="followups" element={<FollowUps />} />
+    <Route path="revenue" element={<RevenueAndPipeline />} />
+    <Route path="pipeline" element={<RevenueAndPipeline />} />
+    <Route path="communications" element={<CommunicationLog />} />
+  </Route>
+</Route>
 
           <Route path="*" element={<Navigate to="/login" />} />
         </Routes>

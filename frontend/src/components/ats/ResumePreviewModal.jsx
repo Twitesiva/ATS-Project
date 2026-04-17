@@ -3,8 +3,23 @@ import { API_BASE_URL } from "../../services/api";
 
 function getFileExtension(path) {
   if (!path || typeof path !== "string") return "";
-  const last = path.split(".").pop();
+  // Handle URLs and paths with query/hash (e.g. signed URLs)
+  const cleaned = path.split("#")[0].split("?")[0];
+  const last = cleaned.split(".").pop();
   return last ? last.toLowerCase() : "";
+}
+
+function buildResumeFileUrl(filePath) {
+  const value = String(filePath ?? "").trim();
+  if (!value) return null;
+
+  // If DB stores a public/signed URL, use it directly.
+  if (/^https?:\/\//i.test(value)) return value;
+
+  // Some environments store "uploads/<file>" or absolute paths; backend expects just the filename.
+  const normalized = value.replace(/\\/g, "/");
+  const filename = normalized.split("/").filter(Boolean).pop() || normalized;
+  return `${API_BASE_URL}/resume-file/${encodeURIComponent(filename)}`;
 }
 
 function escapeHtml(value) {
@@ -33,7 +48,7 @@ export default function ResumePreviewModal({ resume, onClose, highlightKeywords 
   if (!resume) return null;
   const rawText = resume.raw_text || resume.text_preview || "";
   const filePath = resume.resume_file_path || resume.path || "";
-  const fileUrl = filePath ? `${API_BASE_URL}/resume-file/${encodeURIComponent(filePath)}` : null;
+  const fileUrl = buildResumeFileUrl(filePath);
   const isPdf = getFileExtension(filePath) === "pdf";
   const isWord = ["doc", "docx"].includes(getFileExtension(filePath));
   const hasFilters = highlightKeywords && highlightKeywords.length > 0;

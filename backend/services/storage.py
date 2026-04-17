@@ -289,7 +289,8 @@ def store_resumes(resumes):
         location_display = (r.get("location_display") or "").strip()
         locations = [location_display] if location_display else []
         match_percentage = r.get("match_percentage")
-        resume_file_path = r.get("path") or r.get("resume_file_path") or ""
+        # Prefer a durable URL if provided (e.g. Supabase Storage public/signed URL).
+        resume_file_path = r.get("resume_file_url") or r.get("public_url") or r.get("path") or r.get("resume_file_path") or ""
         raw_text = r.get("raw_text") or r.get("text_preview") or ""
         
         # ENTERPRISE: Extract role and primary skill info
@@ -397,6 +398,7 @@ def store_resumes(resumes):
 def fetch_resumes(
     location=None,
     skills=None,
+    role_skills=None,
     skills_mode="any",
     experience_years=None,
     phone_number=None,
@@ -411,7 +413,8 @@ def fetch_resumes(
     
     STANDARD FILTERS:
     - location: substring match in locations JSON.
-    - skills: comma-separated; skills_mode 'any' or 'all'.
+    - skills: comma-separated MANUAL SKILLS; skills_mode 'any' or 'all'
+    - role_skills: comma-separated ROLE-SPECIFIC SKILLS (used with role_filter)
     - experience_years: minimum years (>=).
     - phone_number: partial or full phone number match.
     
@@ -422,7 +425,39 @@ def fetch_resumes(
     """
     try:
         # DEBUG: Log function entry
-        print(f"[DEBUG] fetch_resumes called with: role_filter={role_filter}, skills={skills}, location={location}")
+        print(f"[DEBUG] fetch_resumes called with: role_filter={role_filter}, role_skills={role_skills}, skills={skills}, location={location}")
+
+        # Parse role-specific skills (used with role filter)
+        role_skills_list = []
+        if role_skills:
+            for raw in str(role_skills).split(","):
+                raw_trimmed = raw.strip()
+                normalized = _normalize_skill_for_filter(raw_trimmed)
+                if normalized:
+                    role_skills_list.append(normalized)
+            # De-duplicate while preserving order
+            seen = set()
+            role_skills_list = [s for s in role_skills_list if not (s in seen or seen.add(s))]
+            print(f"[DEBUG] ✓ Parsed role_skills_list({len(role_skills_list)}): {role_skills_list}")
+        else:
+            print(f"[DEBUG] ✗ No role_skills provided")
+
+        # Parse manual skills filter (separate from role)
+        skills_list = []
+        if skills:
+            for raw in str(skills).split(","):
+                raw_trimmed = raw.strip()
+                normalized = _normalize_skill_for_filter(raw_trimmed)
+                if normalized:
+                    skills_list.append(normalized)
+            # De-duplicate while preserving order
+            seen = set()
+            skills_list = [s for s in skills_list if not (s in seen or seen.add(s))]
+            print(f"[DEBUG] ✓ Parsed manual skills_list({len(skills_list)}): {skills_list}")
+        else:
+            print(f"[DEBUG] ✗ No manual skills provided")
+        if skills_mode not in ("any", "all"):
+            skills_mode = "any"
         
         supabase = get_supabase_client()
         print(f"[DEBUG] Supabase client initialized")
@@ -448,56 +483,194 @@ def fetch_resumes(
             query = query.gte("experience_years", experience_years)
             print(f"[DEBUG] Applied experience filter: >= {experience_years}")
         
-        # Apply role filter with error handling
-        if role_filter:
-            print(f"[DEBUG] Processing role filter: '{role_filter}'")
-            try:
-                search_role = extract_semantic_role_intent(role_filter)
-                role_filter_lower = role_filter.lower().strip()
-                
-                print(f"[DEBUG] Extracted search_role: type={search_role.role_type}, family={search_role.role_family}")
-                
-                if search_role.role_type and search_role.role_type != "Unknown":
-                    query = query.eq("role_type", search_role.role_type)
-                    print(f"[DEBUG] Applied exact role_type filter: {search_role.role_type}")
-                else:
-                    # For general searches, use OR filtering - corrected syntax for new Supabase client
-                    if 'tester' in role_filter_lower or 'qa' in role_filter_lower or 'quality' in role_filter_lower:
-                        query = query.or_("role_type.eq.Tester,role_family.ilike.%Quality%")
-                        print("[DEBUG] Applied Tester/QA filter")
-                    elif 'developer' in role_filter_lower or 'engineer' in role_filter_lower:
-                        query = query.or_("role_type.in.(Developer,Engineer),role_family.ilike.%Engineering%")
-                        print("[DEBUG] Applied Developer/Engineer filter")
-                    elif 'data' in role_filter_lower:
-                        query = query.or_("role_family.ilike.%Data%,role_type.in.(Analyst,Scientist,Engineer)")
-                        print("[DEBUG] Applied Data filter")
-                    elif 'analyst' in role_filter_lower:
-                        query = query.or_("role_type.eq.Analyst,role_family.ilike.%Analytics%")
-                        print("[DEBUG] Applied Analyst filter")
-                    elif 'devops' in role_filter_lower:
-                        query = query.or_("role_type.eq.Engineer,role_family.ilike.%DevOps%")
-                        print("[DEBUG] Applied DevOps filter")
-                    elif 'administrator' in role_filter_lower:
-                        query = query.or_("role_type.eq.Administrator,role_family.ilike.%Infrastructure%")
-                        print("[DEBUG] Applied Administrator filter")
-                    else:
-                        query = query.or_(f"role_type.ilike.%{role_filter}%,role_family.ilike.%{role_filter}%")
-                        print(f"[DEBUG] Applied generic ILIKE filter: {role_filter}")
-            except Exception as e:
-                print(f"[WARNING] Role filter processing failed: {e}. Continuing without role filter.")
-        
-        # Execute query
-        print(f"[DEBUG] Executing query...")
+        # Execute query BEFORE applying role filter (so all resumes are fetched first)
+        print(f"[DEBUG] Executing base query with location/phone/experience filters...")
         response = query.execute()
         print(f"[DEBUG] Query executed successfully")
         
         # Safely extract rows
         rows = response.data if response else []
-        print(f"[DEBUG] Rows returned: {len(rows)}")
+        total_resumes = len(rows)
+        print(f"[DEBUG] Total resumes from DB: {total_resumes}")
+
+        # Apply role filter (POST-FETCH) with error handling
+        # This avoids missing resumes due to missing role_type field
+        if role_filter:
+            print(f"[DEBUG] Processing role filter: '{role_filter}'")
+            print(f"[DEBUG] Resumes before role filter: {len(rows)}")
+            
+            import re
+            role_filter_lower = role_filter.lower().strip()
+            
+            def _row_matches_role_filter(row):
+                """
+                Check if resume matches the role filter by checking:
+                1. role_type field - must contain ALL filter words (order-independent)
+                2. role_family field - must contain ALL filter words (order-independent)
+                3. raw_text content (fallback)
+                """
+                # Split filter into words for exact matching
+                filter_words = set(w for w in role_filter_lower.split() if w)
+                if not filter_words:
+                    return False
+                
+                # Check role_type - ALL filter words must be present
+                role_type = (row.get("role_type") or "").lower()
+                if role_type:
+                    role_type_words = set(w for w in role_type.split() if w)
+                    # All filter words must be in role_type words
+                    if filter_words.issubset(role_type_words):
+                        print(f"[DEBUG] ROLE MATCH (role_type exact): {row.get('name')} - role_type='{role_type}'")
+                        return True
+                
+                # Check role_family - ALL filter words must be present
+                role_family = (row.get("role_family") or "").lower()
+                if role_family:
+                    role_family_words = set(w for w in role_family.split() if w)
+                    if filter_words.issubset(role_family_words):
+                        print(f"[DEBUG] ROLE MATCH (role_family exact): {row.get('name')} - role_family='{role_family}'")
+                        return True
+                
+                # Fallback: check raw_text for role keywords (full phrase match)
+                raw_text = (row.get("raw_text") or "").lower()
+                if role_filter_lower in raw_text:
+                    print(f"[DEBUG] ROLE MATCH (raw_text): {row.get('name')}")
+                    return True
+                
+                # No match
+                role_type_val = row.get("role_type") or "NULL"
+                role_family_val = row.get("role_family") or "NULL"
+                print(f"[DEBUG] ROLE NO_MATCH: {row.get('name')} - role_type='{role_type_val}' role_family='{role_family_val}' (needed: {filter_words})")
+                return False
+            
+            before = len(rows)
+            rows = [r for r in rows if _row_matches_role_filter(r)]
+            after = len(rows)
+            print(f"[DEBUG] Role filter '{role_filter_lower}': {before} -> {after} resumes")
+        
+        if role_skills_list:
+            import re
+            print(f"[DEBUG] APPLYING ROLE SKILLS FILTER - Looking for ANY of: {role_skills_list}")
+            
+            matches_found = 0
+            
+            def _row_matches_role_skills(row):
+                nonlocal matches_found
+                extracted = row.get("extracted_skills") or []
+                if isinstance(extracted, str):
+                    try:
+                        extracted = json.loads(extracted)
+                    except Exception:
+                        extracted = []
+
+                normalized_row_skills = set()
+                for s in (extracted or []):
+                    ns = _normalize_skill_for_filter(s)
+                    if ns:
+                        normalized_row_skills.add(ns)
+
+                raw_text = (row.get("raw_text") or "").lower()
+                resume_name = row.get("name", "Unknown")
+                
+                # For role skills, use "any" matching - at least ONE role skill should match
+                for role_skill in role_skills_list:
+                    if role_skill in normalized_row_skills:
+                        print(f"[MATCH] Resume '{resume_name}': Found skill '{role_skill}' in extracted_skills")
+                        matches_found += 1
+                        return True
+                    
+                    # Also check in raw_text
+                    if role_skill in raw_text:
+                        print(f"[MATCH] Resume '{resume_name}': Found skill '{role_skill}' in raw_text")
+                        matches_found += 1
+                        return True
+                
+                return False
+
+            before = len(rows)
+            rows = [r for r in rows if _row_matches_role_skills(r)]
+            print(f"[DEBUG] Role skills filter: {before} -> {len(rows)} resumes ({matches_found} matched)")
+
+        # Apply manual skills filter separately and independently
+        if skills_list:
+            import re  # Import once for the filter operation
+            print(f"[DEBUG] Applying MANUAL SKILLS filter: {skills_list}, mode={skills_mode}")
+            
+            def _row_matches_manual_skills(row):
+                extracted = row.get("extracted_skills") or []
+                if isinstance(extracted, str):
+                    try:
+                        extracted = json.loads(extracted)
+                    except Exception:
+                        extracted = []
+
+                normalized_row_skills = set()
+                for s in (extracted or []):
+                    ns = _normalize_skill_for_filter(s)
+                    if ns:
+                        normalized_row_skills.add(ns)
+
+                raw_text = (row.get("raw_text") or "").lower()
+                resume_name = row.get("name", "Unknown")
+
+                def has_term(term):
+                    """
+                    Check if term exists in extracted skills or raw text.
+                    Handles multi-word skills like "spring boot" intelligently.
+                    """
+                    if not term:
+                        return False
+                    
+                    term_normalized = _normalize_skill_for_filter(term)
+                    if not term_normalized:
+                        return False
+                    
+                    # 1. Check for exact match in extracted skills
+                    if term_normalized in normalized_row_skills:
+                        return True
+                    
+                    # 2. For raw text, check exact phrase match
+                    if term_normalized in raw_text:
+                        return True
+                    
+                    # 3. Check partial word matches in raw text using word boundaries
+                    pattern = r'\b' + re.escape(term_normalized) + r'\b'
+                    if re.search(pattern, raw_text):
+                        return True
+                    
+                    # 4. For multi-word skills, check if all individual words exist
+                    if " " in term_normalized:
+                        words = [w for w in term_normalized.split() if w]
+                        # All words must exist in extracted skills
+                        words_matched = sum(1 for word in words if word in normalized_row_skills)
+                        if words_matched == len(words):
+                            return True
+                        
+                        # Check if all words appear in raw text with word boundaries
+                        all_words_in_text = all(
+                            re.search(r'\b' + re.escape(word) + r'\b', raw_text)
+                            for word in words
+                        )
+                        if all_words_in_text:
+                            return True
+                    
+                    return False
+
+                if skills_mode == "all":
+                    matches = all(has_term(t) for t in skills_list)
+                else:
+                    matches = any(has_term(t) for t in skills_list)
+                
+                return matches
+
+            before = len(rows)
+            rows = [r for r in rows if _row_matches_manual_skills(r)]
+            print(f"[DEBUG] Manual skills filter applied: {before} -> {len(rows)} (mode={skills_mode})")
         
         result = []
-        seen_emails = set()
-        seen_phones = set()
+        # BUGFIX: Removed overly-aggressive deduplication by email/phone
+        # Multiple candidates can have same contact info (data entry errors, shared contacts, etc.)
+        # Let the user see all results and handle deduplication manually if needed
         
         for row in rows:
             try:
@@ -515,17 +688,6 @@ def fetch_resumes(
                 # Handle email and phone safely
                 email = row.get("email") or ""
                 phone = row.get("phone_number") or ""
-                
-                # Skip duplicates in search results (keep latest by resume_id)
-                if email and email in seen_emails:
-                    continue
-                if phone and phone in seen_phones:
-                    continue
-                        
-                if email:
-                    seen_emails.add(email)
-                if phone:
-                    seen_phones.add(phone)
                 
                 # Handle extracted_skills field safely
                 extracted_skills = row.get("extracted_skills") or []
@@ -565,6 +727,8 @@ def fetch_resumes(
                 # Continue processing other rows instead of crashing
         
         print(f"[DEBUG] Successfully processed {len(result)} resumes after deduplication")
+        print(f"[DEBUG SUMMARY] Filters applied: role={role_filter}, role_skills={bool(role_skills_list)}, manual_skills={bool(skills_list)}, location={location}, phone={phone_number}, exp={experience_years}")
+        print(f"[DEBUG SUMMARY] Result: {len(result)} matching resumes")
         return result
         
     except Exception as e:

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "../../services/supabaseClient";
 import Loader from "../../components/common/Loader";
 import { formatDate } from "../../utils/dateFormat";
-
+import * as XLSX from "xlsx";
 const columns = [
   { key: "s_no", label: "S.No" },
   { key: "doj", label: "DOJ", type: "date" },
@@ -28,7 +28,56 @@ export default function TeamTracker() {
   const [clientSearch, setClientSearch] = useState("");
   const [locationSearch, setLocationSearch] = useState("");
   const [recruiterOptions, setRecruiterOptions] = useState([]);
+  const [showUpload, setShowUpload] = useState(false);
+const [file, setFile] = useState(null);
+const [showAdd, setShowAdd] = useState(false);
+const handleFileUpload = async () => {
+  if (!file) return;
 
+  const reader = new FileReader();
+
+  reader.onload = async (e) => {
+    const data = new Uint8Array(e.target.result);
+    const workbook = XLSX.read(data, { type: "array" });
+
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+
+    const jsonData = XLSX.utils.sheet_to_json(sheet);
+
+    // map if needed
+    const formatted = jsonData.map((row) => ({
+      doj: row.doj,
+      recruiter_name: row.recruiter_name,
+      candidate_name: row.candidate_name,
+      client_name: row.client_name,
+      position: row.position,
+      location: row.location,
+      hire: row.hire,
+      ctc: row.ctc,
+      offered_ctc: row.offered_ctc,
+      billing_rate: row.billing_rate,
+      margin_value: row.margin_value,
+      margin_percent: row.margin_percent,
+    }));
+
+    const { error } = await supabase
+      .from("revenue_tracker")
+      .insert(formatted);
+
+    if (error) {
+      console.error(error);
+      alert("Upload failed");
+    } else {
+      alert("Upload successful");
+      setShowUpload(false);
+      setFile(null);
+      fetchRecords();
+    }
+  };
+
+  reader.readAsArrayBuffer(file);
+};
   const fetchRecords = useCallback(async () => {
     setLoading(true);
 
@@ -106,6 +155,13 @@ export default function TeamTracker() {
       <h2 style={styles.title}>Team Tracker</h2>
 
       <div style={styles.actionBar}>
+        <button style={styles.button} onClick={() => setShowUpload(true)}>
+  + Upload CSV/XLSX
+</button>
+
+<button style={styles.button} onClick={() => setShowAdd(true)}>
+  + Add Revenue
+</button>
         <select
           value={selectedRecruiter}
           onChange={(e) => setSelectedRecruiter(e.target.value)}
@@ -143,6 +199,24 @@ export default function TeamTracker() {
           style={styles.input}
         />
       </div>
+      {showUpload && (
+  <div style={styles.modal}>
+    <div style={styles.modalBox}>
+      <h3>Upload CSV / XLSX</h3>
+
+      <input
+        type="file"
+        accept=".csv,.xlsx"
+        onChange={(e) => setFile(e.target.files[0])}
+      />
+
+      <div style={{ marginTop: "10px" }}>
+        <button onClick={handleFileUpload}>Upload</button>
+        <button onClick={() => setShowUpload(false)}>Cancel</button>
+      </div>
+    </div>
+  </div>
+)}
 
       {loading ? (
         <div style={styles.loaderWrap}>
@@ -262,5 +336,29 @@ const styles = {
     whiteSpace: "nowrap",
     background: "#fff",
   },
+  modal: {
+  position: "fixed",
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  background: "rgba(0,0,0,0.5)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  zIndex: 999,
+},
+modalBox: {
+  background: "#fff",
+  padding: "20px",
+  borderRadius: "8px",
+  width: "400px",
+},
+button: {
+  padding: "6px 10px",
+  border: "1px solid #cbd5e1",
+  borderRadius: "6px",
+  cursor: "pointer",
+},
 };
 

@@ -2,7 +2,7 @@ import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { setUserOnlineStatus } from "../../services/authService";
 import { canonicalizeRole, getRoleLabel } from "../../utils/roles";
-
+import {LayoutDashboard, UserSearch, Database, FileText,BarChart3,Users,Activity,IndianRupee, TrendingUp} from "lucide-react";
 export default function Sidebar({ role }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -15,13 +15,13 @@ export default function Sidebar({ role }) {
   };
 
   const recruiterPortalMenu = [
-    { label: "Dashboard", path: `/${effectiveRole}/dashboard` },
-    { label: "Profile Matching", path: `/${effectiveRole}/ats-match` },
-    { label: "Profile Database", path: `/${effectiveRole}/ats-search` },
-    { label: "Monthly Report", path: `/${effectiveRole}/data` },
-    { label: "Revenue Tracker", path: `/${effectiveRole}/rev-trac` },
-    { label: "Reports", path: `/${effectiveRole}/reports` },
-  ];
+  { label: "Dashboard", path: `/${effectiveRole}/dashboard`, icon: <LayoutDashboard size={18} /> },
+  { label: "Profile Matching", path: `/${effectiveRole}/ats-match`, icon: <UserSearch size={18} /> },
+  { label: "Profile Database", path: `/${effectiveRole}/ats-search`, icon: <Database size={18} /> },
+  { label: "Monthly Report", path: `/${effectiveRole}/data`, icon: <FileText size={18} /> },
+  { label: "Revenue Tracker", path: `/${effectiveRole}/rev-trac`, icon: <IndianRupee size={18} /> },
+  { label: "Reports", path: `/${effectiveRole}/reports`, icon: <BarChart3 size={18} /> },
+];
 
   const menuConfig = {
     hr: [
@@ -30,21 +30,30 @@ export default function Sidebar({ role }) {
       { label: "Activity", path: "/hr/activity" },
       { label: "Reports", path: "/hr/reports" },
     ],
-    manager: [
-      { label: "Dashboard", path: "/manager/dashboard" },
-      { label: "Profile Matching", path: "/manager/ats-match" },
-      { label: "Profile Database", path: "/manager/ats-search" },
-      { label: "Client Report", path: "/manager/clients" },
-      { label: "Monthly Report", path: "/manager/data" },
-      { label: "User Management", path: "/manager/recruiters" },
-      { label: "TA Activity", path: "/manager/rec-hist" },
-      { label: "Manager Revenue", path: "/manager/rev-trac" },
-      { label: "Team Revenue", path: "/manager/tem-trac" },
-      { label: "Client Analysis", path: "/manager/Sales" },
-      { label: "Reports", path: "/manager/reports" },
-    ],
+   manager: [
+  { label: "Dashboard", path: "/manager/dashboard", icon: <LayoutDashboard size={18} color="Blue" /> },
+  { label: "Profile Matching", path: "/manager/ats-match", icon: <UserSearch size={18} /> },
+  { label: "Profile Database", path: "/manager/ats-search", icon: <Database size={18} /> },
+  { label: "Client Report", path: "/manager/clients", icon: <FileText size={18} /> },
+  { label: "Monthly Report", path: "/manager/data", icon: <FileText size={18} /> },
+  { label: "User Management", path: "/manager/recruiters", icon: <Users size={18} /> },
+  { label: "TA Activity", path: "/manager/rec-hist", icon: <Activity size={18} /> },
+  { label: "Manager Revenue", path: "/manager/rev-trac", icon: <IndianRupee size={18} /> },
+  { label: "Team Revenue", path: "/manager/tem-trac", icon: <IndianRupee size={18} /> },
+  { label: "Client Analysis", path: "/manager/Sales", icon: <TrendingUp size={18} /> },
+  { label: "Reports", path: "/manager/reports", icon: <BarChart3 size={18} /> },
+],
     recruiter: recruiterPortalMenu,
     tl: recruiterPortalMenu,
+    bde: [
+      { label: "Dashboard", path: "/bde/dashboard", icon: <LayoutDashboard size={18} /> },
+      { label: "Leads", path: "/bde/leads", icon: <Users size={18} /> },
+      { label: "Clients", path: "/bde/clients", icon: <FileText size={18} /> },
+      { label: "Requirements", path: "/bde/requirements", icon: <Database size={18} /> },
+      { label: "Follow-ups", path: "/bde/followups", icon: <Activity size={18} /> },
+      { label: "Revenue", path: "/bde/revenue", icon: <IndianRupee size={18} /> },
+      { label: "Communications", path: "/bde/communications", icon: <BarChart3 size={18} /> },
+    ],
   };
 
   const menus = menuConfig[effectiveRole] || [];
@@ -70,11 +79,17 @@ export default function Sidebar({ role }) {
             to={item.path}
             style={({ isActive }) => ({
               ...styles.link,
-              background: isActive ? "#2563eb" : "transparent",
-              color: isActive ? "#fff" : "#e5e7eb",
+              background: isActive 
+  ? "linear-gradient(90deg, #2563eb, #3b82f6)" 
+  : "transparent",
+color: isActive ? "#fff" : "#cbd5f5",
+boxShadow: isActive ? "0 4px 12px rgba(37, 99, 235, 0.4)" : "none",
             })}
           >
-            {item.label}
+            <span style={{ display: "flex", alignItems: "center", opacity: 0.9 }}>
+                {item.icon}
+    </span>
+           <span>{item.label}</span>
           </NavLink>
         ))}
       </div>
@@ -90,7 +105,7 @@ const styles = {
   sidebar: {
     width: "220px",
     height: "100%",
-    background: "#111827",
+    background: "linear-gradient(180deg, #0f172a, #020617)",
     color: "#fff",
     padding: "16px",
     boxSizing: "border-box",
@@ -143,11 +158,17 @@ const styles = {
     marginTop: "4px",
   },
   link: {
-    padding: "10px",
-    borderRadius: "6px",
-    textDecoration: "none",
-    fontWeight: "500",
-  },
+  padding: "12px 14px",
+  borderRadius: "10px",
+  textDecoration: "none",
+  fontWeight: "500",
+  display: "flex",
+  alignItems: "center",
+  gap: "12px",
+  color: "#cbd5f5",
+  transition: "all 0.25s ease",
+  cursor: "pointer",
+},
   logout: {
     marginTop: "auto",
     padding: "10px",
