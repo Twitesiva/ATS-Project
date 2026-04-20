@@ -7,28 +7,23 @@ import Loader from "../../components/common/Loader";
 import { formatDate } from "../../utils/dateFormat";
 
 const columns = [
-  { key: "s_no", label: "S.No", type: "number" },
   { key: "doj", label: "DOJ", type: "date" },
   { key: "recruiter_name", label: "Recruiter" },
   { key: "candidate_name", label: "Candidate Name" },
   { key: "client_name", label: "Client" },
   { key: "position", label: "Position" },
   { key: "location", label: "Location" },
-  { key: "hire", label: "Hire" },
-  { key: "ctc", label: "CTC" },
-  { key: "offered_ctc", label: "Offered CTC" },
-  { key: "billing_rate", label: "Billing Rate" },
-  { key: "margin_value", label: "Margin Value", readOnly: true },
-  { key: "margin_percent", label: "Margin %", readOnly: true },
-  { key: "offer_status", label: "Offer" },
-  { key: "status", label: "Status" },
+];
+
+const tableColumns = [
+  ...columns,
+  { key: "offered_ctc", label: "Offered CTC / CTC per month" },
+  { key: "billing_rate", label: "Twite BR / Billing Rate" },
+  { key: "margin_value", label: "Margin" },
+  { key: "margin_percent", label: "Margin %" },
 ];
 
 const headerMap = {
-  "s no": "s_no",
-  "s.no": "s_no",
-  "sl no": "s_no",
-  "serial no": "s_no",
   doj: "doj",
   recruiter: "recruiter_name",
   "recruiter name": "recruiter_name",
@@ -40,7 +35,6 @@ const headerMap = {
   position: "position",
   location: "location",
   hire: "hire",
-  ctc: "ctc",
   "offered ctc": "offered_ctc",
   "billing rate": "billing_rate",
   "margin value": "margin_value",
@@ -87,8 +81,6 @@ const detectDelimiter = (csvText) => {
 };
 
 const NUMERIC_FIELDS = new Set([
-  "s_no",
-  "ctc",
   "offered_ctc",
   "billing_rate",
   "margin_value",
@@ -110,31 +102,36 @@ const formatCurrency = (v) => {
   return `\u20B9${parsed.toLocaleString("en-IN")}`;
 };
 
-const marginPercent = (margin, billing) => {
-  if (margin == null || billing == null || billing === 0) return 0;
-  return Number(((margin / billing) * 100).toFixed(2));
+const marginPercent = (billingRate, ctcValue) => {
+  if (billingRate == null || ctcValue == null || ctcValue === 0) return 0;
+  return Number((((billingRate - ctcValue) / ctcValue) * 100).toFixed(2));
 };
+
 
 const calculateMargins = (row) => {
   const billing = numeric(row.billing_rate);
-  const offered = numeric(row.offered_ctc);
-  const fallbackMargin = numeric(row.margin_value);
+  const ctc = numeric(row.ctc) ?? numeric(row.offered_ctc);
 
-  const calculatedMargin =
-    billing != null && offered != null ? Number((billing - offered).toFixed(2)) : fallbackMargin;
+  if (billing == null || ctc == null) {
+    return { margin_value: null, margin_percent: 0 };
+  }
+
+  const margin_value = Number((billing - ctc).toFixed(2));
 
   return {
-    margin_value: calculatedMargin,
-    margin_percent: marginPercent(calculatedMargin, billing),
+    margin_value,
+    margin_percent: marginPercent(billing, ctc),
   };
 };
 
 const toPayload = (row, recruiterName) => {
   const payload = {
     recruiter_name: recruiterName,
+    hire: row.hire === "" ? null : row.hire ?? null,
+    ctc: numeric(row.ctc),
   };
 
-  columns.forEach((col) => {
+  tableColumns.forEach((col) => {
     if (col.key === "recruiter_name" || col.readOnly) return;
 
     const value = row[col.key];
@@ -157,7 +154,7 @@ const toPayload = (row, recruiterName) => {
 const validateNumericFields = (row) => {
   const invalid = [];
 
-  ["ctc", "offered_ctc", "billing_rate", "margin_value", "margin_percent"].forEach((key) => {
+  ["offered_ctc", "billing_rate", "margin_value", "margin_percent"].forEach((key) => {
     const value = row[key];
     if (value == null || value === "") return;
     if (numeric(value) == null) invalid.push(key);
@@ -166,10 +163,14 @@ const validateNumericFields = (row) => {
   return invalid;
 };
 
-const emptyForm = columns.reduce((acc, col) => {
-  acc[col.key] = "";
-  return acc;
-}, {});
+const emptyForm = {
+  ...tableColumns.reduce((acc, col) => {
+    acc[col.key] = "";
+    return acc;
+  }, {}),
+  hire: "",
+  ctc: "",
+};
 
 export default function RRevenueTracker() {
   const { user } = useAuth();
@@ -228,12 +229,12 @@ export default function RRevenueTracker() {
       };
     });
   };
+
   const handleClearFilters = () => {
     setSearchText("");
     setFromDate("");
     setToDate("");
   };
-
 
   const openAdd = () => {
     setEditRecord(null);
@@ -247,9 +248,15 @@ export default function RRevenueTracker() {
   const openEdit = (row) => {
     setEditRecord(row);
     const next = { ...emptyForm };
-    columns.forEach((c) => {
+
+    tableColumns.forEach((c) => {
       next[c.key] = row[c.key] ?? "";
     });
+
+    // load fields not in tableColumns
+    next.hire = row.hire ?? "";
+    next.ctc = row.ctc ?? "";
+
     setForm(next);
     setShowModal(true);
   };
@@ -312,7 +319,11 @@ export default function RRevenueTracker() {
     if (!ok) return;
 
     setDeletingId(id);
-    const { error } = await supabase.from("revenue_tracker").delete().eq("id", id).eq("recruiter_name", user.name);
+    const { error } = await supabase
+      .from("revenue_tracker")
+      .delete()
+      .eq("id", id)
+      .eq("recruiter_name", user.name);
 
     if (error) {
       alert(error.message);
@@ -447,7 +458,7 @@ export default function RRevenueTracker() {
           <table style={styles.table}>
             <thead>
               <tr>
-                {columns.map((c) => (
+                {tableColumns.map((c) => (
                   <th key={c.key} style={styles.th}>
                     {c.label}
                   </th>
@@ -458,19 +469,18 @@ export default function RRevenueTracker() {
             <tbody>
               {orderedRows.length === 0 ? (
                 <tr>
-                  <td style={styles.td} colSpan={columns.length + 1}>
+                  <td style={styles.td} colSpan={tableColumns.length + 1}>
                     No records found.
                   </td>
                 </tr>
               ) : (
                 orderedRows.map((row) => (
                   <tr key={row.id}>
-                    {columns.map((c) => (
+                    {tableColumns.map((c) => (
                       <td key={`${row.id}-${c.key}`} style={styles.td}>
                         {c.type === "date"
                           ? formatDate(row[c.key])
-                          : c.key === "ctc" ||
-                            c.key === "offered_ctc" ||
+                          : c.key === "offered_ctc" ||
                             c.key === "billing_rate" ||
                             c.key === "margin_value"
                             ? formatCurrency(row[c.key])
@@ -519,7 +529,7 @@ export default function RRevenueTracker() {
   );
 }
 
-function RevenueModal({ form, saving, editing, onChange, onClose, onSave }) {
+function TeamRevenueModal({ form, saving, editing, onChange, onClose, onSave }) {
   useEffect(() => {
     const originalOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -528,7 +538,19 @@ function RevenueModal({ form, saving, editing, onChange, onClose, onSave }) {
     };
   }, []);
 
-  const formId = "revenue-form-recruiter";
+  const formId = "team-revenue-form-manager";
+  const hireType = String(form.hire || "").toLowerCase();
+  const isPermanent = hireType === "permanent";
+  const isTemporary = hireType === "temporary";
+
+  const baseFields = [
+    { key: "doj", label: "DOJ", type: "date" },
+    { key: "recruiter_name", label: "Recruiter" },
+    { key: "candidate_name", label: "Candidate Name" },
+    { key: "client_name", label: "Client" },
+    { key: "position", label: "Position" },
+    { key: "location", label: "Location" },
+  ];
 
   return (
     <div style={styles.overlay}>
@@ -536,7 +558,7 @@ function RevenueModal({ form, saving, editing, onChange, onClose, onSave }) {
         <div style={styles.modalHeader}>
           <div style={styles.modalHeaderRow}>
             <h3 style={styles.modalTitle}>{editing ? "Edit Revenue" : "Add Revenue"}</h3>
-            <button type="button" onClick={onClose} style={styles.closeBtn}>
+            <button type="button" onClick={onClose} style={styles.closeBtn} disabled={saving}>
               x
             </button>
           </div>
@@ -549,46 +571,118 @@ function RevenueModal({ form, saving, editing, onChange, onClose, onSave }) {
                 <h4 style={styles.sectionTitle}>Revenue Details</h4>
               </div>
               <div style={styles.sectionGrid}>
-                {columns.map((col) => (
+                {baseFields.map((col) => (
                   <label key={col.key} style={styles.fieldLabel}>
                     {col.label}
-
-                    {col.key === "offer_status" ? (
-                      <select
-                        name={col.key}
-                        value={form[col.key] ?? ""}
-                        onChange={onChange}
-                        style={styles.modalInput}
-                      >
-                        <option value="">Select</option>
-                        <option value="YES">YES</option>
-                        <option value="NO">NO</option>
-                      </select>
-
-                    ) : col.key === "status" ? (
-                      <select
-                        name={col.key}
-                        value={form[col.key] ?? ""}
-                        onChange={onChange}
-                        style={styles.modalInput}
-                      >
-                        <option value="">Select</option>
-                        <option value="Joined">Joined</option>
-                        <option value="Backout">Backout</option>
-                      </select>
-
-                    ) : (
-                      <input
-                        style={styles.modalInput}
-                        type={col.type === "date" ? "date" : "text"}
-                        name={col.key}
-                        value={form[col.key] ?? ""}
-                        onChange={onChange}
-                        readOnly={col.key === "recruiter_name" || col.readOnly}
-                      />
-                    )}
+                    <input
+                      style={styles.modalInput}
+                      type={col.type === "date" ? "date" : "text"}
+                      name={col.key}
+                      value={form[col.key] ?? ""}
+                      onChange={onChange}
+                    />
                   </label>
                 ))}
+
+                <label style={styles.fieldLabel}>
+                  Hire
+                  <select name="hire" value={form.hire ?? ""} onChange={onChange} style={styles.modalInput}>
+                    <option value="">Select</option>
+                    <option value="Permanent">Permanent</option>
+                    <option value="Temporary">Temporary</option>
+                  </select>
+                </label>
+
+                <label style={styles.fieldLabel}>
+                  Offered CTC
+                  <input
+                    style={styles.modalInput}
+                    type="text"
+                    name="offered_ctc"
+                    value={form.offered_ctc ?? ""}
+                    onChange={onChange}
+                  />
+                </label>
+
+                {isPermanent && (
+                  <>
+                    <label style={styles.fieldLabel}>
+                      CTC
+                      <input
+                        style={styles.modalInput}
+                        type="text"
+                        name="ctc"
+                        value={form.ctc ?? ""}
+                        onChange={onChange}
+                      />
+                    </label>
+
+                    <label style={styles.fieldLabel}>
+                      Twite Billing Rate
+                      <input
+                        style={styles.modalInput}
+                        type="text"
+                        name="billing_rate"
+                        value={form.billing_rate ?? ""}
+                        onChange={onChange}
+                      />
+                    </label>
+
+                    <label style={styles.fieldLabel}>
+                      Margin
+                      <input
+                        style={styles.modalInput}
+                        type="text"
+                        name="margin_value"
+                        value={form.margin_value ?? ""}
+                        onChange={onChange}
+                      />
+                    </label>
+                  </>
+                )}
+
+                {isTemporary && (
+                  <>
+                    <label style={styles.fieldLabel}>
+                      CTC Per Month
+                      <input
+                        style={styles.modalInput}
+                        type="text"
+                        name="ctc"
+                        value={form.ctc ?? ""}
+                        onChange={onChange}
+                      />
+                    </label>
+
+                    <label style={styles.fieldLabel}>
+                      Billing Rate
+                      <input
+                        style={styles.modalInput}
+                        type="text"
+                        name="billing_rate"
+                        value={form.billing_rate ?? ""}
+                        onChange={onChange}
+                      />
+                    </label>
+
+                    <label style={styles.fieldLabel}>
+                      Margin
+                      <input
+                        style={styles.modalInput}
+                        type="text"
+                        name="margin_value"
+                        value={form.margin_value ?? ""}
+                        onChange={onChange}
+                      />
+                    </label>
+                  </>
+                )}
+
+                {!isPermanent && !isTemporary && (
+                  <div style={styles.hintCard}>
+                    Select Hire type to enter CTC/Billing/Margin fields.
+                  </div>
+                )}
               </div>
             </div>
           </form>
@@ -608,6 +702,7 @@ function RevenueModal({ form, saving, editing, onChange, onClose, onSave }) {
     </div>
   );
 }
+
 
 const styles = {
   page: {
@@ -848,15 +943,12 @@ const styles = {
     color: "#0f172a",
     outline: "none",
   },
+  hintCard: {
+    gridColumn: "1 / -1",
+    padding: "12px 16px",
+    background: "#f1f5f9",
+    borderRadius: "10px",
+    color: "#64748b",
+    fontSize: "14px",
+  },
 };
-
-
-
-
-
-
-
-
-
-
-

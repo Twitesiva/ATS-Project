@@ -74,9 +74,6 @@ export default function FiltersBar({
       </div>
 
       <div style={styles.actions}>
-        <button type="button" style={styles.primaryBtn} onClick={onApply}>
-          Apply
-        </button>
         <button type="button" style={styles.secondaryBtn} onClick={onReset}>
           Reset
         </button>

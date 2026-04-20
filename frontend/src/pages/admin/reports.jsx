@@ -77,7 +77,6 @@ const formatDate = (value) => {
 export default function AdminReports() {
   const [activeTab, setActiveTab] = useState("daily");
   const [filters, setFilters] = useState(defaultFilters);
-  const [appliedFilters, setAppliedFilters] = useState(defaultFilters);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -105,15 +104,15 @@ export default function AdminReports() {
   const [teamSummary, setTeamSummary] = useState([]);
 
   const serviceFilters = useMemo(() => {
-    const actor = appliedFilters.recruiter || appliedFilters.manager || "";
+    const actor = filters.recruiter || filters.manager || "";
     return {
-      fromDate: appliedFilters.fromDate,
-      toDate: appliedFilters.toDate,
-      client: appliedFilters.client,
+      fromDate: filters.fromDate,
+      toDate: filters.toDate,
+      client: filters.client,
       recruiter: actor,
-      status: appliedFilters.status,
+      status: filters.status,
     };
-  }, [appliedFilters]);
+  }, [filters]);
 
   const loadManagers = useCallback(async () => {
     const { data, error: managersError } = await supabase
@@ -143,7 +142,7 @@ export default function AdminReports() {
         getStatusDistribution(serviceFilters),
         getHiringFunnel(serviceFilters),
         getClientPerformance(serviceFilters),
-        getFilterOptions(serviceFilters),
+        getFilterOptions(),
       ]);
 
       setRevenueTrend(groupByMonth(trendRes, "doj", "margin_value"));
@@ -154,9 +153,9 @@ export default function AdminReports() {
       setOptions(optionsRes);
 
       const baseRange = getTabRange(activeTab);
-      const fromDate = appliedFilters.fromDate ? new Date(appliedFilters.fromDate) : baseRange.start;
+      const fromDate = filters.fromDate ? new Date(filters.fromDate) : baseRange.start;
       fromDate.setHours(0, 0, 0, 0);
-      const toDate = appliedFilters.toDate ? new Date(appliedFilters.toDate) : baseRange.end;
+      const toDate = filters.toDate ? new Date(filters.toDate) : baseRange.end;
       toDate.setHours(23, 59, 59, 999);
 
       let query = supabase
@@ -193,6 +192,24 @@ export default function AdminReports() {
 
         dailyMap.set(key, current);
       });
+      const formatClientName = (name) => {
+  return name
+    .toLowerCase()
+    .replace(/\b\w/g, (char) => char.toUpperCase()); // capitalize
+};
+const normalize = (name) =>
+  name.replace(/\s+/g, "").toLowerCase().trim();
+setOptions({
+  ...optionsRes,
+  clients: Array.from(
+    new Map(
+      (optionsRes.clients || []).map((c) => {
+       const key = normalize(c); // remove spaces + lowercase
+        return [key, formatClientName(c)];
+      })
+    ).values()
+  ),
+});
 
       setDailyRows(
         Array.from(dailyMap.values()).map((item) => ({
@@ -235,23 +252,36 @@ export default function AdminReports() {
     } finally {
       setLoading(false);
     }
-  }, [activeTab, appliedFilters, serviceFilters]);
+  }, [activeTab, filters, serviceFilters]);
 
   useEffect(() => {
     loadManagers();
   }, [loadManagers]);
 
-  useEffect(() => {
+ useEffect(() => {
+  const delay = setTimeout(() => {
     loadReports();
-  }, [loadReports]);
+  }, 300); // small delay
 
-  const handleFilterChange = (key, value) => {
-    setFilters((prev) => ({ ...prev, [key]: value }));
-  };
+  return () => clearTimeout(delay);
+}, [filters, activeTab]);
+const handleFilterChange = (key, value) => {
+  setFilters((prev) => {
+    let updated = { ...prev, [key]: value };
 
-  const handleApply = () => {
-    setAppliedFilters(filters);
-  };
+    // 👉 Reset logic
+    if (key === "recruiter") {
+      updated.client = ""; // reset client when recruiter changes
+    }
+
+    if (key === "manager") {
+      updated.recruiter = "";
+      updated.client = "";
+    }
+
+    return updated;
+  });
+};
 
   const handleReset = () => {
     setFilters(defaultFilters);
@@ -305,7 +335,6 @@ export default function AdminReports() {
       <FiltersBar
         filters={filters}
         onChange={handleFilterChange}
-        onApply={handleApply}
         onReset={handleReset}
         clients={options.clients}
         recruiters={options.recruiters}

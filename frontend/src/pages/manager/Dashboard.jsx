@@ -49,7 +49,7 @@ const parseRevenueValue = (value) => {
 };
 
 const normalizeRecruiter = (value) => {
-  const name = String(value || "").trim();
+  const name = String(value || "").trim().toLowerCase();
   return name || "Unknown";
 };
 
@@ -358,11 +358,6 @@ export default function Dashboard() {
       value: `INR ${kpis.revenueThisMonth.toLocaleString("en-IN")}`,
       subtitle: "Sum of margin value this month",
     },
-    {
-      title: "Overall Margin %",
-      value: `${kpis.overallMarginPercent.toFixed(2)}%`,
-      subtitle: "Across all revenue records",
-    },
   ];
 
   if (loading) {
@@ -557,7 +552,7 @@ export default function Dashboard() {
                       setSelectedRecruiter(selectedRecruiter === data.recruiter ? "all" : data.recruiter);
                     }}
                   >
-                    {recruiterAnalytics.map((entry, index) => (
+                    {(selectedRecruiter === "all" ? recruiterAnalytics : recruiterAnalytics.filter(r => r.recruiter === selectedRecruiter)).map((entry, index) => (
                       <Cell 
                         key={`cell-${index}`} 
                         fill={COLORS[index % COLORS.length]}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "../../services/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import Papa from "papaparse";
@@ -129,10 +129,9 @@ export default function RecruiterData({ scopeRole }) {
     setToDate("");
     setInterviewFromDate("");
     setInterviewToDate("");
-    fetchRecords();
   };
 
-  const fetchRecords = async () => {
+  const fetchRecords = useCallback(async () => {
     setLoading(true);
 
     let query = supabase
@@ -163,13 +162,24 @@ export default function RecruiterData({ scopeRole }) {
 
     if (!error) setRecords(data || []);
     setLoading(false);
-  };
+  }, [
+    fromDate,
+    interviewFromDate,
+    interviewToDate,
+    isManagerView,
+    searchBy,
+    searchText,
+    toDate,
+    user?.name,
+  ]);
+
+  const fetchRecordsRef = useRef(fetchRecords);
+  fetchRecordsRef.current = fetchRecords;
 
   useEffect(() => {
-    if (user?.id) {
-      fetchRecords();
-    }
-  }, [user, searchText, fromDate, toDate, interviewFromDate, interviewToDate]);
+    if (!user?.id) return;
+    fetchRecords();
+  }, [user?.id, fetchRecords]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -180,7 +190,7 @@ export default function RecruiterData({ scopeRole }) {
         "postgres_changes",
         { event: "*", schema: "public", table: "candidate_records" },
         () => {
-          fetchRecords();
+          fetchRecordsRef.current?.();
         }
       )
       .subscribe((status) => {
@@ -190,7 +200,7 @@ export default function RecruiterData({ scopeRole }) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user?.id, user?.role, user?.name, searchBy, searchText, fromDate, toDate]);
+  }, [user?.id]);
 
 
   // normalize()
@@ -612,7 +622,15 @@ export default function RecruiterData({ scopeRole }) {
       .select("sl_no,recruiter,candidate_name,client_name,requirement,status")
       .single();
 
-    if (!error) {
+    if (error) {
+  console.log("code:", error.code);
+  console.log("message:", error.message);
+  console.log("details:", error.details);
+  console.log("hint:", error.hint);
+  alert(JSON.stringify(error)); // 👈 this will popup with full error object
+  return;
+}
+      
       if (insertedRow) {
         await insertStatusHistoryRows(
           buildHistoryRow({
@@ -629,10 +647,7 @@ export default function RecruiterData({ scopeRole }) {
       }
       await touchUserLastSeen(user?.id, "single_save");
       setShowModal(false);
-      fetchRecords(); // 🔥 refresh UI
-    } else {
-      alert(error.message);
-    }
+      fetchRecords(); // 🔥 refresh UI 
   };
 
 
@@ -1142,10 +1157,9 @@ function EditCandidateModal({ record, onClose, onUpdated }) {
       return;
     }
 
-    // AUTO CLOSURE: Move to revenue_tracker and delete from candidate_records
+    // AUTO CLOSURE: Move to revenue_tracker 
     if ((form.status || "").trim().toLowerCase() === "closure") {
       const revenuePayload = {
-        s_no: record.sl_no,
         doj: new Date().toISOString().split("T")[0],
         recruiter_name: record.recruiter || user?.name,
         candidate_name: form.candidate_name || record.candidate_name || "",
@@ -1246,7 +1260,7 @@ function EditCandidateModal({ record, onClose, onUpdated }) {
       }
 
       const { data: updatedRows, error } = await query
-        .select("id,sl_no,recruiter,candidate_name,client_name,requirement,status");
+        .select("id,recruiter,candidate_name,client_name,requirement,status");
 
       if (error) {
         console.error("[status_update] candidate_records update failed", error);
@@ -1382,7 +1396,11 @@ function EditCandidateModal({ record, onClose, onUpdated }) {
                 </label>
                 <label style={styles.fieldLabel}>
                   Hire Mode
-                  <input style={styles.modalInput} name="hire_mode" value={form.hire_mode} onChange={handleChange} />
+                  <select style={styles.modalInput} name="hire_mode" value={form.hire_mode} onChange={handleChange}>
+                    <option value="">Select</option>
+                    <option value="Permanent">Permanent</option>
+                    <option value="Contract">Contract</option>
+                  </select>
                 </label>
                 <label style={styles.fieldLabel}>
                   Remarks
@@ -1481,7 +1499,7 @@ const styles = {
   },
   primaryBtn: {
     padding: "10px 18px",
-    background: "#2563eb",
+    background: "linear-gradient(90deg, #6c5ce7, #5a4fcf)",
     color: "#fff",
     border: "none",
     borderRadius: "10px",
@@ -1604,8 +1622,8 @@ const styles = {
     left: "50%",
     transform: "translate(-50%, -50%)",
     background: "#fff",
-    width: "78vw",
-    maxWidth: "1100px",
+     width: "520px",
+  maxWidth: "95%",
     minWidth: "320px",
     maxHeight: "88vh",
     borderRadius: "14px",
@@ -1628,7 +1646,7 @@ const styles = {
   },
   modalTitle: {
     margin: 0,
-    fontSize: "30px",
+    fontSize: "22px",
     fontWeight: 800,
     color: "#0f172a",
   },
@@ -1651,7 +1669,7 @@ const styles = {
     overflowY: "auto",
     overflowX: "hidden",
     flex: 1,
-    background: "#f8fafc",
+    background: "#ffffff",
   },
   modalFooter: {
     padding: "14px 20px",
@@ -1681,9 +1699,9 @@ const styles = {
   },
   sectionCard: {
     background: "#ffffff",
-    border: "1px solid #e2e8f0",
+    border: "none",
     borderRadius: "14px",
-    padding: "14px",
+    padding: "10px 0",
   },
   sectionHead: {
     marginBottom: "10px",
@@ -1692,8 +1710,8 @@ const styles = {
   },
   sectionTitle: {
     margin: 0,
-    fontSize: "18px",
-    fontWeight: 700,
+    fontSize: "16px",
+    fontWeight: 600,
     color: "#0f172a",
   },
   sectionGrid: {
@@ -1713,9 +1731,9 @@ const styles = {
   },
   modalInput: {
     height: "44px",
-    borderRadius: "12px",
-    border: "1px solid #cbd5e1",
-    background: "#fff",
+    borderRadius: "10px",
+    border: "1px solid #e5e7eb",
+    background: "#f3f4f6",
     padding: "0 12px",
     fontSize: "15px",
     color: "#0f172a",
@@ -1724,8 +1742,8 @@ const styles = {
   modalTextarea: {
     minHeight: "88px",
     borderRadius: "12px",
-    border: "1px solid #cbd5e1",
-    background: "#fff",
+    border: "1px solid #e5e7eb",
+    background: "#f3f4f6",
     padding: "10px 12px",
     fontSize: "15px",
     color: "#0f172a",

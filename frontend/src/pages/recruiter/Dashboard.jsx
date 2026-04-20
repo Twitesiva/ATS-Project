@@ -312,16 +312,6 @@ const buildDashboardData = (candidateRows, revenueRows) => {
         note: "Sum of Revenue Tracker margin values",
       },
       {
-        label: "Average Margin %",
-        value: formatPercent(avgMargin),
-        note: "Average Revenue Tracker margin percent",
-      },
-      {
-        label: "Average Billing Rate",
-        value: formatCurrency(avgBillingRate),
-        note: "Average Revenue Tracker billing rate",
-      },
-      {
         label: "Total Revenue Records",
         value: revenue.length.toLocaleString("en-IN"),
         note: "Count of Revenue Tracker rows",

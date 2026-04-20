@@ -24,30 +24,30 @@ export function RevenueTracking() {
   const pct = Math.min(100, Math.round((achieved / target) * 100));
 
   return (
-    <div style={{ padding: "28px 32px", background: "#0d1525", minHeight: "100vh" }}>
+    <div style={{ padding: "28px 32px", background: "#ffffff", minHeight: "100vh" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
         <div>
-          <h1 style={{ color: "#fff", fontSize: 24, fontWeight: 700, margin: 0 }}>Revenue Tracking</h1>
-          <p style={{ color: "#8892a4", margin: "4px 0 0", fontSize: 13 }}>BDE performance & deals</p>
+          <h1 style={{ color: "#0f172a", fontSize: 24, fontWeight: 700, margin: 0 }}>Revenue Tracking</h1>
+          <p style={{ color: "#475569", margin: "4px 0 0", fontSize: 13 }}>BDE performance & deals</p>
         </div>
         <input
           type="month" value={month} onChange={(e) => setMonth(e.target.value)}
-          style={{ background: "#1a2236", border: "1px solid #2a3550", color: "#fff", borderRadius: 8, padding: "8px 12px", fontSize: 13 }}
+          style={{ background: "#ffffff", border: "1px solid #d1d5db", color: "#0f172a", borderRadius: 8, padding: "8px 12px", fontSize: 13 }}
         />
       </div>
 
       {/* Target Progress */}
-      <div style={{ background: "#1a2236", borderRadius: 12, padding: 24, marginBottom: 24 }}>
+      <div style={{ background: "#f8fafc", borderRadius: 12, padding: 24, marginBottom: 24, border: "1px solid #e2e8f0" }}>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-          <span style={{ color: "#cdd5e0", fontSize: 14, fontWeight: 500 }}>Monthly Target Progress</span>
+          <span style={{ color: "#475569", fontSize: 14, fontWeight: 500 }}>Monthly Target Progress</span>
           <span style={{ color: pct >= 100 ? "#4ef7a4" : "#f7a44e", fontSize: 14, fontWeight: 700 }}>{pct}%</span>
         </div>
-        <div style={{ height: 12, background: "#0d1525", borderRadius: 6, overflow: "hidden", marginBottom: 8 }}>
+        <div style={{ height: 12, background: "#e2e8f0", borderRadius: 6, overflow: "hidden", marginBottom: 8 }}>
           <div style={{ height: "100%", width: `${pct}%`, background: pct >= 100 ? "#4ef7a4" : pct >= 60 ? "#f7a44e" : "#4e8ef7", borderRadius: 6, transition: "width 0.8s ease" }} />
         </div>
         <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <span style={{ color: "#8892a4", fontSize: 12 }}>Achieved: <span style={{ color: "#4ef7a4", fontWeight: 600 }}>₹{achieved.toLocaleString("en-IN")}</span></span>
-          <span style={{ color: "#8892a4", fontSize: 12 }}>Target: <span style={{ color: "#fff", fontWeight: 600 }}>₹{target.toLocaleString("en-IN")}</span></span>
+          <span style={{ color: "#475569", fontSize: 12 }}>Achieved: <span style={{ color: "#4ef7a4", fontWeight: 600 }}>₹{achieved.toLocaleString("en-IN")}</span></span>
+          <span style={{ color: "#475569", fontSize: 12 }}>Target: <span style={{ color: "#0f172a", fontWeight: 600 }}>₹{target.toLocaleString("en-IN")}</span></span>
         </div>
       </div>
 
@@ -59,38 +59,38 @@ export function RevenueTracking() {
           { label: "Avg Deal Value", value: `₹${((data?.avgDealValue || 0) / 1000).toFixed(0)}K`, color: "#c97ef7" },
           { label: "Commission", value: `₹${((data?.commission || 0) / 1000).toFixed(0)}K`, color: "#f7a44e" },
         ].map((s) => (
-          <div key={s.label} style={{ background: "#1a2236", borderRadius: 12, padding: 20, textAlign: "center" }}>
+          <div key={s.label} style={{ background: "#ffffff", borderRadius: 12, padding: 20, textAlign: "center", border: "1px solid #e2e8f0" }}>
             <div style={{ color: s.color, fontSize: 26, fontWeight: 700 }}>{loading ? "—" : s.value}</div>
-            <div style={{ color: "#8892a4", fontSize: 12, marginTop: 4 }}>{s.label}</div>
+            <div style={{ color: "#64748b", fontSize: 12, marginTop: 4 }}>{s.label}</div>
           </div>
         ))}
       </div>
 
       {/* Client Revenue Table */}
-      <div style={{ background: "#1a2236", borderRadius: 12, overflow: "hidden" }}>
-        <div style={{ padding: "16px 20px", borderBottom: "1px solid #0d1525" }}>
-          <h3 style={{ color: "#fff", margin: 0, fontSize: 15 }}>Revenue by Client</h3>
+      <div style={{ background: "#ffffff", borderRadius: 12, overflow: "hidden", border: "1px solid #e2e8f0" }}>
+        <div style={{ padding: "16px 20px", borderBottom: "1px solid #e2e8f0" }}>
+          <h3 style={{ color: "#0f172a", margin: 0, fontSize: 15 }}>Revenue by Client</h3>
         </div>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
-            <tr style={{ background: "#0d1525" }}>
+            <tr style={{ background: "#f8fafc" }}>
               {["Client", "Deals Closed", "Revenue", "Commission", "Last Deal"].map((h) => (
-                <th key={h} style={{ color: "#8892a4", padding: "10px 16px", textAlign: "left", fontSize: 12, fontWeight: 600 }}>{h}</th>
+                <th key={h} style={{ color: "#475569", padding: "10px 16px", textAlign: "left", fontSize: 12, fontWeight: 600 }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={5} style={{ color: "#8892a4", textAlign: "center", padding: 32 }}>Loading…</td></tr>
+              <tr><td colSpan={5} style={{ color: "#64748b", textAlign: "center", padding: 32 }}>Loading…</td></tr>
             ) : (data?.byClient || []).length === 0 ? (
-              <tr><td colSpan={5} style={{ color: "#8892a4", textAlign: "center", padding: 32 }}>No revenue data for this period.</td></tr>
+              <tr><td colSpan={5} style={{ color: "#64748b", textAlign: "center", padding: 32 }}>No revenue data for this period.</td></tr>
             ) : (data.byClient || []).map((c, i) => (
-              <tr key={i} style={{ borderTop: "1px solid #0d1525" }}>
-                <td style={{ padding: "12px 16px", color: "#fff", fontSize: 13, fontWeight: 500 }}>{c.client}</td>
-                <td style={{ padding: "12px 16px", color: "#cdd5e0", fontSize: 13 }}>{c.deals}</td>
+              <tr key={i} style={{ borderTop: "1px solid #e2e8f0" }}>
+                <td style={{ padding: "12px 16px", color: "#0f172a", fontSize: 13, fontWeight: 500 }}>{c.client}</td>
+                <td style={{ padding: "12px 16px", color: "#475569", fontSize: 13 }}>{c.deals}</td>
                 <td style={{ padding: "12px 16px", color: "#4ef7a4", fontSize: 13, fontWeight: 600 }}>₹{c.revenue.toLocaleString("en-IN")}</td>
                 <td style={{ padding: "12px 16px", color: "#f7a44e", fontSize: 13 }}>₹{c.commission.toLocaleString("en-IN")}</td>
-                <td style={{ padding: "12px 16px", color: "#8892a4", fontSize: 12 }}>{c.lastDeal ? new Date(c.lastDeal).toLocaleDateString("en-IN") : "—"}</td>
+                <td style={{ padding: "12px 16px", color: "#64748b", fontSize: 12 }}>{c.lastDeal ? new Date(c.lastDeal).toLocaleDateString("en-IN") : "—"}</td>
               </tr>
             ))}
           </tbody>
@@ -136,14 +136,14 @@ export function SalesPipeline() {
   const PRIORITY_COLORS = { Hot: "#f74e4e", Warm: "#f7a44e", Cold: "#4e8ef7" };
 
   return (
-    <div style={{ padding: "28px 32px", background: "#0d1525", minHeight: "100vh" }}>
+    <div style={{ padding: "28px 32px", background: "#ffffff", minHeight: "100vh" }}>
       <div style={{ marginBottom: 24 }}>
-        <h1 style={{ color: "#fff", fontSize: 24, fontWeight: 700, margin: 0 }}>Sales Pipeline</h1>
-        <p style={{ color: "#8892a4", margin: "4px 0 0", fontSize: 13 }}>Drag & drop leads across stages</p>
+        <h1 style={{ color: "#0f172a", fontSize: 24, fontWeight: 700, margin: 0 }}>Sales Pipeline</h1>
+        <p style={{ color: "#475569", margin: "4px 0 0", fontSize: 13 }}>Drag & drop leads across stages</p>
       </div>
 
       {loading ? (
-        <p style={{ color: "#8892a4" }}>Loading pipeline…</p>
+        <p style={{ color: "#475569" }}>Loading pipeline…</p>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 12, overflowX: "auto" }}>
           {STAGES.map((stage) => (
@@ -154,7 +154,7 @@ export function SalesPipeline() {
               style={{ minWidth: 180 }}
             >
               {/* Column Header */}
-              <div style={{ background: `${STAGE_COLORS[stage]}22`, border: `1px solid ${STAGE_COLORS[stage]}55`, borderRadius: 10, padding: "8px 12px", marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ background: "#f8fafc", border: `1px solid ${STAGE_COLORS[stage]}55`, borderRadius: 10, padding: "8px 12px", marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span style={{ color: STAGE_COLORS[stage], fontSize: 12, fontWeight: 700 }}>{stage}</span>
                 <span style={{ background: `${STAGE_COLORS[stage]}33`, color: STAGE_COLORS[stage], borderRadius: 12, padding: "1px 8px", fontSize: 11 }}>{byStage[stage].length}</span>
               </div>
@@ -167,20 +167,20 @@ export function SalesPipeline() {
                     draggable
                     onDragStart={() => setDragging(lead)}
                     style={{
-                      background: "#1a2236", borderRadius: 10, padding: "12px 14px",
-                      cursor: "grab", border: "1px solid #2a3550",
+                      background: "#ffffff", borderRadius: 10, padding: "12px 14px",
+                      cursor: "grab", border: "1px solid #e2e8f0",
                       opacity: dragging?._id === lead._id ? 0.5 : 1,
                       transition: "opacity 0.2s",
                     }}
                   >
-                    <div style={{ color: "#fff", fontSize: 12, fontWeight: 600, marginBottom: 4 }}>{lead.companyName}</div>
-                    <div style={{ color: "#8892a4", fontSize: 11, marginBottom: 8 }}>{lead.contactPerson}</div>
+                    <div style={{ color: "#0f172a", fontSize: 12, fontWeight: 600, marginBottom: 4 }}>{lead.companyName}</div>
+                    <div style={{ color: "#475569", fontSize: 11, marginBottom: 8 }}>{lead.contactPerson}</div>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <span style={{
                         background: `${PRIORITY_COLORS[lead.priority]}22`, color: PRIORITY_COLORS[lead.priority],
                         borderRadius: 12, padding: "1px 8px", fontSize: 10, fontWeight: 600,
                       }}>{lead.priority}</span>
-                      <span style={{ color: "#8892a4", fontSize: 10 }}>{lead.source}</span>
+                      <span style={{ color: "#64748b", fontSize: 10 }}>{lead.source}</span>
                     </div>
                   </div>
                 ))}
