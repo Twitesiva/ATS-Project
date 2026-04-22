@@ -5,7 +5,6 @@ export default function KpiCards({ stats }) {
     { label: "Total Candidates", value: stats.totalCandidates || 0 },
     { label: "Interviews Scheduled", value: stats.interviewsScheduled || 0 },
     { label: "Shortlisted", value: stats.shortlisted || 0 },
-    { label: "Closures", value: stats.closures || 0 },
     { label: "Revenue", value: formatCurrency(stats.revenue || 0) },
   ];
 

@@ -35,23 +35,32 @@ export default function MasterTracker() {
         <table style={{ width: "100%", minWidth: 760, borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ background: "#f1f5f9" }}>
-              {["Tracker", "Description", "Status", "Next Step"].map((heading) => (
-                <th key={heading} style={{ color: "#475569", padding: "12px 14px", textAlign: "left", fontSize: 12, fontWeight: 600 }}>{heading}</th>
+              {[
+                "S.No",
+                "Date",
+                "Source",
+                "Client",
+                "Type",
+                "Updates",
+                "Status",
+                "Status from TA",
+                "Hire Mode",
+                "SPOC Name",
+                "Mobile",
+                "Mail",
+                "Payment Terms",
+              ].map((heading) => (
+                <th key={heading} style={{ color: "#475569", padding: "12px 14px", textAlign: "left", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>
+                  {heading}
+                </th>
               ))}
             </tr>
           </thead>
           <tbody>
             <tr style={{ borderTop: "1px solid #e2e8f0" }}>
-              <td style={{ padding: "12px 14px", color: "#0f172a", fontSize: 13, fontWeight: 600 }}>Daily Tracker</td>
-              <td style={{ padding: "12px 14px", color: "#475569", fontSize: 13 }}>Detailed client follow-ups, source, and payment terms.</td>
-              <td style={{ padding: "12px 14px", color: "#16a34a", fontSize: 13, fontWeight: 600 }}>Active</td>
-              <td style={{ padding: "12px 14px", color: "#475569", fontSize: 13 }}>Add daily status updates.</td>
-            </tr>
-            <tr style={{ borderTop: "1px solid #e2e8f0" }}>
-              <td style={{ padding: "12px 14px", color: "#0f172a", fontSize: 13, fontWeight: 600 }}>Weekly Tracker</td>
-              <td style={{ padding: "12px 14px", color: "#475569", fontSize: 13 }}>Lead generation and follow-up progress per BD.</td>
-              <td style={{ padding: "12px 14px", color: "#fb923c", fontSize: 13, fontWeight: 600 }}>Review</td>
-              <td style={{ padding: "12px 14px", color: "#475569", fontSize: 13 }}>Update weekly metrics.</td>
+              <td colSpan={13} style={{ padding: "24px 14px", textAlign: "center", color: "#94a3b8", fontSize: 13 }}>
+                No records found.
+              </td>
             </tr>
           </tbody>
         </table>

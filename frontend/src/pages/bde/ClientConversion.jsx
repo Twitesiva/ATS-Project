@@ -160,7 +160,7 @@ export default function ClientConversion() {
 
               <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
                 <button
-                  onClick={() => navigate("/bde/requirements/new", { state: { company: c } })}
+                onClick={() => navigate("/bde/requirements", { state: { companyId: c.id, companyName: c.company_name } })}
                   style={{ flex: 1, background: "#e0e7ff", color: "#2563eb", border: "none", borderRadius: 8, padding: "7px 0", cursor: "pointer", fontSize: 12, fontWeight: 600 }}
                 >
                   + Requirement

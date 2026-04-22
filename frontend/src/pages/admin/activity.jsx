@@ -21,6 +21,7 @@ export default function AdminActivity() {
     tlsOffline: 0,
   });
   const [rows, setRows] = useState([]);
+  const [roleFilter, setRoleFilter] = useState("all"); // all | manager | recruiter | tl
 
   const loadActivity = useCallback(async () => {
     setLoading(true);
@@ -82,9 +83,37 @@ export default function AdminActivity() {
     { title: "TL Offline", value: stats.tlsOffline, sub: "Currently inactive team leads" },
   ];
 
+  const filteredRows = roleFilter === "all" 
+    ? rows 
+    : rows.filter(r => String(r.role || "").toLowerCase() === roleFilter);
+
   return (
     <div style={styles.page}>
       <h2 style={styles.title}>HR Activity</h2>
+
+      <div style={styles.roleCards}>
+        <button
+          type="button"
+          onClick={() => setRoleFilter(roleFilter === "all" ? "manager" : "all")}
+          style={roleFilter === "manager" ? styles.roleCardActive : styles.roleCard}
+        >
+          Manager
+        </button>
+        <button
+          type="button"
+          onClick={() => setRoleFilter(roleFilter === "all" ? "recruiter" : "all")}
+          style={roleFilter === "recruiter" ? styles.roleCardActive : styles.roleCard}
+        >
+          Recruiter
+        </button>
+        <button
+          type="button"
+          onClick={() => setRoleFilter(roleFilter === "all" ? "tl" : "all")}
+          style={roleFilter === "tl" ? styles.roleCardActive : styles.roleCard}
+        >
+          TL
+        </button>
+      </div>
 
       <div style={styles.grid}>
         {cards.map((card) => (
@@ -114,7 +143,7 @@ export default function AdminActivity() {
                   <td style={styles.td} colSpan={4}>No user activity found.</td>
                 </tr>
               ) : (
-                rows.map((row, idx) => (
+                filteredRows.map((row, idx) => (
                   <tr key={`${row.email}-${idx}`}>
                     <td style={styles.td}>{row.name || row.email?.split("@")[0] || "-"}</td>
                     <td style={styles.td}>{getRoleLabel(row.role)}</td>
@@ -134,6 +163,31 @@ export default function AdminActivity() {
 const styles = {
   page: { display: "flex", flexDirection: "column", gap: "14px" },
   title: { margin: 0, fontSize: "30px", color: "#0f172a" },
+  roleCards: {
+    display: "flex",
+    gap: "10px",
+    marginBottom: "8px",
+  },
+  roleCard: {
+    padding: "10px 20px",
+    border: "1px solid #cbd5e1",
+    borderRadius: "10px",
+    background: "#fff",
+    cursor: "pointer",
+    fontWeight: 600,
+    fontSize: "14px",
+    color: "#0f172a",
+  },
+  roleCardActive: {
+    padding: "10px 20px",
+    border: "1px solid #2563eb",
+    borderRadius: "10px",
+    background: "#2563eb",
+    cursor: "pointer",
+    fontWeight: 600,
+    fontSize: "14px",
+    color: "#fff",
+  },
   grid: {
     display: "grid",
     gap: "12px",

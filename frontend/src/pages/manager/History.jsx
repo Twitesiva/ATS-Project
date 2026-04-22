@@ -40,9 +40,10 @@ export default function History() {
   const [searchMode, setSearchMode] = useState("candidate"); // "candidate" | "recruiter"
   const [searchText, setSearchText] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [dateFilter, setDateFilter] = useState("all"); // all | today | last7 | last30 | custom
+const [dateFilter, setDateFilter] = useState("all"); // all | today | last7 | last30 | custom
   const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
+const [toDate, setToDate] = useState("");
+  const [roleFilter, setRoleFilter] = useState("all"); // all | manager | recruiter
   const tableWrapRef = useRef(null);
   const dragRef = useRef(null);
   const [scrollInfo, setScrollInfo] = useState({ scrollTop: 0, clientHeight: 0, scrollHeight: 0 });
@@ -115,7 +116,7 @@ export default function History() {
 
   const mappedRows = useMemo(() => rows.map(mapRow), [rows]);
 
-  const filteredRows = useMemo(() => {
+const filteredRows = useMemo(() => {
     const text = (searchText || "").trim().toLowerCase();
     const statusValue = (statusFilter || "all").trim();
 
@@ -142,6 +143,12 @@ export default function History() {
     return mappedRows.filter((r) => {
       if (statusValue !== "all" && String(r.status || "").trim() !== statusValue) return false;
 
+      if (roleFilter !== "all") {
+        const isManager = r.recruiterName?.toLowerCase() === "manager";
+        if (roleFilter === "manager" && !isManager) return false;
+        if (roleFilter === "recruiter" && isManager) return false;
+      }
+
       if (text) {
         const hay =
           searchMode === "recruiter"
@@ -160,7 +167,7 @@ export default function History() {
 
       return true;
     });
-  }, [mappedRows, searchMode, searchText, statusFilter, dateFilter, fromDate, toDate]);
+  }, [mappedRows, searchMode, searchText, statusFilter, dateFilter, fromDate, toDate, roleFilter]);
 
   useEffect(() => {
     const el = tableWrapRef.current;
@@ -280,8 +287,26 @@ export default function History() {
         /* Hide native scrollbars (we render a custom vertical scrollbar). */
         .history-table-wrap { scrollbar-width: none; }
         .history-table-wrap::-webkit-scrollbar { width: 0; height: 0; }
-      `}</style>
-      <h2 style={styles.title}>Recruiters History</h2>
+`}</style>
+
+<h2 style={styles.title}>Recruiters History</h2>
+
+      <div style={styles.roleCards}>
+        <button
+          type="button"
+          onClick={() => setRoleFilter(roleFilter === "all" ? "manager" : "all")}
+          style={roleFilter === "manager" ? styles.roleCardActive : styles.roleCard}
+        >
+          Manager
+        </button>
+        <button
+          type="button"
+          onClick={() => setRoleFilter(roleFilter === "all" ? "recruiter" : "all")}
+          style={roleFilter === "recruiter" ? styles.roleCardActive : styles.roleCard}
+        >
+          Recruiter
+        </button>
+      </div>
 
       <div style={styles.filtersBar}>
         <div style={styles.searchModeGroup} role="group" aria-label="Search mode">
@@ -334,13 +359,14 @@ export default function History() {
 
         <button
           type="button"
-          onClick={() => {
+onClick={() => {
             setSearchMode("candidate");
             setSearchText("");
             setStatusFilter("all");
             setDateFilter("all");
             setFromDate("");
             setToDate("");
+            setRoleFilter("all");
           }}
           style={styles.clearBtn}
         >
@@ -430,9 +456,34 @@ const styles = {
     display: "flex",
     flexDirection: "column",
   },
-  title: {
+title: {
     margin: "0 0 12px 0",
     flexShrink: 0,
+  },
+  roleCards: {
+    display: "flex",
+    gap: "10px",
+    marginBottom: "12px",
+  },
+  roleCard: {
+    padding: "10px 20px",
+    border: "1px solid #cbd5e1",
+    borderRadius: "10px",
+    background: "#fff",
+    cursor: "pointer",
+    fontWeight: 600,
+    fontSize: "14px",
+    color: "#0f172a",
+  },
+  roleCardActive: {
+    padding: "10px 20px",
+    border: "1px solid #2563eb",
+    borderRadius: "10px",
+    background: "#2563eb",
+    cursor: "pointer",
+    fontWeight: 600,
+    fontSize: "14px",
+    color: "#fff",
   },
   filtersBar: {
     display: "flex",

@@ -21,11 +21,14 @@ const Badge = ({ text, colorMap }) => (
 );
 
 const EMPTY_FORM = {
-  company_id: "", mode_of_source: "", job_title: "", skills: "", experience: "",
+  company_id: "", job_title: "", skills: "", experience: "",
   salary_min: "", salary_max: "", location: "",
+  no_of_openings: "", mode: "", hire: "",
   urgency: "Medium", status: "Open", description: "",
 };
 
+// In the form section (lines ~152):
+// Remove the mode_of_source select input entirely
 const Field = ({ label, children, span }) => (
   <div style={{ marginBottom: 14, gridColumn: span === 2 ? "span 2" : undefined }}>
     <label style={{ color: "#475569", fontSize: 12, display: "block", marginBottom: 5 }}>{label}</label>
@@ -76,23 +79,28 @@ export default function JobRequirements() {
     if (!form.job_title.trim()) return alert("Job title is required.");
     setSaving(true);
     const payload = {
-      company_id: Number(form.company_id),
-      mode_of_source: form.mode_of_source || null,
-      job_title: form.job_title.trim(),
-      skills: form.skills || null,
-      experience: form.experience || null,
-      salary_min: form.salary_min ? Number(form.salary_min) : null,
-      salary_max: form.salary_max ? Number(form.salary_max) : null,
-      location: form.location || null,
-      urgency: form.urgency,
-      status: form.status,
-      description: form.description || null,
-    };
+  company_id: Number(form.company_id),
+  job_title: form.job_title.trim(),
+  skills: form.skills || null,
+  experience: form.experience || null,
+  salary_min: form.salary_min ? Number(form.salary_min) : null,
+  salary_max: form.salary_max ? Number(form.salary_max) : null,
+  location: form.location || null,
+  no_of_openings: form.no_of_openings ? Number(form.no_of_openings) : null,
+  mode: form.mode || null,
+  hire: form.hire || null,
+  urgency: form.urgency,
+  status: form.status,
+  description: form.description || null,
+};
     let error;
     if (editingId) {
       ({ error } = await supabase.from("requirements").update(payload).eq("id", editingId));
     } else {
-      ({ error } = await supabase.from("requirements").insert(payload));
+      ({ error } = await supabase.from("requirements").insert({
+        ...payload,
+        created_at: new Date().toISOString(),
+      }));
     }
     if (error) { alert(error.message); setSaving(false); return; }
     setShowForm(false);
@@ -105,7 +113,14 @@ export default function JobRequirements() {
   const filtered = filterStatus
     ? requirements.filter((r) => r.status === filterStatus)
     : requirements;
-
+    const uniqueByClientPosition = new Map();
+filtered.forEach((row) => {
+  const key = `${row.client_name?.trim().toLowerCase() || ""}||${row.position?.trim().toLowerCase() || ""}`;
+  const existing = uniqueByClientPosition.get(key);
+  if (!existing || new Date(row.doj) > new Date(existing.doj)) {
+    uniqueByClientPosition.set(key, row);
+  }
+});
   return (
     <div style={{ padding: "28px 32px", background: "#ffffff", minHeight: "100vh" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
@@ -184,6 +199,39 @@ export default function JobRequirements() {
                 onChange={(e) => setForm({ ...form, skills: e.target.value })}
               />
             </Field>
+            <Field label="No of Opening">
+  <input
+    style={inputStyle}
+    type="number"
+    placeholder="e.g. 5"
+    value={form.no_of_openings}
+    onChange={(e) => setForm({ ...form, no_of_openings: e.target.value })}
+  />
+</Field>
+
+<Field label="Mode">
+  <select
+    style={selectStyle}
+    value={form.mode}
+    onChange={(e) => setForm({ ...form, mode: e.target.value })}
+  >
+    <option value="">Select</option>
+    <option value="Email">Email</option>
+    <option value="Phone">Phone</option>
+    <option value="Linkedin">Linkedin</option>
+  </select>
+</Field>
+            <Field label="Hire">
+  <select
+    style={selectStyle}
+    value={form.hire}
+    onChange={(e) => setForm({ ...form, hire: e.target.value })}
+  >
+    <option value="">Select</option>
+    <option value="Permanent">Permanent</option>
+    <option value="Contract">Contract</option>
+  </select>
+</Field>
 
             <Field label="Location">
               <input
@@ -281,16 +329,14 @@ export default function JobRequirements() {
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ background: "#f1f5f9" }}>
-              {["#", "Client", "Job Title", "Skills", "Location", "Salary", "Urgency", "Status", "Actions"].map((h) => (
+             {["#", "Client", "Job Title", "Skills", "Location", "No of Opening", "Mode", "Salary", "Urgency", "Status", "Actions"].map((h) => (
                 <th key={h} style={{ color: "#8892a4", padding: "12px 14px", textAlign: "left", fontSize: 12, fontWeight: 600 }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={9} style={{ color: "#64748b", textAlign: "center", padding: 40 }}>Loading…</td></tr>
-            ) : filtered.length === 0 ? (
-              <tr><td colSpan={9} style={{ color: "#64748b", textAlign: "center", padding: 40 }}>No requirements found.</td></tr>
+              <><tr><td colSpan={11} style={{ color: "#64748b", textAlign: "center", padding: 40 }}>Loading…</td></tr><tr><td colSpan={11} style={{ color: "#64748b", textAlign: "center", padding: 40 }}>No requirements found.</td></tr></>
             ) : filtered.map((req, i) => (
               <tr key={req.id} style={{ borderTop: "1px solid #e2e8f0" }}>
                 <td style={{ padding: "10px 14px", color: "#64748b", fontSize: 12 }}>{i + 1}</td>
@@ -300,8 +346,10 @@ export default function JobRequirements() {
                   <div style={{ color: "#64748b", fontSize: 11 }}>{req.experience}</div>
                 </td>
                 <td style={{ padding: "10px 14px", color: "#64748b", fontSize: 12 }}>{req.skills || "—"}</td>
-                <td style={{ padding: "10px 14px", color: "#0f172a", fontSize: 12 }}>{req.location || "—"}</td>
-                <td style={{ padding: "10px 14px", color: "#4ef7a4", fontSize: 12, fontWeight: 500 }}>
+             <td style={{ padding: "10px 14px", color: "#0f172a", fontSize: 12 }}>{req.location || "—"}</td>
+<td style={{ padding: "10px 14px", color: "#0f172a", fontSize: 12, fontWeight: 600 }}>{req.no_of_openings || "—"}</td>
+<td style={{ padding: "10px 14px", color: "#64748b", fontSize: 12 }}>{req.mode || "—"}</td>
+<td style={{ padding: "10px 14px", color: "#4ef7a4", fontSize: 12, fontWeight: 500 }}>
                   {req.salary_min && req.salary_max
                     ? `₹${Math.round(req.salary_min / 1000)}K–${Math.round(req.salary_max / 1000)}K`
                     : "—"}
@@ -315,6 +363,7 @@ export default function JobRequirements() {
                         setForm({
                           company_id: req.company_id,
                           mode_of_source: req.mode_of_source || "",
+                          mode: req.mode || "",
                           job_title: req.job_title || "",
                           skills: req.skills || "",
                           experience: req.experience || "",

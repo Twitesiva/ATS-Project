@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { supabase } from "../../services/supabaseClient";
-import Loader from "../../components/common/Loader";
+import Loader from "../../components/common/Loader";
+
 import { formatDate } from "../../utils/dateFormat";
 
 const columnConfig = [
@@ -130,7 +131,8 @@ const detectDelimiter = (csvText) => {
   return bestCount > 0 ? best : ",";
 };
 
-export default function Clients() {
+export default function Clients() {
+
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -139,6 +141,8 @@ export default function Clients() {
   const [editingRow, setEditingRow] = useState(null);
   const [form, setForm] = useState({ ...emptyForm });
   const [clientSearch, setClientSearch] = useState("");
+  const [hireModeFilter, setHireModeFilter] = useState("all");
+  const [kpiFilter, setKpiFilter] = useState(null);
 
   const fetchRows = async () => {
     setLoading(true);
@@ -164,7 +168,62 @@ export default function Clients() {
     fetchRows();
   }, [clientSearch]);
 
-  const orderedRows = useMemo(() => rows, [rows]);
+  const orderedRows = useMemo(() => {
+    let filtered = rows;
+    
+    if (hireModeFilter && hireModeFilter !== "all") {
+      filtered = filtered.filter((row) => {
+        const mode = String(row.hire_mode || "").trim().toLowerCase();
+        return mode === hireModeFilter;
+      });
+    }
+    
+    if (kpiFilter === "permanent") {
+      filtered = filtered.filter((row) => {
+        const mode = String(row.hire_mode || "").trim().toLowerCase();
+        return mode === "permanent";
+      });
+    } else if (kpiFilter === "contract") {
+      filtered = filtered.filter((row) => {
+        const mode = String(row.hire_mode || "").trim().toLowerCase();
+        return mode === "contract";
+      });
+    } else if (kpiFilter === "closure") {
+      filtered = filtered.filter((row) => {
+        return Number(row.closure) > 0;
+      });
+    } else if (kpiFilter === "backout") {
+      filtered = filtered.filter((row) => {
+        return Number(row.backout) > 0;
+      });
+    }
+    
+    return filtered;
+  }, [rows, hireModeFilter, kpiFilter]);
+
+  const kpiStats = useMemo(() => {
+    let permanent = 0;
+    let contract = 0;
+    let closure = 0;
+    let backout = 0;
+
+    rows.forEach((row) => {
+      const mode = String(row.hire_mode || "").trim().toLowerCase();
+      const closureVal = Number(row.closure) || 0;
+      const backoutVal = Number(row.backout) || 0;
+
+      if (mode === "permanent") {
+        permanent += 1;
+        closure += closureVal;
+      }
+      if (mode === "contract") {
+        contract += 1;
+        backout += backoutVal;
+      }
+    });
+
+    return { permanent, contract, closure, backout };
+  }, [rows]);
 
   const handleOpenAdd = () => {
     setEditingRow(null);
@@ -343,6 +402,53 @@ export default function Clients() {
           onChange={(e) => setClientSearch(e.target.value)}
           style={styles.input}
         />
+
+        <select
+          value={hireModeFilter}
+          onChange={(e) => setHireModeFilter(e.target.value)}
+          style={{ ...styles.input, maxWidth: "180px" }}
+        >
+          <option value="all">All Hire Modes</option>
+          <option value="permanent">Permanent</option>
+          <option value="contract">Contract</option>
+        </select>
+      </div>
+
+      <div style={styles.kpiGrid}>
+        <div style={styles.kpiRow}>
+          <button 
+            type="button"
+            style={{...styles.kpiCardSmall, ...(kpiFilter === "permanent" ? styles.kpiCardSmallActive : {})}} 
+            onClick={() => setKpiFilter(kpiFilter === "permanent" ? null : "permanent")}
+          >
+            <div style={styles.kpiLabel}>Permanent</div>
+            <div style={styles.kpiValueSmall}>{kpiStats.permanent.toLocaleString("en-IN")}</div>
+          </button>
+          <button 
+            type="button"
+            style={{...styles.kpiCardSmall, ...(kpiFilter === "contract" ? styles.kpiCardSmallActive : {})}} 
+            onClick={() => setKpiFilter(kpiFilter === "contract" ? null : "contract")}
+          >
+            <div style={styles.kpiLabel}>Contract</div>
+            <div style={styles.kpiValueSmall}>{kpiStats.contract.toLocaleString("en-IN")}</div>
+          </button>
+          <button 
+            type="button"
+            style={{...styles.kpiCardSmall, ...(kpiFilter === "closure" ? styles.kpiCardSmallActive : {})}} 
+            onClick={() => setKpiFilter(kpiFilter === "closure" ? null : "closure")}
+          >
+            <div style={styles.kpiLabel}>Closure</div>
+            <div style={styles.kpiValueSmall}>{kpiStats.closure.toLocaleString("en-IN")}</div>
+          </button>
+          <button 
+            type="button"
+            style={{...styles.kpiCardSmall, ...(kpiFilter === "backout" ? styles.kpiCardSmallActive : {})}} 
+            onClick={() => setKpiFilter(kpiFilter === "backout" ? null : "backout")}
+          >
+            <div style={styles.kpiLabel}>Backout</div>
+            <div style={styles.kpiValueSmall}>{kpiStats.backout.toLocaleString("en-IN")}</div>
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -463,6 +569,17 @@ function ClientRecordModal({ form, editingRow, saving, onChange, onClose, onSave
                         value={form[col.key]}
                         onChange={onChange}
                       />
+                    ) : col.key === "hire_mode" ? (
+                      <select
+                        style={styles.modalInput}
+                        name={col.key}
+                        value={form[col.key]}
+                        onChange={onChange}
+                      >
+                        <option value="">Select Hire Mode</option>
+                        <option value="Permanent">Permanent</option>
+                        <option value="Contract">Contract</option>
+                      </select>
                     ) : (
                       <input
                         style={styles.modalInput}
@@ -543,6 +660,10 @@ const styles = {
     background: "#fff",
     color: "#0f172a",
     cursor: "pointer",
+  },
+  kpiCardSmallActive: {
+    background: "#eef2ff",
+    borderColor: "#c7d2fe",
   },
   deleteBtn: {
     padding: "6px 10px",
@@ -693,6 +814,59 @@ const styles = {
     display: "flex",
     flexDirection: "column",
     gap: "16px",
+  },
+  kpiGrid: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "14px",
+    marginBottom: "18px",
+  },
+  kpiRow: {
+    display: "grid",
+    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+    gap: "14px",
+  },
+  kpiCard: {
+    background: "#eef2ff",
+    border: "1px solid #c7d2fe",
+    borderRadius: "14px",
+    padding: "18px 20px",
+    minHeight: "98px",
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "space-between",
+  },
+  kpiCardSmall: {
+    background: "#f0fdf4",
+    border: "1px solid #bbf7d0",
+    borderRadius: "10px",
+    padding: "12px 16px",
+    minHeight: "70px",
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "space-between",
+    cursor: "pointer",
+  },
+  kpiCardActive: {
+    background: "#dcfce7",
+    border: "2px solid #166534",
+    boxShadow: "0 4px 12px rgba(22, 101, 52, 0.2)",
+  },
+  kpiLabel: {
+    color: "#4338ca",
+    fontSize: "13px",
+    fontWeight: 700,
+    marginBottom: "8px",
+  },
+  kpiValue: {
+    color: "#1e3a8a",
+    fontSize: "28px",
+    fontWeight: 800,
+  },
+  kpiValueSmall: {
+    color: "#166534",
+    fontSize: "22px",
+    fontWeight: 700,
   },
   sectionCard: {
     background: "#ffffff",

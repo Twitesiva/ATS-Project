@@ -1,11 +1,50 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../../services/supabaseClient";
-
+import DatePicker from "react-datepicker";
+import "react-datepicker/dist/react-datepicker.css";
 const inputStyle = {
   width: "100%", background: "#ffffff", border: "1px solid #d1d5db",
   color: "#0f172a", padding: "9px 12px", borderRadius: 8, fontSize: 13, boxSizing: "border-box",
 };
+const CustomCalendar = ({ children, onClickOutside }) => {
+  return (
+    <div style={{ position: "relative" }}>
+      {children}
 
+      {/* ✅ FIXED FOOTER */}
+      <div
+        style={{
+          position: "sticky",
+          bottom: 0,
+          background: "#fff",
+          borderTop: "1px solid #e2e8f0",
+          padding: "8px 10px",
+          display: "flex",
+          justifyContent: "flex-end",
+          zIndex: 10
+        }}
+      >
+        <button
+          onClick={() => {
+  onClickOutside();
+  setShowModal(false); // closes modal too
+}}
+          style={{
+            background: "#2563eb",
+            color: "#fff",
+            border: "none",
+            borderRadius: 6,
+            padding: "6px 14px",
+            cursor: "pointer",
+            fontSize: 12,
+            fontWeight: 600
+          }}
+        >
+        </button>
+      </div>
+    </div>
+  );
+};
 const Modal = ({ title, onClose, children }) => (
   <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
     <div style={{ background: "#ffffff", borderRadius: 14, padding: 28, width: 480, boxShadow: "0 20px 50px rgba(15,23,42,0.12)" }}>
@@ -37,6 +76,7 @@ export default function FollowUps() {
   const [showModal, setShowModal] = useState(false);
   const [tab, setTab] = useState("today");
   const [form, setForm] = useState(EMPTY_FORM);
+  const [dateTime, setDateTime] = useState("");
 
   const fetchAll = async () => {
     setLoading(true);
@@ -178,9 +218,26 @@ export default function FollowUps() {
               <option>Call</option><option>Meeting</option><option>Email</option><option>Demo</option>
             </select>
           </Field>
-          <Field label="Scheduled At *">
-            <input style={inputStyle} type="datetime-local" value={form.activity_datetime} onChange={(e) => setForm({ ...form, activity_datetime: e.target.value })} />
+     <Field label="Scheduled At">
+            <DatePicker
+              selected={
+                form.activity_datetime
+                  ? new Date(form.activity_datetime)
+                  : null
+              }
+              onChange={(date) =>
+                setForm({
+                  ...form,
+                  activity_datetime: date.toISOString(),
+                })
+              }
+              showTimeSelect
+              dateFormat="dd-MM-yyyy HH:mm"
+              calendarContainer={CustomCalendar}
+              customInput={<input style={inputStyle} />}
+            />
           </Field>
+
           <Field label="Notes / Agenda">
             <textarea style={{ ...inputStyle, height: 80, resize: "vertical" }} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
           </Field>

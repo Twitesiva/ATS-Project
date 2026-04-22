@@ -72,37 +72,55 @@ export default function PageClosure() {
   const [searchFilter, setSearchFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
+useEffect(() => {
+  const load = async () => {
+    setLoading(true);
 
-      // 1. Fetch all BDE clients (status = 'Client') from companies table
-      const { data: companies } = await supabase
-        .from("companies")
-        .select("company_name")
-        .eq("status", "Client");
+    const { data: companies, error: companiesError } = await supabase
+      .from("companies")
+      .select("company_name")
+      .eq("status", "Client");
 
-      const names = new Set((companies || []).map((c) => c.company_name.trim().toLowerCase()));
-      setClientNames(names);
-
-      // 2. Fetch all revenue_tracker rows
-      const { data: revenue, error } = await supabase
-        .from("revenue_tracker")
-        .select("*")
-        .order("doj", { ascending: false });
-
-      if (error) console.error(error);
-
-      // 3. Filter: only rows whose client_name matches a BDE client
-      const filtered = (revenue || []).filter((r) =>
-  names.has(r.client_name?.trim().toLowerCase())
-);
-
-      setAllData(filtered);
+    if (companiesError) {
+      console.error(companiesError);
       setLoading(false);
-    };
-    load();
-  }, []);
+      return;
+    }
+
+    const names = new Set(
+      (companies || []).map((c) => c.company_name.trim().toLowerCase())
+    );
+    setClientNames(names);
+
+    const { data: revenue, error: revenueError } = await supabase
+      .from("revenue_tracker")
+      .select("*")
+      .order("doj", { ascending: false });
+
+    if (revenueError) {
+      console.error(revenueError);
+      setLoading(false);
+      return;
+    }
+
+    const filtered = (revenue || []).filter((r) =>
+      names.has(r.client_name?.trim().toLowerCase())
+    );
+
+    const uniqueByClientPosition = new Map();
+    filtered.forEach((row) => {
+      const key = `${row.client_name?.trim().toLowerCase() || ""}||${row.position?.trim().toLowerCase() || ""}`;
+      if (!uniqueByClientPosition.has(key)) {
+        uniqueByClientPosition.set(key, row);
+      }
+    });
+
+    setAllData([...uniqueByClientPosition.values()]);
+    setLoading(false);
+  };
+
+  load();
+}, []);
 
   // Apply UI filters
   const monthOptions = getMonthOptions(allData);

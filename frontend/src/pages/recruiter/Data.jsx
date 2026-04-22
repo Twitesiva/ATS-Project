@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../services/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import Papa from "papaparse";
@@ -113,6 +113,16 @@ export default function RecruiterData({ scopeRole }) {
   const [showModal, setShowModal] = useState(false);
   const [editRecord, setEditRecord] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+
+  const metrics = useMemo(() => {
+    const normalizedStatus = (value) => String(value || "").trim().toLowerCase();
+    const closures = records.filter((r) => normalizedStatus(r.status) === "closure").length;
+    const offered = records.filter((r) => normalizedStatus(r.status) === "offered").length;
+    const profileSubmitted = records.filter((r) => normalizedStatus(r.status) === "profile submitted").length;
+    const dropOut = records.filter((r) => normalizedStatus(r.status).includes("drop out")).length;
+
+    return { closures, offered, profileSubmitted, dropOut };
+  }, [records]);
 
   // filters
   const [searchBy, setSearchBy] = useState("candidate_name");
@@ -681,6 +691,23 @@ export default function RecruiterData({ scopeRole }) {
   return (
     <div style={styles.page}>
       <h2>{isManagerView ? "Monthly Report" : "Recruiter Data"}</h2>
+
+      {isManagerView && (
+        <div style={styles.cardGrid4}>
+          {[
+            { label: "Closures", value: metrics.closures, subtitle: "Closure count" },
+            { label: "Offered", value: metrics.offered, subtitle: "Offer stage count" },
+            { label: "Profile Submitted", value: metrics.profileSubmitted, subtitle: "Submitted candidates" },
+            { label: "Drop Out", value: metrics.dropOut, subtitle: "Dropout count" },
+          ].map((card) => (
+            <div key={card.label} style={styles.metricCard}>
+              <p style={styles.metricLabel}>{card.label}</p>
+              <p style={styles.metricValue}>{card.value}</p>
+              <p style={styles.metricSubtitle}>{card.subtitle}</p>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* ACTION BAR */}
       <div style={styles.actionBar}>
@@ -1691,6 +1718,43 @@ const styles = {
     background: "#fff",
     color: "#111827",
     cursor: "pointer",
+  },
+  cardGrid4: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+    gap: "14px",
+    marginBottom: "18px",
+  },
+  metricCard: {
+    background: "#fff",
+    border: "1px solid #e2e8f0",
+    borderRadius: "14px",
+    padding: "18px 16px",
+    boxShadow: "0 8px 20px rgba(15, 23, 42, 0.05)",
+    minHeight: "120px",
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "space-between",
+  },
+  metricLabel: {
+    margin: 0,
+    fontSize: "13px",
+    fontWeight: 700,
+    color: "#475569",
+    textTransform: "uppercase",
+    letterSpacing: "0.03em",
+  },
+  metricValue: {
+    margin: "10px 0 0",
+    fontSize: "34px",
+    fontWeight: 800,
+    color: "#0f172a",
+    lineHeight: 1,
+  },
+  metricSubtitle: {
+    margin: "10px 0 0",
+    fontSize: "13px",
+    color: "#64748b",
   },
   form: {
     display: "flex",

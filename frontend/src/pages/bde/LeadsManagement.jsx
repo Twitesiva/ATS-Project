@@ -239,42 +239,46 @@ export default function LeadsManagement() {
     }
   };
 
-  const handleSubmit = async () => {
-    if (!form.company_name.trim()) return alert("Company name is required.");
+const handleSubmit = async () => {
+  if (!form.company_name.trim()) return alert("Company name is required.");
 
-    // poc stored as text[] — wrap the single selected string in an array
-    const pocValue = form.poc ? [form.poc] : null;
+  // Get logged-in user from localStorage
+  const saved = localStorage.getItem("ats_user");
+  const currentUser = saved ? JSON.parse(saved) : null;
 
-    const payload = {
-      company_name: form.company_name.trim(),
-      contact_person: form.contact_person || null,
-      poc: pocValue,
-      mode_of_source: form.mode_of_source || null,
-      email: form.email || null,
-      phone: form.phone || null,
-      status: form.status,
-      priority: form.priority,
-      source: form.source,
-      industry: form.industry || null,
-      website: form.website || null,
-      notes: form.notes || null,
-    };
+  const pocValue = form.poc ? [form.poc] : null;
 
-    let error;
-    if (selectedLead) {
-      ({ error } = await supabase.from("companies").update(payload).eq("id", selectedLead.id));
-    } else {
-      ({ error } = await supabase.from("companies").insert(payload));
-    }
-
-    if (error) return alert(error.message);
-    setShowModal(false);
-    setSelectedLead(null);
-    setForm(EMPTY_FORM);
-    setFormPocOptions([]);
-    setFormNewPoc(false);
-    fetchLeads();
+  const payload = {
+    company_name: form.company_name.trim(),
+    contact_person: form.contact_person || null,
+    poc: pocValue,
+    mode_of_source: form.mode_of_source || null,
+    email: form.email || null,
+    phone: form.phone || null,
+    status: form.status,
+    priority: form.priority,
+    source: form.source,
+    industry: form.industry || null,
+    website: form.website || null,
+    notes: form.notes || null,
+    created_by: currentUser?.name || null,  // ← ADD THIS LINE
   };
+
+  let error;
+  if (selectedLead) {
+    ({ error } = await supabase.from("companies").update(payload).eq("id", selectedLead.id));
+  } else {
+    ({ error } = await supabase.from("companies").insert(payload));
+  }
+
+  if (error) return alert(error.message);
+  setShowModal(false);
+  setSelectedLead(null);
+  setForm(EMPTY_FORM);
+  setFormPocOptions([]);
+  setFormNewPoc(false);
+  fetchLeads();
+};
 
   const openEdit = (lead) => {
     setSelectedLead(lead);
