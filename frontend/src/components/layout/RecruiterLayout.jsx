@@ -110,7 +110,7 @@ export default function RecruiterLayout({ sidebarRole = "recruiter" }) {
               <button
                 type="button"
                 onClick={() => setNotificationOpen((prev) => !prev)}
-                className="relative inline-flex h-9 w-9 items-center justify-center rounded-full border border-amber-200 bg-amber-50 text-amber-500 transition-all duration-200 ease-in-out hover:bg-amber-100 active:scale-[0.98]"
+                className="relative inline-flex h-9 w-9 items-center justify-center rounded-full border border-amber-200 bg-amber-50 text-amber-500 transition-all duration-200 ease-in-out hover:bg-amber-100 hover:shadow-sm active:scale-[0.98]"
                 aria-label="Notifications"
               >
                 <Bell size={16} />
@@ -120,21 +120,24 @@ export default function RecruiterLayout({ sidebarRole = "recruiter" }) {
               </button>
 
               {notificationOpen ? (
-                <div className="absolute right-0 top-11 z-50 w-80 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                <div className="absolute right-0 top-11 z-50 w-80 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_12px_32px_rgba(15,23,42,0.12)]">
                   <div className="border-b border-slate-200 px-4 py-3 text-sm font-semibold text-slate-900">
                     DOJ Notifications
                   </div>
                   {dojNotifications.length === 0 ? (
-                    <div className="px-4 py-4 text-xs text-slate-500">No upcoming DOJs in next 7 days</div>
+                    <div className="px-4 py-5 text-xs text-slate-500">No upcoming DOJs in next 7 days</div>
                   ) : (
-                    <div className="max-h-80 overflow-y-auto">
+                    <div className="max-h-80 space-y-2 overflow-y-auto p-2">
                       {dojNotifications.map((row) => (
-                        <div key={row.id || `${row.candidate_name}-${row.client_name}-${row.doj}`} className="border-b border-slate-100 px-4 py-3">
+                        <div
+                          key={row.id || `${row.candidate_name}-${row.client_name}-${row.doj}`}
+                          className="rounded-xl border border-slate-100 px-3 py-3 transition-all duration-200 ease-in-out hover:bg-slate-50"
+                        >
                           <div className="text-xs font-semibold text-slate-900">{row.candidate_name || "-"}</div>
                           <div className="mt-1 text-xs text-slate-600">
                             {row.client_name || "-"} {row.position ? `· ${row.position}` : ""}
                           </div>
-                          <div className="mt-1 text-xs text-slate-500">
+                          <div className="mt-2 inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">
                             {row.doj ? new Date(row.doj).toLocaleDateString("en-IN") : "-"}
                           </div>
                         </div>
@@ -148,23 +151,23 @@ export default function RecruiterLayout({ sidebarRole = "recruiter" }) {
               <button
                 type="button"
                 onClick={() => setUserMenuOpen((prev) => !prev)}
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-blue-100 to-indigo-100 text-sm font-bold text-blue-700 transition-all duration-200 ease-in-out hover:brightness-105"
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-blue-100 to-indigo-100 text-sm font-bold text-blue-700 transition-all duration-200 ease-in-out hover:brightness-105 hover:shadow-sm"
                 aria-label="User menu"
               >
                 {userInitials}
               </button>
 
               {userMenuOpen ? (
-                <div className="absolute right-0 top-11 z-50 w-60 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-                  <div>
-                    <p className="m-0 text-sm font-bold text-slate-900">{safeUserName || "-"}</p>
+                <div className="absolute right-0 top-11 z-50 w-64 rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_12px_32px_rgba(15,23,42,0.12)]">
+                  <div className="rounded-xl bg-slate-50 p-3">
+                    <p className="m-0 text-sm font-semibold text-slate-900">{safeUserName || "-"}</p>
                     <p className="m-0 mt-1 text-xs text-slate-500">{safeUserEmail || "-"}</p>
                   </div>
                   <div className="my-3 h-px bg-slate-200" />
                   <button
                     type="button"
                     onClick={handleLogout}
-                    className="w-full rounded-lg px-2 py-2 text-left text-sm font-medium text-slate-700 transition-all duration-200 ease-in-out hover:bg-slate-100"
+                    className="w-full rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 transition-all duration-200 ease-in-out hover:bg-slate-100"
                   >
                     Logout
                   </button>

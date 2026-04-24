@@ -474,7 +474,7 @@ export default function RecruiterDashboard() {
           title="Hiring Funnel"
           subtitle="Profile submitted, shortlisted, interview, offered, and rejected stages"
         >
-          {hasFunnelData(dashboard.hiringFunnel) ? (
+          {Array.isArray(dashboard.hiringFunnel) && dashboard.hiringFunnel.length > 0 ? (
             <div className="h-[360px] w-full min-w-0">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={dashboard.hiringFunnel}>
@@ -629,16 +629,20 @@ function MetricCard({ label, value, note, trend, variant = "kpi" }) {
   const accent = accentStyleByLabel[label] || { badge: "bg-slate-100 text-slate-700", icon: CircleAlert };
   const Icon = accent.icon;
   const cardElevation = variant === "revenue" ? "shadow-[0_8px_20px_rgba(15,23,42,0.06)]" : "shadow-[0_8px_24px_rgba(15,23,42,0.08)]";
+  const contentPadding = variant === "kpi" ? "p-5" : "p-6";
+  const valueSize = variant === "kpi" ? "text-2xl xl:text-3xl" : "text-3xl xl:text-4xl";
+  const badgeSize = variant === "kpi" ? "h-7 w-7" : "h-8 w-8";
+  const iconSize = variant === "kpi" ? 14 : 16;
   return (
     <Card className={`h-full rounded-2xl border border-slate-200 ${tintClass} ${cardElevation} transition-all duration-200 ease-in-out hover:-translate-y-[4px] hover:shadow-[0_12px_28px_rgba(15,23,42,0.12)]`}>
-      <CardContent className="flex h-full flex-col justify-between p-6">
+      <CardContent className={`flex h-full flex-col justify-between ${contentPadding}`}>
         <div className="flex items-center justify-between gap-2">
           <p className="m-0 text-xs font-medium tracking-wide text-gray-500">{label}</p>
-          <span className={`inline-flex h-8 w-8 items-center justify-center rounded-lg ${accent.badge}`}>
-            <Icon size={16} />
+          <span className={`inline-flex ${badgeSize} items-center justify-center rounded-lg ${accent.badge}`}>
+            <Icon size={iconSize} />
           </span>
         </div>
-        <p className="m-0 mt-3 text-3xl font-bold text-gray-900 xl:text-4xl">{value}</p>
+        <p className={`m-0 mt-2 font-bold text-gray-900 ${valueSize}`}>{value}</p>
         <div className="mt-2 flex min-h-5 items-center justify-between gap-2">
           <p className="m-0 text-xs text-gray-500">{note}</p>
           {typeof trend === "number" ? (
