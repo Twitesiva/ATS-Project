@@ -15,6 +15,7 @@ import {
   YAxis,
 } from "recharts";
 import Loader from "../../components/common/Loader";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../services/supabaseClient";
 import { formatCurrency, sanitizeMarginValue } from "../../utils/reportHelpers";
@@ -146,9 +147,6 @@ const getRollingMonthlyTarget = (revenueRows) => {
 
   return monthlyRevenue.get(currentMonthKey) || 0;
 };
-
-const getRevenueMatchKey = (candidateName, clientName) =>
-  `${normalizeText(candidateName)}::${normalizeText(clientName)}`;
 
 const buildDashboardData = (candidateRows, revenueRows) => {
   const candidates = candidateRows || [];
@@ -399,467 +397,146 @@ export default function RecruiterDashboard() {
   }
 
   if (error) {
-    return <div style={styles.error}>{error}</div>;
+    return <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>;
   }
 
   return (
-    <div style={styles.page}>
-      <div style={styles.heroCard}>
-        <div>
-          <h2 style={styles.title}>Recruiter Analytics Dashboard</h2>
-          <p style={styles.subtitle}>
-            Read-only analytics sourced from Profile Database, Monthly Report, Revenue Tracker,
-            and Reports.
-          </p>
-        </div>
-        <ReminderBell revenue={revenueData} />
-      </div>
-
-      <section style={styles.section}>
-        <SectionHeader title="KPI Overview" subtitle="Core recruiter performance indicators" />
-        <div style={styles.cardGrid4}>
-          {dashboard.kpis.map((card) => (
-            <MetricCard key={card.label} {...card} accent="teal" />
-          ))}
-        </div>
+    <div className="flex w-full min-w-0 flex-col gap-6 font-poppins">
+      <section className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
+        {dashboard.kpis.map((card) => (
+          <MetricCard key={card.label} {...card} />
+        ))}
       </section>
 
-      <div style={styles.chartGrid}>
+      <section className="grid grid-cols-12 gap-6">
         <ChartCard
+          className="col-span-12 xl:col-span-8"
           title="Hiring Funnel"
           subtitle="Profile submitted, shortlisted, interview, offered, and rejected stages"
         >
-          <div style={styles.chartWrap}>
+          <div className="h-[360px] w-full min-w-0">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={dashboard.hiringFunnel}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#dbe4f0" />
-                <XAxis dataKey="stage" tick={{ fill: "#4b5563", fontSize: 12 }} />
-                <YAxis tick={{ fill: "#4b5563", fontSize: 12 }} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="stage" tick={{ fill: "#64748b", fontSize: 12 }} />
+                <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
                 <Tooltip />
-                <Bar dataKey="value" fill="#0f766e" radius={[8, 8, 0, 0]} />
+                <Bar dataKey="value" fill="#4f46e5" radius={[8, 8, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </ChartCard>
 
-        <ChartCard
-          title="Recruitment Activity Chart"
-          subtitle="Last 7 days candidate additions and interview scheduling"
-        >
-          <div style={styles.chartWrap}>
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={dashboard.activity}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#dbe4f0" />
-                <XAxis dataKey="label" tick={{ fill: "#4b5563", fontSize: 12 }} />
-                <YAxis tick={{ fill: "#4b5563", fontSize: 12 }} />
-                <Tooltip />
-                <Legend />
-                <Line
-                  type="monotone"
-                  dataKey="added"
-                  name="Candidates Added"
-                  stroke="#2563eb"
-                  strokeWidth={2.5}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="interviews"
-                  name="Interviews Scheduled"
-                  stroke="#f59e0b"
-                  strokeWidth={2.5}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </ChartCard>
-      </div>
+        <div className="col-span-12 grid grid-cols-1 gap-6 xl:col-span-4">
+          <ChartCard
+            title="Recruitment Activity Chart"
+            subtitle="Last 7 days candidate additions and interview scheduling"
+            contentClassName="pt-0"
+          >
+            <div className="h-[160px] w-full min-w-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={dashboard.activity}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="label" tick={{ fill: "#64748b", fontSize: 11 }} />
+                  <YAxis tick={{ fill: "#64748b", fontSize: 11 }} />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="added" name="Added" stroke="#2563eb" strokeWidth={2} />
+                  <Line
+                    type="monotone"
+                    dataKey="interviews"
+                    name="Interviews"
+                    stroke="#0ea5e9"
+                    strokeWidth={2}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </ChartCard>
 
-      <div style={styles.chartGrid}>
-        <ChartCard
-          title="Client Submission Volume"
-          subtitle="Candidate submissions grouped by client"
-        >
-          <div style={styles.chartWrap}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={dashboard.clientPerformance}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#dbe4f0" />
-                <XAxis dataKey="client" tick={{ fill: "#4b5563", fontSize: 12 }} />
-                <YAxis tick={{ fill: "#4b5563", fontSize: 12 }} />
-                <Tooltip />
-                <Legend />
-                <Bar
-                  dataKey="candidates"
-                  name="Candidate Submissions"
-                  fill="#2563eb"
-                  radius={[8, 8, 0, 0]}
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </ChartCard>
-
-        <ChartCard
-          title="Candidate Status Distribution Chart"
-          subtitle="Current recruiter pipeline by status"
-        >
-          <div style={styles.chartWrap}>
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={dashboard.statusDistribution}
-                  dataKey="value"
-                  nameKey="name"
-                  outerRadius={100}
-                  innerRadius={52}
-                  paddingAngle={2}
-                >
-                  {dashboard.statusDistribution.map((entry, index) => (
-                    <Cell
-                      key={`${entry.name}-${index}`}
-                      fill={STATUS_COLORS[index % STATUS_COLORS.length]}
-                    />
-                  ))}
-                </Pie>
-                <Tooltip />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </ChartCard>
-      </div>
-
-      <section style={styles.section}>
-        <SectionHeader
-          title="Revenue Analytics"
-          subtitle="Revenue tracker performance and target progress"
-        />
-        <div style={styles.cardGrid4}>
-          {dashboard.revenueAnalytics.map((card) => (
-            <MetricCard key={card.label} {...card} accent="blue" />
-          ))}
+          <ChartCard
+            title="Candidate Status Distribution Chart"
+            subtitle="Current recruiter pipeline by status"
+            contentClassName="pt-0"
+          >
+            <div className="h-[160px] w-full min-w-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={dashboard.statusDistribution} dataKey="value" nameKey="name" outerRadius={64} innerRadius={38} paddingAngle={2}>
+                    {dashboard.statusDistribution.map((entry, index) => (
+                      <Cell key={`${entry.name}-${index}`} fill={STATUS_COLORS[index % STATUS_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </ChartCard>
         </div>
       </section>
 
-      {dashboard.efficiencyMetrics.length > 0 ? (
-        <section style={styles.section}>
-          <SectionHeader
-            title="Hiring Efficiency Metrics"
-            subtitle="Cycle speed, conversion, and acceptance analytics"
-          />
-          <div style={styles.cardGrid3}>
-            {dashboard.efficiencyMetrics.map((card) => (
-              <MetricCard key={card.label} {...card} accent="amber" />
+      <section className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        <ChartCard
+          title="Client Submission Volume"
+          subtitle="Candidate submissions grouped by client"
+          contentClassName="pt-0"
+        >
+          <div className="h-[220px] w-full min-w-0">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={dashboard.clientPerformance}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="client" tick={{ fill: "#64748b", fontSize: 11 }} />
+                <YAxis tick={{ fill: "#64748b", fontSize: 11 }} />
+                <Tooltip />
+                <Bar dataKey="candidates" fill="#6366f1" radius={[8, 8, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </ChartCard>
+
+      </section>
+
+      <section className="grid grid-cols-1 gap-6">
+        <ChartCard title="Revenue Analytics" subtitle="Revenue tracker performance and target progress">
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+            {dashboard.revenueAnalytics.map((card) => (
+              <MetricCard key={card.label} {...card} />
             ))}
           </div>
-        </section>
-      ) : null}
+        </ChartCard>
+      </section>
     </div>
   );
 }
 
-function SectionHeader({ title, subtitle }) {
+function MetricCard({ label, value, note, trend }) {
+  const trendIsPositive = Number(trend || 0) >= 0;
   return (
-    <div style={styles.sectionHeader}>
-      <h3 style={styles.sectionTitle}>{title}</h3>
-      <p style={styles.sectionSubtitle}>{subtitle}</p>
-    </div>
-  );
-}
-function ReminderBell({ revenue }) {
-  const [open, setOpen] = useState(false);
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const seen = new Set();
-  const reminders = (revenue || [])
-    .filter((row) => {
-      if (!row.doj) return false;
-      const key = `${row.candidate_name}-${row.client_name}-${row.doj}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      const doj = new Date(row.doj);
-      doj.setHours(0, 0, 0, 0);
-      const diffDays = Math.ceil((doj - today) / (1000 * 60 * 60 * 24));
-      return diffDays >= 0 && diffDays <= 7;
-    })
-    .map((row) => {
-      const doj = new Date(row.doj);
-      doj.setHours(0, 0, 0, 0);
-      const diffDays = Math.ceil((doj - today) / (1000 * 60 * 60 * 24));
-      return { ...row, diffDays };
-    })
-    .sort((a, b) => a.diffDays - b.diffDays);
-  return (
-    <div style={{ position: "relative" }}>
-      <button
-        onClick={() => setOpen((prev) => !prev)}
-        style={{
-          position: "relative",
-          background: "rgba(255,255,255,0.82)",
-          border: "1px solid #dbeafe",
-          borderRadius: "999px",
-          padding: "8px 16px",
-          cursor: "pointer",
-          fontSize: "22px",
-          display: "flex",
-          alignItems: "center",
-          gap: "6px",
-        }}
-      >
-        🔔
-        {reminders.length > 0 && (
-          <span style={{
-            position: "absolute",
-            top: "2px",
-            right: "2px",
-            background: "#dc2626",
-            color: "#fff",
-            borderRadius: "999px",
-            fontSize: "10px",
-            fontWeight: 700,
-            padding: "1px 5px",
-            minWidth: "16px",
-            textAlign: "center",
-          }}>
-            {reminders.length}
-          </span>
-        )}
-      </button>
-
-      {open && (
-        <div style={{
-          position: "absolute",
-          right: 0,
-          top: "48px",
-          background: "#fff",
-          border: "1px solid #e2e8f0",
-          borderRadius: "14px",
-          boxShadow: "0 12px 32px rgba(15,23,42,0.12)",
-          width: "320px",
-          zIndex: 100,
-          overflow: "hidden",
-        }}>
-          <div style={{
-            padding: "12px 16px",
-            borderBottom: "1px solid #e2e8f0",
-            fontWeight: 700,
-            fontSize: "14px",
-            color: "#0f172a",
-          }}>
-            🗓️ Upcoming DOJ Reminders
-          </div>
-
-          {reminders.length === 0 ? (
-            <div style={{ padding: "16px", color: "#64748b", fontSize: "13px" }}>
-              No upcoming DOJs in next 7 days
-            </div>
-          ) : (
-            <div style={{ maxHeight: "320px", overflowY: "auto" }}>
-              {reminders.map((row) => (
-                <div key={row.id} style={{
-                  padding: "12px 16px",
-                  borderBottom: "1px solid #f1f5f9",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "4px",
-                }}>
-                  <div style={{ fontWeight: 700, fontSize: "13px", color: "#0f172a" }}>
-                    {row.candidate_name || "-"}
-                  </div>
-                  <div style={{ fontSize: "12px", color: "#475569" }}>
-                    🏢 {row.client_name || "-"} · {row.position || "-"}
-                  </div>
-                  <div style={{
-                    fontSize: "12px",
-                    fontWeight: 700,
-                    color: row.diffDays === 0 ? "#dc2626" : row.diffDays <= 2 ? "#f59e0b" : "#16a34a",
-                  }}>
-                    {row.diffDays === 0
-                      ? "🔴 Joining Today!"
-                      : row.diffDays === 1
-                        ? "🟡 Joining Tomorrow"
-                        : `🟢 Joining in ${row.diffDays} days · ${new Date(row.doj).toLocaleDateString("en-IN")}`}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+    <Card className="h-full rounded-2xl border border-slate-200 bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
+      <CardContent className="flex h-full flex-col justify-between p-5">
+        <p className="m-0 text-sm text-gray-500">{label}</p>
+        <p className="m-0 mt-3 text-2xl font-bold text-slate-900">{value}</p>
+        <div className="mt-2 flex min-h-5 items-center justify-between gap-2">
+          <p className="m-0 text-xs text-slate-500">{note}</p>
+          {typeof trend === "number" ? (
+            <span className={`text-xs font-semibold ${trendIsPositive ? "text-emerald-600" : "text-rose-600"}`}>
+              {trendIsPositive ? "+" : ""}
+              {trend.toFixed(1)}%
+            </span>
+          ) : null}
         </div>
-      )}
-    </div>
+      </CardContent>
+    </Card>
   );
 }
-function MetricCard({ label, value, note, accent }) {
-  const accentStyle = accent === "blue" ? styles.accentBlue : accent === "amber" ? styles.accentAmber : styles.accentTeal;
 
+function ChartCard({ title, subtitle, children, className = "", contentClassName = "" }) {
   return (
-    <div style={{ ...styles.metricCard, ...accentStyle }}>
-      <p style={styles.metricLabel}>{label}</p>
-      <p style={styles.metricValue}>{value}</p>
-      <p style={styles.metricNote}>{note}</p>
-    </div>
+    <Card className={`min-w-0 rounded-2xl border border-slate-200 bg-white shadow-sm transition-all duration-200 hover:shadow-md ${className}`}>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-lg font-semibold">{title}</CardTitle>
+        <CardDescription className="text-sm text-gray-500">{subtitle}</CardDescription>
+      </CardHeader>
+      <CardContent className={contentClassName}>{children}</CardContent>
+    </Card>
   );
 }
-
-function ChartCard({ title, subtitle, children }) {
-  return (
-    <section style={styles.chartCard}>
-      <div style={styles.sectionHeader}>
-        <h3 style={styles.sectionTitle}>{title}</h3>
-        <p style={styles.sectionSubtitle}>{subtitle}</p>
-      </div>
-      {children}
-    </section>
-  );
-}
-
-const styles = {
-  page: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "18px",
-    width: "100%",
-    minWidth: 0,
-  },
-  heroCard: {
-    display: "flex",
-    justifyContent: "space-between",
-    gap: "16px",
-    flexWrap: "wrap",
-    padding: "22px",
-    borderRadius: "20px",
-    border: "1px solid #c7d2fe",
-    background:
-      "linear-gradient(135deg, rgba(240,253,250,1) 0%, rgba(239,246,255,1) 55%, rgba(250,245,255,1) 100%)",
-    boxShadow: "0 12px 28px rgba(15, 23, 42, 0.08)",
-  },
-  title: {
-    margin: 0,
-    fontSize: "32px",
-    lineHeight: 1.1,
-    color: "#0f172a",
-    fontWeight: 800,
-  },
-  subtitle: {
-    margin: "10px 0 0",
-    maxWidth: "720px",
-    fontSize: "14px",
-    lineHeight: 1.6,
-    color: "#475569",
-  },
-  sourcePills: {
-    display: "flex",
-    gap: "10px",
-    flexWrap: "wrap",
-    alignItems: "flex-start",
-  },
-  sourcePill: {
-    padding: "8px 12px",
-    borderRadius: "999px",
-    background: "rgba(255,255,255,0.82)",
-    border: "1px solid #dbeafe",
-    color: "#0f172a",
-    fontSize: "12px",
-    fontWeight: 700,
-  },
-  section: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "12px",
-  },
-  sectionHeader: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "4px",
-  },
-  sectionTitle: {
-    margin: 0,
-    fontSize: "20px",
-    color: "#0f172a",
-    fontWeight: 800,
-  },
-  sectionSubtitle: {
-    margin: 0,
-    fontSize: "13px",
-    color: "#64748b",
-  },
-  cardGrid4: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-    gap: "14px",
-  },
-  cardGrid3: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-    gap: "14px",
-  },
-  metricCard: {
-    padding: "18px",
-    borderRadius: "18px",
-    background: "#ffffff",
-    border: "1px solid #e2e8f0",
-    boxShadow: "0 8px 24px rgba(15, 23, 42, 0.06)",
-  },
-  accentTeal: {
-    background: "linear-gradient(180deg, #ffffff 0%, #f0fdfa 100%)",
-    borderColor: "#99f6e4",
-  },
-  accentBlue: {
-    background: "linear-gradient(180deg, #ffffff 0%, #eff6ff 100%)",
-    borderColor: "#bfdbfe",
-  },
-  accentAmber: {
-    background: "linear-gradient(180deg, #ffffff 0%, #fffbeb 100%)",
-    borderColor: "#fde68a",
-  },
-  metricLabel: {
-    margin: 0,
-    fontSize: "13px",
-    color: "#475569",
-    fontWeight: 700,
-    textTransform: "uppercase",
-    letterSpacing: "0.04em",
-  },
-  metricValue: {
-    margin: "10px 0 8px",
-    fontSize: "30px",
-    lineHeight: 1.05,
-    color: "#0f172a",
-    fontWeight: 800,
-  },
-  metricNote: {
-    margin: 0,
-    fontSize: "12px",
-    color: "#64748b",
-    lineHeight: 1.5,
-  },
-  chartGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))",
-    gap: "14px",
-  },
-  chartCard: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "12px",
-    padding: "18px",
-    borderRadius: "18px",
-    background: "#ffffff",
-    border: "1px solid #e2e8f0",
-    boxShadow: "0 10px 28px rgba(15, 23, 42, 0.06)",
-    minWidth: 0,
-  },
-  chartWrap: {
-    width: "100%",
-    height: "320px",
-    minWidth: 0,
-  },
-  error: {
-    padding: "14px 16px",
-    borderRadius: "12px",
-    background: "#fef2f2",
-    border: "1px solid #fecaca",
-    color: "#b91c1c",
-    fontSize: "14px",
-  },
-};

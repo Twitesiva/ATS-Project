@@ -1,3 +1,8 @@
+@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap");
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 /* UI ENHANCEMENT – NON-BREAKING: Enterprise Design System with CSS Variables */
 :root {
   /* Primary Brand Colors */
@@ -62,8 +67,8 @@
 
 body {
   margin: 0;
-  font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-  background: linear-gradient(135deg, #f0f4f8 0%, #e8eef5 100%);
+  font-family: "Poppins", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: #f8f9fb;
   color: var(--color-slate-800);
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
