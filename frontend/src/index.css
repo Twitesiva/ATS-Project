@@ -68,7 +68,7 @@
 body {
   margin: 0;
   font-family: "Poppins", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  background: #f8f9fb;
+  background: #F8FAFC;
   color: var(--color-slate-800);
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;

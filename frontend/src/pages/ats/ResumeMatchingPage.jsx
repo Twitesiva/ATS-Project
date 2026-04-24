@@ -157,7 +157,7 @@ export default function ResumeMatchingPage() {
       {/* PAGE HEADER WITH CENTERED LOGO – NON-BREAKING: Title left, logo center, nav right */}
       {/* HEADER LAYOUT SWAP – NON-BREAKING: Logo first, then text title */}
       <header className="page-header">
-        <img className="header-logo-img" src="../logos/Twite AI PNG 1.png" alt="Twite AI ATS" />
+        <img className="header-logo-img" src="/logos/image2.png" alt="Twite AI ATS" />
         <strong className="header-page-title">Resume Match</strong>
         <NavToSearch />
       </header>

@@ -86,7 +86,7 @@ export default function RecruiterLayout({ sidebarRole = "recruiter" }) {
   }, []);
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden bg-[#f8f9fb] font-poppins">
+    <div className="relative h-screen w-screen overflow-hidden bg-[#F8FAFC] font-poppins">
       <div
         className="fixed left-0 top-0 z-50 h-screen overflow-hidden border-r border-slate-200 bg-white shadow-[0_0_20px_rgba(0,0,0,0.05)] transition-[width] duration-[250ms] ease-in-out"
         style={{
@@ -97,10 +97,10 @@ export default function RecruiterLayout({ sidebarRole = "recruiter" }) {
       </div>
 
       <div
-        className="flex h-full min-w-0 flex-1 flex-col overflow-hidden transition-[margin-left] duration-[250ms] ease-in-out"
+        className="flex h-full min-w-0 flex-1 flex-col overflow-hidden bg-[#F8FAFC] transition-[margin-left] duration-[250ms] ease-in-out"
         style={{ marginLeft: `${sidebarWidth}px` }}
       >
-        <header className="flex h-14 items-center border-b border-slate-200 bg-white px-6">
+        <header className="sticky top-0 z-30 flex h-14 items-center border-b border-[#CBD5E1] bg-white px-6 shadow-[0_2px_8px_rgba(15,23,42,0.08)]">
           <div className="flex min-w-0 items-center">
             <h1 className="truncate text-lg font-semibold text-slate-900">{pageTitle}</h1>
           </div>
@@ -174,7 +174,7 @@ export default function RecruiterLayout({ sidebarRole = "recruiter" }) {
           </div>
         </header>
 
-        <main className="min-h-0 flex-1 overflow-x-auto overflow-y-auto p-6">
+        <main className="min-h-0 flex-1 overflow-x-auto overflow-y-auto bg-white p-6">
           <Outlet />
         </main>
       </div>

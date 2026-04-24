@@ -47,10 +47,10 @@ export default function RecruiterSidebar({ collapsed = false, onToggle }) {
     <aside className="flex h-full w-full flex-col px-2 py-3 font-poppins text-slate-800">
       <div className={collapsed ? "mb-4 flex flex-col items-center gap-2" : "mb-4 flex items-center justify-between px-2"}>
         <div className="flex items-center gap-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-600 text-xs font-semibold text-white">
-            TA
+          <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg bg-white">
+            <img src="/logos/image.png" alt="Twite logo" className="h-full w-full object-contain" />
           </div>
-          {!collapsed ? <h2 className="m-0 text-base font-semibold text-slate-900">Twite ATS</h2> : null}
+          {!collapsed ? <h2 className="m-0 text-xl font-semibold text-[#26a5d9]">Twite ATS</h2> : null}
         </div>
         <button
           type="button"

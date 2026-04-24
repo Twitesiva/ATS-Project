@@ -514,7 +514,7 @@ export default function SearchCRMPage() {
   return (
     <div className="page search-crm-page">
       <header className="page-header">
-        <img className="header-logo-img" src="/logos/Twite AI PNG 1.png" alt="Twite AI ATS" />
+        <img className="header-logo-img" src="/logos/image2.png" alt="Twite AI ATS" />
         <strong className="header-page-title">Resume Search</strong>
         <div className="search-header-actions">
           <button type="button" className="btn btn-primary"

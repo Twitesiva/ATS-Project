@@ -577,7 +577,7 @@ function MetricCard({ label, value, note, trend }) {
   };
   const accentDotClass = accentDotByLabel[label];
   return (
-    <Card className={`h-full rounded-xl border border-gray-100 ${tintClass} shadow-sm transition-all duration-200 ease-in-out hover:-translate-y-[3px] hover:shadow-md`}>
+    <Card className={`h-full rounded-xl border border-[#E2E8F0] ${tintClass} shadow-[0_8px_24px_rgba(15,23,42,0.08)] transition-all duration-200 ease-in-out hover:-translate-y-[4px] hover:shadow-[0_12px_28px_rgba(15,23,42,0.12)]`}>
       <CardContent className="flex h-full flex-col justify-between p-5">
         <div className="flex items-center gap-2">
           {accentDotClass ? <span className={`h-2 w-2 rounded-full ${accentDotClass}`} /> : null}
@@ -600,7 +600,7 @@ function MetricCard({ label, value, note, trend }) {
 
 function ChartCard({ title, subtitle, children, className = "", contentClassName = "" }) {
   return (
-    <Card className={`min-w-0 rounded-xl border border-gray-100 bg-white shadow-md transition-all duration-200 ease-in-out hover:-translate-y-[3px] hover:shadow-lg ${className}`}>
+    <Card className={`min-w-0 rounded-xl border border-[#E2E8F0] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.08)] transition-all duration-200 ease-in-out hover:-translate-y-[4px] hover:shadow-[0_12px_28px_rgba(15,23,42,0.12)] ${className}`}>
       <CardHeader className="pb-2">
         <CardTitle className="text-lg font-semibold">{title}</CardTitle>
         <CardDescription className="text-sm text-gray-500">{subtitle}</CardDescription>
