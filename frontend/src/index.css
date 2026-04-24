@@ -1887,3 +1887,446 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+/* ============================================================================ */
+/* AI-POWERED CREATIVE ANIMATIONS & STYLING */
+/* ============================================================================ */
+
+/* PAGE GRADIENT BACKGROUND */
+.resume-matching-page {
+  position: relative;
+  background: linear-gradient(135deg, #f0f4ff 0%, #ffffff 50%, #f8f5ff 100%);
+  min-height: 100vh;
+}
+
+.resume-matching-page::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: 
+    radial-gradient(circle at 20% 80%, rgba(88, 104, 224, 0.08) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(192, 64, 248, 0.08) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* FORM SECTION – MODERN GLASSMORPHISM */
+.resume-matching-page .form-section {
+  position: relative;
+  background: linear-gradient(135deg, #ffffff 0%, #f9faff 100%);
+  border-radius: 20px;
+  padding: 2.5rem;
+  margin-bottom: 2.5rem;
+  box-shadow: 
+    0 20px 40px rgba(59, 130, 246, 0.12), 
+    0 0 80px rgba(192, 64, 248, 0.05);
+  border: 1px solid rgba(59, 130, 246, 0.1);
+  overflow: hidden;
+  backdrop-filter: blur(10px);
+}
+
+.resume-matching-page .form-section::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #5868E0, #C040F8, transparent);
+  opacity: 0.6;
+  animation: gradient-shift 4s ease-in-out infinite;
+}
+
+.resume-matching-page .form-section::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(88, 104, 224, 0.03) 0%, transparent 70%);
+  pointer-events: none;
+  animation: float-slow 6s ease-in-out infinite;
+}
+
+@keyframes gradient-shift {
+  0%, 100% { opacity: 0.6; transform: translateX(0); }
+  50% { opacity: 1; transform: translateX(2px); }
+}
+
+@keyframes float-slow {
+  0%, 100% { transform: translateY(0px) scale(1); }
+  50% { transform: translateY(-30px) scale(1.05); }
+}
+
+/* AI BADGE – SPARKLING */
+.form-header-ai-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1.25rem;
+  background: linear-gradient(135deg, rgba(88, 104, 224, 0.12), rgba(192, 64, 248, 0.12));
+  border: 1.5px solid rgba(88, 104, 224, 0.3);
+  border-radius: 25px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #5868E0;
+  animation: badge-glow 2s ease-in-out infinite;
+  position: relative;
+  overflow: hidden;
+}
+
+.form-header-ai-badge::before {
+  content: '✨';
+  display: inline-block;
+  animation: sparkle-rotate 1.5s ease-in-out infinite;
+}
+
+@keyframes sparkle-rotate {
+  0%, 100% { opacity: 0.7; transform: scale(1) rotate(0deg); }
+  50% { opacity: 1; transform: scale(1.2) rotate(180deg); }
+}
+
+@keyframes badge-glow {
+  0%, 100% { 
+    box-shadow: 0 0 0 0 rgba(88, 104, 224, 0.4);
+    background: linear-gradient(135deg, rgba(88, 104, 224, 0.12), rgba(192, 64, 248, 0.12));
+  }
+  50% { 
+    box-shadow: 0 0 15px 0 rgba(88, 104, 224, 0.2);
+    background: linear-gradient(135deg, rgba(88, 104, 224, 0.18), rgba(192, 64, 248, 0.18));
+  }
+}
+
+/* FORM SECTION HEADER */
+.resume-matching-page .form-section .form-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  position: relative;
+  z-index: 2;
+}
+
+/* TEXTAREA ENHANCEMENTS */
+.form-grid textarea {
+  padding: 1.25rem;
+  border: 2px solid rgba(59, 130, 246, 0.15);
+  border-radius: 12px;
+  background: linear-gradient(135deg, #ffffff 0%, #f9faff 100%);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  font-size: 0.95rem;
+  color: #334155;
+  position: relative;
+  z-index: 1;
+}
+
+.form-grid textarea:focus {
+  outline: none;
+  border-color: #5868E0;
+  box-shadow: 
+    0 0 0 4px rgba(88, 104, 224, 0.1),
+    0 0 25px rgba(88, 104, 224, 0.15),
+    inset 0 2px 4px rgba(0, 0, 0, 0.02);
+  background: #ffffff;
+}
+
+/* AI PROCESSING ANIMATIONS */
+
+/* Orbital dots animation */
+@keyframes orbit-rotate {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes orbit-scale {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+.ai-processing-indicator {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.5rem;
+  background: linear-gradient(135deg, rgba(88, 104, 224, 0.08), rgba(192, 64, 248, 0.08));
+  border-radius: 12px;
+  border: 1px solid rgba(88, 104, 224, 0.15);
+  margin-top: 1.5rem;
+  animation: fadeInDown 0.6s ease-out;
+}
+
+.ai-processing-dots {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.ai-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #5868E0, #C040F8);
+  animation: ai-pulse 1.2s infinite;
+  box-shadow: 0 0 10px rgba(88, 104, 224, 0.6);
+}
+
+.ai-dot:nth-child(2) { animation-delay: 0.2s; }
+.ai-dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes ai-pulse {
+  0%, 100% { 
+    transform: scale(0.8);
+    opacity: 0.5;
+    box-shadow: 0 0 5px rgba(88, 104, 224, 0.3);
+  }
+  50% { 
+    transform: scale(1.2);
+    opacity: 1;
+    box-shadow: 0 0 20px rgba(88, 104, 224, 0.8);
+  }
+}
+
+.ai-processing-text {
+  font-size: 0.95rem;
+  color: #1e293b;
+  font-weight: 500;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.ai-processing-status {
+  font-size: 0.85rem;
+  color: #5868E0;
+  font-weight: 600;
+  animation: fadeInOut 2s ease-in-out infinite;
+}
+
+@keyframes fadeInOut {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
+/* NEURAL NETWORK ANIMATION */
+.neural-network {
+  position: relative;
+  width: 100%;
+  height: 60px;
+  margin: 1rem 0;
+  background: linear-gradient(90deg, transparent, rgba(88, 104, 224, 0.05), transparent);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.neural-node {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #5868E0, #C040F8);
+  box-shadow: 0 0 15px rgba(88, 104, 224, 0.8);
+  animation: node-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes node-pulse {
+  0%, 100% { 
+    transform: scale(0.5);
+    opacity: 0.3;
+  }
+  50% { 
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.neural-node:nth-child(1) { left: 10%; top: 50%; animation-delay: 0s; }
+.neural-node:nth-child(2) { left: 30%; top: 30%; animation-delay: 0.3s; }
+.neural-node:nth-child(3) { left: 50%; top: 50%; animation-delay: 0.6s; }
+.neural-node:nth-child(4) { left: 70%; top: 35%; animation-delay: 0.9s; }
+.neural-node:nth-child(5) { left: 90%; top: 50%; animation-delay: 1.2s; }
+
+.neural-connection {
+  position: absolute;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(88, 104, 224, 0.5), transparent);
+  top: 50%;
+  animation: neural-flow 3s ease-in-out infinite;
+}
+
+@keyframes neural-flow {
+  0% { 
+    opacity: 0.2;
+    background: linear-gradient(90deg, transparent, rgba(88, 104, 224, 0.5), transparent);
+  }
+  50% { 
+    opacity: 1;
+    background: linear-gradient(90deg, rgba(192, 64, 248, 0.8), rgba(88, 104, 224, 0.8), rgba(192, 64, 248, 0.8));
+  }
+  100% { 
+    opacity: 0.2;
+    background: linear-gradient(90deg, transparent, rgba(88, 104, 224, 0.5), transparent);
+  }
+}
+
+.neural-connection:nth-child(6) { 
+  left: 10%; 
+  width: 20%; 
+  animation-delay: 0s;
+}
+.neural-connection:nth-child(7) { 
+  left: 30%; 
+  width: 20%; 
+  animation-delay: 0.5s;
+}
+.neural-connection:nth-child(8) { 
+  left: 50%; 
+  width: 20%; 
+  animation-delay: 1s;
+}
+.neural-connection:nth-child(9) { 
+  left: 70%; 
+  width: 20%; 
+  animation-delay: 1.5s;
+}
+
+/* ENHANCED RESULTS WITH CREATIVE ANIMATIONS */
+.result-card {
+  animation: cardEnter 0.5s cubic-bezier(0.4, 0, 0.2, 1) backwards;
+  position: relative;
+  border: 1px solid rgba(59, 130, 246, 0.1);
+}
+
+.result-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(88, 104, 224, 0.5), transparent);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.result-card:hover::before {
+  opacity: 1;
+}
+
+.match-score-circle .progress {
+  animation: score-animate 2s ease-in-out infinite;
+}
+
+@keyframes score-animate {
+  0%, 100% { 
+    filter: drop-shadow(0 0 5px rgba(88, 104, 224, 0.3));
+  }
+  50% { 
+    filter: drop-shadow(0 0 15px rgba(88, 104, 224, 0.6));
+  }
+}
+
+/* MATCH BADGE ANIMATIONS */
+.match-badge {
+  animation: badge-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
+  position: relative;
+  overflow: hidden;
+}
+
+.match-badge::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+  animation: shimmer-badge 2s infinite;
+}
+
+@keyframes badge-pop {
+  0% { 
+    opacity: 0;
+    transform: scale(0.8) translateY(10px);
+  }
+  100% { 
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes shimmer-badge {
+  0% { left: -100%; }
+  100% { left: 100%; }
+}
+
+.match-badge:nth-child(1) { animation-delay: 0.1s; }
+.match-badge:nth-child(2) { animation-delay: 0.2s; }
+.match-badge:nth-child(3) { animation-delay: 0.3s; }
+
+/* SKILL TAG ANIMATIONS */
+.skill-tag {
+  animation: skill-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
+  position: relative;
+  overflow: hidden;
+}
+
+.skill-tag::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  animation: skill-shimmer 2.5s infinite;
+}
+
+@keyframes skill-pop {
+  0% { 
+    opacity: 0;
+    transform: scale(0.6) translateY(8px);
+  }
+  100% { 
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes skill-shimmer {
+  0% { left: -100%; }
+  100% { left: 100%; }
+}
+
+.skill-tag:nth-child(n+1) { animation-delay: calc(0.1s * var(--item-index, 0)); }
+
+/* FADE IN DOWN ANIMATION */
+@keyframes fadeInDown {
+  0% { 
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  100% { 
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* SMOOTH PAGE TRANSITIONS */
+.resume-matching-page {
+  animation: pageSlideIn 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes pageSlideIn {
+  0% {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

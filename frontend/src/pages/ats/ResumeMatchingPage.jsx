@@ -20,10 +20,46 @@ const PROGRESS_STEPS = [
   { label: "Finalizing results...", status: "Preparing your matches" }
 ];
 
+// AI NEURAL ANIMATION COMPONENT
+function AIProcessingAnimation() {
+  return (
+    <div className="ai-processing-indicator">
+      <div className="ai-processing-dots">
+        <div className="ai-dot" />
+        <div className="ai-dot" />
+        <div className="ai-dot" />
+      </div>
+      <div className="ai-processing-text">
+        <span>🧠 AI Analyzing Your Candidates</span>
+        <span className="ai-processing-status">Deep learning in progress...</span>
+      </div>
+    </div>
+  );
+}
+
+// NEURAL NETWORK VISUALIZATION
+function NeuralNetworkAnimation() {
+  return (
+    <div className="neural-network">
+      <div className="neural-node" />
+      <div className="neural-node" />
+      <div className="neural-node" />
+      <div className="neural-node" />
+      <div className="neural-node" />
+      <div className="neural-connection" />
+      <div className="neural-connection" />
+      <div className="neural-connection" />
+      <div className="neural-connection" />
+    </div>
+  );
+}
+
 // PERFORMANCE UX IMPROVEMENT – NON-BREAKING: Skeleton loader for results section
 function ResultsSkeleton() {
   return (
     <section className="match-results">
+      <AIProcessingAnimation />
+      <NeuralNetworkAnimation />
       <div className="match-results-header">
         <div className="skeleton skeleton-title" style={{ width: "150px", height: "28px" }} />
         <div className="skeleton skeleton-count" style={{ width: "100px", height: "20px" }} />
@@ -47,25 +83,29 @@ function AnalysisStatus({ step, fileCount }) {
   const currentStep = PROGRESS_STEPS[step] || PROGRESS_STEPS[0];
   
   return (
-    <div className="analysis-status">
-      <div className="status-header">
-        <span className="status-spinner"></span>
-        <span className="status-label">{currentStep.label}</span>
+    <div className="ai-processing-indicator">
+      <div className="ai-processing-dots">
+        <div className="ai-dot" />
+        <div className="ai-dot" />
+        <div className="ai-dot" />
       </div>
-      <div className="status-details">
-        <span className="status-message">{currentStep.status}</span>
+      <div className="ai-processing-text">
+        <span>🚀 {currentStep.label}</span>
+        <span className="ai-processing-status">{currentStep.status}</span>
         {fileCount > 0 && (
-          <span className="status-files">{fileCount} resume{fileCount !== 1 ? 's' : ''} queued</span>
+          <span style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '0.25rem' }}>
+            📊 {fileCount} resume{fileCount !== 1 ? 's' : ''} being analyzed
+          </span>
         )}
       </div>
-      <div className="status-steps">
+      <div className="status-steps" style={{ marginLeft: 'auto', gap: '0.75rem' }}>
         {PROGRESS_STEPS.slice(1).map((s, idx) => (
           <div 
             key={idx} 
             className={`status-step ${idx + 1 === step ? 'active' : ''} ${idx + 1 < step ? 'completed' : ''}`}
+            style={{ fontSize: '0.75rem', padding: '0.5rem 0.875rem' }}
           >
             <span className="step-dot"></span>
-            <span className="step-label">{s.label.split(' ')[0]}</span>
           </div>
         ))}
       </div>
@@ -162,6 +202,11 @@ export default function ResumeMatchingPage() {
         <NavToSearch />
       </header>
       <section className="form-section">
+        <div className="form-header">
+          <div className="form-header-ai-badge">
+            AI Powered Analysis
+          </div>
+        </div>
         <div className="form-grid">
           {/* EXTENSION – SAFE TO REMOVE: Pass JD file props to JobDescriptionForm */}
           {/* PERFORMANCE OPTIMIZATION – SAFE: Using memoized handlers */}
@@ -203,7 +248,7 @@ export default function ResumeMatchingPage() {
             ) : (
               <>
                 <span className="btn-icon">🚀</span>
-                Match Resumes
+                Match Resumes with AI
               </>
             )}
           </button>
