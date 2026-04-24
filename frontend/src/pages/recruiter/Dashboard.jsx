@@ -21,14 +21,14 @@ import { supabase } from "../../services/supabaseClient";
 import { formatCurrency, sanitizeMarginValue } from "../../utils/reportHelpers";
 
 const STATUS_COLORS = [
-  "#0f766e",
-  "#2563eb",
-  "#f59e0b",
-  "#16a34a",
-  "#dc2626",
-  "#7c3aed",
-  "#0891b2",
-  "#475569",
+  "#1D4ED8",
+  "#2563EB",
+  "#3B82F6",
+  "#60A5FA",
+  "#93C5FD",
+  "#BFDBFE",
+  "#DBEAFE",
+  "#1E40AF",
 ];
 
 const INTERVIEW_STATUSES = new Set([
@@ -146,6 +146,26 @@ const getRollingMonthlyTarget = (revenueRows) => {
   }
 
   return monthlyRevenue.get(currentMonthKey) || 0;
+};
+
+const getUpcomingDojRows = (rows) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const seen = new Set();
+
+  return (rows || [])
+    .filter((row) => {
+      if (!row.doj) return false;
+      const key = `${row.candidate_name}-${row.client_name}-${row.doj}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+
+      const doj = new Date(row.doj);
+      doj.setHours(0, 0, 0, 0);
+      const diffDays = Math.ceil((doj - today) / (1000 * 60 * 60 * 24));
+      return diffDays >= 0 && diffDays <= 7;
+    })
+    .sort((a, b) => new Date(a.doj).getTime() - new Date(b.doj).getTime());
 };
 
 const buildDashboardData = (candidateRows, revenueRows) => {
@@ -326,6 +346,7 @@ export default function RecruiterDashboard() {
   const [dashboard, setDashboard] = useState(emptyDashboard);
   const [revenueData, setRevenueData] = useState([]);
   const recruiterName = useMemo(() => user?.name || "", [user?.name]);
+  const upcomingDojRows = useMemo(() => getUpcomingDojRows(revenueData), [revenueData]);
 
   const loadDashboard = useCallback(async () => {
     if (!recruiterName) {
@@ -392,6 +413,22 @@ export default function RecruiterDashboard() {
     };
   }, [loadDashboard, recruiterName]);
 
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent("recruiter-doj-notifications", {
+        detail: { rows: upcomingDojRows },
+      })
+    );
+  }, [upcomingDojRows]);
+
+  useEffect(() => () => {
+    window.dispatchEvent(
+      new CustomEvent("recruiter-doj-notifications", {
+        detail: { rows: [] },
+      })
+    );
+  }, []);
+
   if (loading) {
     return <Loader text="Loading recruiter analytics..." />;
   }
@@ -401,7 +438,7 @@ export default function RecruiterDashboard() {
   }
 
   return (
-    <div className="flex w-full min-w-0 flex-col gap-6 font-poppins">
+    <div className="flex w-full min-w-0 flex-col gap-8 font-poppins">
       <section className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
         {dashboard.kpis.map((card) => (
           <MetricCard key={card.label} {...card} />
@@ -417,11 +454,11 @@ export default function RecruiterDashboard() {
           <div className="h-[360px] w-full min-w-0">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={dashboard.hiringFunnel}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <CartesianGrid strokeDasharray="2 4" stroke="#E5E7EB" />
                 <XAxis dataKey="stage" tick={{ fill: "#64748b", fontSize: 12 }} />
                 <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
-                <Tooltip />
-                <Bar dataKey="value" fill="#4f46e5" radius={[8, 8, 0, 0]} />
+                <Tooltip contentStyle={{ borderRadius: 12, borderColor: "#E5E7EB" }} />
+                <Bar dataKey="value" fill="#2563EB" radius={[8, 8, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -436,17 +473,17 @@ export default function RecruiterDashboard() {
             <div className="h-[160px] w-full min-w-0">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={dashboard.activity}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <CartesianGrid strokeDasharray="2 4" stroke="#E5E7EB" />
                   <XAxis dataKey="label" tick={{ fill: "#64748b", fontSize: 11 }} />
                   <YAxis tick={{ fill: "#64748b", fontSize: 11 }} />
-                  <Tooltip />
-                  <Line type="monotone" dataKey="added" name="Added" stroke="#2563eb" strokeWidth={2} />
+                  <Tooltip contentStyle={{ borderRadius: 12, borderColor: "#E5E7EB" }} />
+                  <Line type="monotone" dataKey="added" name="Added" stroke="#2563EB" strokeWidth={2.5} />
                   <Line
                     type="monotone"
                     dataKey="interviews"
                     name="Interviews"
-                    stroke="#0ea5e9"
-                    strokeWidth={2}
+                    stroke="#3B82F6"
+                    strokeWidth={2.5}
                   />
                 </LineChart>
               </ResponsiveContainer>
@@ -466,7 +503,7 @@ export default function RecruiterDashboard() {
                       <Cell key={`${entry.name}-${index}`} fill={STATUS_COLORS[index % STATUS_COLORS.length]} />
                     ))}
                   </Pie>
-                  <Tooltip />
+                  <Tooltip contentStyle={{ borderRadius: 12, borderColor: "#E5E7EB" }} />
                 </PieChart>
               </ResponsiveContainer>
             </div>
@@ -483,11 +520,11 @@ export default function RecruiterDashboard() {
           <div className="h-[220px] w-full min-w-0">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={dashboard.clientPerformance}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <CartesianGrid strokeDasharray="2 4" stroke="#E5E7EB" />
                 <XAxis dataKey="client" tick={{ fill: "#64748b", fontSize: 11 }} />
                 <YAxis tick={{ fill: "#64748b", fontSize: 11 }} />
-                <Tooltip />
-                <Bar dataKey="candidates" fill="#6366f1" radius={[8, 8, 0, 0]} />
+                <Tooltip contentStyle={{ borderRadius: 12, borderColor: "#E5E7EB" }} />
+                <Bar dataKey="candidates" fill="#2563EB" radius={[8, 8, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -510,13 +547,30 @@ export default function RecruiterDashboard() {
 
 function MetricCard({ label, value, note, trend }) {
   const trendIsPositive = Number(trend || 0) >= 0;
+  const tintClassByLabel = {
+    "Candidates Added": "bg-blue-50",
+    "Interviews Scheduled": "bg-purple-50",
+    Offers: "bg-green-50",
+    "Active Clients": "bg-orange-50",
+    "Total Revenue": "bg-green-50 border-green-100",
+    "Total Revenue Records": "bg-blue-50 border-blue-100",
+  };
+  const tintClass = tintClassByLabel[label] || "bg-white";
+  const accentDotByLabel = {
+    "Total Revenue": "bg-green-600",
+    "Total Revenue Records": "bg-blue-600",
+  };
+  const accentDotClass = accentDotByLabel[label];
   return (
-    <Card className="h-full rounded-2xl border border-slate-200 bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
+    <Card className={`h-full rounded-xl border border-gray-100 ${tintClass} shadow-sm transition-all duration-200 ease-in-out hover:-translate-y-[3px] hover:shadow-md`}>
       <CardContent className="flex h-full flex-col justify-between p-5">
-        <p className="m-0 text-sm text-gray-500">{label}</p>
-        <p className="m-0 mt-3 text-2xl font-bold text-slate-900">{value}</p>
+        <div className="flex items-center gap-2">
+          {accentDotClass ? <span className={`h-2 w-2 rounded-full ${accentDotClass}`} /> : null}
+          <p className="m-0 text-sm text-gray-600">{label}</p>
+        </div>
+        <p className="m-0 mt-3 text-2xl font-bold text-gray-900">{value}</p>
         <div className="mt-2 flex min-h-5 items-center justify-between gap-2">
-          <p className="m-0 text-xs text-slate-500">{note}</p>
+          <p className="m-0 text-xs text-gray-600">{note}</p>
           {typeof trend === "number" ? (
             <span className={`text-xs font-semibold ${trendIsPositive ? "text-emerald-600" : "text-rose-600"}`}>
               {trendIsPositive ? "+" : ""}
@@ -531,7 +585,7 @@ function MetricCard({ label, value, note, trend }) {
 
 function ChartCard({ title, subtitle, children, className = "", contentClassName = "" }) {
   return (
-    <Card className={`min-w-0 rounded-2xl border border-slate-200 bg-white shadow-sm transition-all duration-200 hover:shadow-md ${className}`}>
+    <Card className={`min-w-0 rounded-xl border border-gray-100 bg-white shadow-md transition-all duration-200 ease-in-out hover:-translate-y-[3px] hover:shadow-lg ${className}`}>
       <CardHeader className="pb-2">
         <CardTitle className="text-lg font-semibold">{title}</CardTitle>
         <CardDescription className="text-sm text-gray-500">{subtitle}</CardDescription>
