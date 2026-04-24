@@ -14,6 +14,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { Briefcase, CalendarCheck2, CheckCircle2, CircleAlert, Users } from "lucide-react";
 import Loader from "../../components/common/Loader";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { useAuth } from "../../context/AuthContext";
@@ -30,6 +31,13 @@ const STATUS_COLORS = [
   "#DBEAFE",
   "#1E40AF",
 ];
+const FUNNEL_COLORS = {
+  "Profile Submitted": "#60A5FA",
+  Shortlisted: "#8B5CF6",
+  "Interview Stage": "#F59E0B",
+  Offered: "#22C55E",
+  Rejected: "#FB7185",
+};
 
 const INTERVIEW_STATUSES = new Set([
   "L1 Scheduled",
@@ -456,7 +464,7 @@ export default function RecruiterDashboard() {
 
       <section className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
         {dashboard.kpis.map((card) => (
-          <MetricCard key={card.label} {...card} />
+          <MetricCard key={card.label} {...card} variant="kpi" />
         ))}
       </section>
 
@@ -466,17 +474,25 @@ export default function RecruiterDashboard() {
           title="Hiring Funnel"
           subtitle="Profile submitted, shortlisted, interview, offered, and rejected stages"
         >
-          <div className="h-[360px] w-full min-w-0">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={dashboard.hiringFunnel}>
-                <CartesianGrid strokeDasharray="2 4" stroke="#E5E7EB" />
-                <XAxis dataKey="stage" tick={{ fill: "#64748b", fontSize: 12 }} />
-                <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
-                <Tooltip contentStyle={{ borderRadius: 12, borderColor: "#E5E7EB" }} />
-                <Bar dataKey="value" fill="#2563EB" radius={[8, 8, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          {hasFunnelData(dashboard.hiringFunnel) ? (
+            <div className="h-[360px] w-full min-w-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={dashboard.hiringFunnel}>
+                  <CartesianGrid strokeDasharray="2 4" stroke="#E5E7EB" />
+                  <XAxis dataKey="stage" tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: "#64748b", fontSize: 12 }} axisLine={false} tickLine={false} />
+                  <Tooltip content={<StyledTooltip />} />
+                  <Bar dataKey="value" radius={[10, 10, 0, 0]}>
+                    {dashboard.hiringFunnel.map((stageRow) => (
+                      <Cell key={stageRow.stage} fill={FUNNEL_COLORS[stageRow.stage] || "#2563EB"} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <ChartEmptyState />
+          )}
         </ChartCard>
 
         <div className="col-span-12 grid grid-cols-1 gap-6 xl:col-span-4">
@@ -485,24 +501,29 @@ export default function RecruiterDashboard() {
             subtitle="Last 7 days candidate additions and interview scheduling"
             contentClassName="pt-0"
           >
-            <div className="h-[160px] w-full min-w-0">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={dashboard.activity}>
-                  <CartesianGrid strokeDasharray="2 4" stroke="#E5E7EB" />
-                  <XAxis dataKey="label" tick={{ fill: "#64748b", fontSize: 11 }} />
-                  <YAxis tick={{ fill: "#64748b", fontSize: 11 }} />
-                  <Tooltip contentStyle={{ borderRadius: 12, borderColor: "#E5E7EB" }} />
-                  <Line type="monotone" dataKey="added" name="Added" stroke="#2563EB" strokeWidth={2.5} />
-                  <Line
-                    type="monotone"
-                    dataKey="interviews"
-                    name="Interviews"
-                    stroke="#3B82F6"
-                    strokeWidth={2.5}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
+            {hasActivityData(dashboard.activity) ? (
+              <div className="h-[160px] w-full min-w-0">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={dashboard.activity}>
+                    <CartesianGrid strokeDasharray="2 4" stroke="#E5E7EB" />
+                    <XAxis dataKey="label" tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} />
+                    <Tooltip content={<StyledTooltip />} />
+                    <Line type="monotone" dataKey="added" name="Added" stroke="#2563EB" strokeWidth={2.5} dot={false} />
+                    <Line
+                      type="monotone"
+                      dataKey="interviews"
+                      name="Interviews"
+                      stroke="#8B5CF6"
+                      strokeWidth={2.5}
+                      dot={false}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <ChartEmptyState />
+            )}
           </ChartCard>
 
           <ChartCard
@@ -510,18 +531,22 @@ export default function RecruiterDashboard() {
             subtitle="Current recruiter pipeline by status"
             contentClassName="pt-0"
           >
-            <div className="h-[160px] w-full min-w-0">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={dashboard.statusDistribution} dataKey="value" nameKey="name" outerRadius={64} innerRadius={38} paddingAngle={2}>
-                    {dashboard.statusDistribution.map((entry, index) => (
-                      <Cell key={`${entry.name}-${index}`} fill={STATUS_COLORS[index % STATUS_COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip contentStyle={{ borderRadius: 12, borderColor: "#E5E7EB" }} />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
+            {hasDistributionData(dashboard.statusDistribution) ? (
+              <div className="h-[160px] w-full min-w-0">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={dashboard.statusDistribution} dataKey="value" nameKey="name" outerRadius={64} innerRadius={38} paddingAngle={2}>
+                      {dashboard.statusDistribution.map((entry, index) => (
+                        <Cell key={`${entry.name}-${index}`} fill={STATUS_COLORS[index % STATUS_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip content={<StyledTooltip />} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <ChartEmptyState />
+            )}
           </ChartCard>
         </div>
       </section>
@@ -532,17 +557,21 @@ export default function RecruiterDashboard() {
           subtitle="Candidate submissions grouped by client"
           contentClassName="pt-0"
         >
-          <div className="h-[220px] w-full min-w-0">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={dashboard.clientPerformance}>
-                <CartesianGrid strokeDasharray="2 4" stroke="#E5E7EB" />
-                <XAxis dataKey="client" tick={{ fill: "#64748b", fontSize: 11 }} />
-                <YAxis tick={{ fill: "#64748b", fontSize: 11 }} />
-                <Tooltip contentStyle={{ borderRadius: 12, borderColor: "#E5E7EB" }} />
-                <Bar dataKey="candidates" fill="#2563EB" radius={[8, 8, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          {hasClientData(dashboard.clientPerformance) ? (
+            <div className="h-[220px] w-full min-w-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={dashboard.clientPerformance}>
+                  <CartesianGrid strokeDasharray="2 4" stroke="#E5E7EB" />
+                  <XAxis dataKey="client" tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <Tooltip content={<StyledTooltip />} />
+                  <Bar dataKey="candidates" fill="#F59E0B" radius={[10, 10, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <ChartEmptyState />
+          )}
         </ChartCard>
 
       </section>
@@ -551,7 +580,7 @@ export default function RecruiterDashboard() {
         <ChartCard title="Revenue Analytics" subtitle="Revenue tracker performance and target progress">
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
             {dashboard.revenueAnalytics.map((card) => (
-              <MetricCard key={card.label} {...card} />
+              <MetricCard key={card.label} {...card} variant="revenue" />
             ))}
           </div>
         </ChartCard>
@@ -560,32 +589,58 @@ export default function RecruiterDashboard() {
   );
 }
 
-function MetricCard({ label, value, note, trend }) {
+function MetricCard({ label, value, note, trend, variant = "kpi" }) {
   const trendIsPositive = Number(trend || 0) >= 0;
   const tintClassByLabel = {
-    "Candidates Added": "bg-blue-50",
-    "Interviews Scheduled": "bg-purple-50",
-    Offers: "bg-green-50",
-    "Active Clients": "bg-orange-50",
-    "Total Revenue": "bg-green-50 border-green-100",
-    "Total Revenue Records": "bg-blue-50 border-blue-100",
+    "Candidates Added": "bg-blue-50/70 border-t-4 border-t-blue-500",
+    "Interviews Scheduled": "bg-purple-50/70 border-t-4 border-t-purple-500",
+    Offers: "bg-green-50/70 border-t-4 border-t-green-500",
+    "Active Clients": "bg-orange-50/70 border-t-4 border-t-orange-500",
+    "Total Revenue": "bg-slate-50 border-t-2 border-t-green-500",
+    "Total Revenue Records": "bg-slate-50 border-t-2 border-t-blue-500",
   };
   const tintClass = tintClassByLabel[label] || "bg-white";
-  const accentDotByLabel = {
-    "Total Revenue": "bg-green-600",
-    "Total Revenue Records": "bg-blue-600",
+  const accentStyleByLabel = {
+    "Candidates Added": {
+      badge: "bg-blue-100 text-blue-700",
+      icon: Users,
+    },
+    "Interviews Scheduled": {
+      badge: "bg-purple-100 text-purple-700",
+      icon: CalendarCheck2,
+    },
+    Offers: {
+      badge: "bg-green-100 text-green-700",
+      icon: CheckCircle2,
+    },
+    "Active Clients": {
+      badge: "bg-orange-100 text-orange-700",
+      icon: Briefcase,
+    },
+    "Total Revenue": {
+      badge: "bg-green-100 text-green-700",
+      icon: CheckCircle2,
+    },
+    "Total Revenue Records": {
+      badge: "bg-blue-100 text-blue-700",
+      icon: CircleAlert,
+    },
   };
-  const accentDotClass = accentDotByLabel[label];
+  const accent = accentStyleByLabel[label] || { badge: "bg-slate-100 text-slate-700", icon: CircleAlert };
+  const Icon = accent.icon;
+  const cardElevation = variant === "revenue" ? "shadow-[0_8px_20px_rgba(15,23,42,0.06)]" : "shadow-[0_8px_24px_rgba(15,23,42,0.08)]";
   return (
-    <Card className={`h-full rounded-xl border border-[#E2E8F0] ${tintClass} shadow-[0_8px_24px_rgba(15,23,42,0.08)] transition-all duration-200 ease-in-out hover:-translate-y-[4px] hover:shadow-[0_12px_28px_rgba(15,23,42,0.12)]`}>
-      <CardContent className="flex h-full flex-col justify-between p-5">
-        <div className="flex items-center gap-2">
-          {accentDotClass ? <span className={`h-2 w-2 rounded-full ${accentDotClass}`} /> : null}
-          <p className="m-0 text-sm text-gray-600">{label}</p>
+    <Card className={`h-full rounded-2xl border border-slate-200 ${tintClass} ${cardElevation} transition-all duration-200 ease-in-out hover:-translate-y-[4px] hover:shadow-[0_12px_28px_rgba(15,23,42,0.12)]`}>
+      <CardContent className="flex h-full flex-col justify-between p-6">
+        <div className="flex items-center justify-between gap-2">
+          <p className="m-0 text-xs font-medium tracking-wide text-gray-500">{label}</p>
+          <span className={`inline-flex h-8 w-8 items-center justify-center rounded-lg ${accent.badge}`}>
+            <Icon size={16} />
+          </span>
         </div>
-        <p className="m-0 mt-3 text-2xl font-bold text-gray-900">{value}</p>
+        <p className="m-0 mt-3 text-3xl font-bold text-gray-900 xl:text-4xl">{value}</p>
         <div className="mt-2 flex min-h-5 items-center justify-between gap-2">
-          <p className="m-0 text-xs text-gray-600">{note}</p>
+          <p className="m-0 text-xs text-gray-500">{note}</p>
           {typeof trend === "number" ? (
             <span className={`text-xs font-semibold ${trendIsPositive ? "text-emerald-600" : "text-rose-600"}`}>
               {trendIsPositive ? "+" : ""}
@@ -600,12 +655,51 @@ function MetricCard({ label, value, note, trend }) {
 
 function ChartCard({ title, subtitle, children, className = "", contentClassName = "" }) {
   return (
-    <Card className={`min-w-0 rounded-xl border border-[#E2E8F0] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.08)] transition-all duration-200 ease-in-out hover:-translate-y-[4px] hover:shadow-[0_12px_28px_rgba(15,23,42,0.12)] ${className}`}>
-      <CardHeader className="pb-2">
+    <Card className={`min-w-0 rounded-2xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.08)] transition-all duration-200 ease-in-out hover:-translate-y-[4px] hover:shadow-[0_12px_28px_rgba(15,23,42,0.12)] ${className}`}>
+      <CardHeader className="p-6 pb-2">
         <CardTitle className="text-lg font-semibold">{title}</CardTitle>
         <CardDescription className="text-sm text-gray-500">{subtitle}</CardDescription>
       </CardHeader>
-      <CardContent className={contentClassName}>{children}</CardContent>
+      <CardContent className={`p-6 ${contentClassName}`}>{children}</CardContent>
     </Card>
   );
+}
+
+function StyledTooltip({ active, payload, label }) {
+  if (!active || !payload || payload.length === 0) return null;
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs shadow-[0_6px_18px_rgba(15,23,42,0.1)]">
+      {label ? <p className="m-0 mb-1 text-slate-600">{label}</p> : null}
+      {payload.map((entry) => (
+        <p key={`${entry.name}-${entry.dataKey}`} className="m-0 text-slate-800">
+          <span className="mr-1 inline-block h-2 w-2 rounded-full align-middle" style={{ backgroundColor: entry.color }} />
+          {entry.name}: {entry.value}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+function ChartEmptyState() {
+  return (
+    <div className="flex h-[220px] items-center justify-center">
+      <p className="m-0 text-sm text-slate-400">No data available yet</p>
+    </div>
+  );
+}
+
+function hasFunnelData(rows) {
+  return Array.isArray(rows) && rows.some((row) => Number(row.value) > 0);
+}
+
+function hasActivityData(rows) {
+  return Array.isArray(rows) && rows.some((row) => Number(row.added) > 0 || Number(row.interviews) > 0);
+}
+
+function hasDistributionData(rows) {
+  return Array.isArray(rows) && rows.some((row) => Number(row.value) > 0);
+}
+
+function hasClientData(rows) {
+  return Array.isArray(rows) && rows.some((row) => Number(row.candidates) > 0);
 }

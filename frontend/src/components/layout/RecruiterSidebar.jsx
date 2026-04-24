@@ -66,7 +66,7 @@ export default function RecruiterSidebar({ collapsed = false, onToggle }) {
       <nav className={collapsed ? "flex min-h-0 flex-1 flex-col items-center gap-4 overflow-y-auto" : "flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-2"}>
         {groupedMenu.map((group) => (
           <div key={group.title} className={collapsed ? "w-full" : "flex w-full flex-col gap-2"}>
-            {!collapsed ? <p className="m-0 px-2 text-xs font-semibold uppercase tracking-wide text-slate-400">{group.title}</p> : null}
+            {!collapsed ? <p className="m-0 px-2 text-[11px] font-medium uppercase tracking-[0.08em] text-slate-400">{group.title}</p> : null}
             <div className={collapsed ? "flex w-full flex-col items-center gap-2" : "flex w-full flex-col gap-1"}>
               {group.items.map((item) => {
                 const Icon = item.icon;
@@ -79,14 +79,14 @@ export default function RecruiterSidebar({ collapsed = false, onToggle }) {
                       [
                         collapsed
                           ? "flex h-10 w-10 items-center justify-center rounded-xl no-underline transition-all duration-200"
-                          : "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium no-underline transition-all duration-200",
+                          : "flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium no-underline transition-all duration-200",
                         isActive
                           ? "bg-blue-100 text-blue-600 font-semibold"
                           : "text-slate-600 hover:bg-blue-50 hover:text-blue-600",
                       ].join(" ")
                     }
                   >
-                    <Icon size={18} />
+                    <Icon size={17} />
                     {!collapsed ? <span>{item.label}</span> : null}
                   </NavLink>
                 );
