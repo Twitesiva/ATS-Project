@@ -346,6 +346,16 @@ export default function RecruiterDashboard() {
   const [dashboard, setDashboard] = useState(emptyDashboard);
   const [revenueData, setRevenueData] = useState([]);
   const recruiterName = useMemo(() => user?.name || "", [user?.name]);
+  const currentDateLabel = useMemo(
+    () =>
+      new Date().toLocaleDateString("en-GB", {
+        weekday: "long",
+        day: "2-digit",
+        month: "long",
+        year: "numeric",
+      }),
+    []
+  );
   const upcomingDojRows = useMemo(() => getUpcomingDojRows(revenueData), [revenueData]);
 
   const loadDashboard = useCallback(async () => {
@@ -439,6 +449,11 @@ export default function RecruiterDashboard() {
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-8 font-poppins">
+      <section className="mb-1">
+        <h2 className="m-0 text-2xl font-bold text-gray-900">Welcome back, {recruiterName} 👋</h2>
+        <p className="m-0 mt-1 text-sm text-gray-500">{currentDateLabel}</p>
+      </section>
+
       <section className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
         {dashboard.kpis.map((card) => (
           <MetricCard key={card.label} {...card} />

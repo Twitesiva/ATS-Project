@@ -1,14 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Bell } from "lucide-react";
-import { Outlet, useLocation } from "react-router-dom";
+import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import RecruiterSidebar from "./RecruiterSidebar";
+import { useAuth } from "../../context/AuthContext";
+import { setUserOnlineStatus } from "../../services/authService";
 
 export default function RecruiterLayout({ sidebarRole = "recruiter" }) {
+  const { user, logout } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [dojNotifications, setDojNotifications] = useState([]);
   const notificationRef = useRef(null);
+  const userMenuRef = useRef(null);
   const location = useLocation();
+  const navigate = useNavigate();
   const sidebarWidth = collapsed ? 64 : 240;
 
   useEffect(() => {
@@ -34,6 +40,28 @@ export default function RecruiterLayout({ sidebarRole = "recruiter" }) {
     return pageMap[location.pathname] || "Recruiter Dashboard";
   }, [location.pathname]);
 
+  const safeUserName = useMemo(() => {
+    const rawName = String(user?.name || "");
+    return rawName.replace(/[<>"'`]/g, "").trim();
+  }, [user?.name]);
+  const safeUserEmail = useMemo(() => {
+    const rawEmail = String(user?.email || "");
+    return rawEmail.replace(/[<>"'`]/g, "").trim();
+  }, [user?.email]);
+
+  const userInitials = useMemo(() => {
+    if (!safeUserName) return "U";
+    const parts = safeUserName.split(/\s+/).filter(Boolean);
+    if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
+    return `${parts[0].charAt(0)}${parts[1].charAt(0)}`.toUpperCase();
+  }, [safeUserName]);
+
+  const handleLogout = async () => {
+    await setUserOnlineStatus(user?.id, false);
+    logout();
+    navigate("/login", { replace: true });
+  };
+
   useEffect(() => {
     const handleNotifications = (event) => {
       const nextRows = Array.isArray(event?.detail?.rows) ? event.detail.rows : [];
@@ -46,8 +74,11 @@ export default function RecruiterLayout({ sidebarRole = "recruiter" }) {
 
   useEffect(() => {
     const handleOutsideClick = (event) => {
-      if (!notificationRef.current || notificationRef.current.contains(event.target)) return;
-      setNotificationOpen(false);
+      const clickedInsideNotification = notificationRef.current?.contains(event.target);
+      const clickedInsideUserMenu = userMenuRef.current?.contains(event.target);
+
+      if (!clickedInsideNotification) setNotificationOpen(false);
+      if (!clickedInsideUserMenu) setUserMenuOpen(false);
     };
 
     document.addEventListener("mousedown", handleOutsideClick);
@@ -113,8 +144,32 @@ export default function RecruiterLayout({ sidebarRole = "recruiter" }) {
                 </div>
               ) : null}
             </div>
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-indigo-100 text-sm font-semibold text-indigo-700">
-              RA
+            <div ref={userMenuRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setUserMenuOpen((prev) => !prev)}
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-blue-100 to-indigo-100 text-sm font-bold text-blue-700 transition-all duration-200 ease-in-out hover:brightness-105"
+                aria-label="User menu"
+              >
+                {userInitials}
+              </button>
+
+              {userMenuOpen ? (
+                <div className="absolute right-0 top-11 z-50 w-60 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+                  <div>
+                    <p className="m-0 text-sm font-bold text-slate-900">{safeUserName || "-"}</p>
+                    <p className="m-0 mt-1 text-xs text-slate-500">{safeUserEmail || "-"}</p>
+                  </div>
+                  <div className="my-3 h-px bg-slate-200" />
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="w-full rounded-lg px-2 py-2 text-left text-sm font-medium text-slate-700 transition-all duration-200 ease-in-out hover:bg-slate-100"
+                  >
+                    Logout
+                  </button>
+                </div>
+              ) : null}
             </div>
           </div>
         </header>
