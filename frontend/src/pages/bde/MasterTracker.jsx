@@ -51,15 +51,7 @@ const userName  = user?.name?.trim().toLowerCase()  || "";
 const fetchAll = async () => {
   setLoading(true);
 
-  const userEmail = user?.email?.trim().toLowerCase() || "";
-  const userName  = user?.name?.trim().toLowerCase()  || "";
-
-  console.log("=== fetchAll called ===");
-  console.log("user:", user);
-  console.log("userName:", userName);
-  console.log("userEmail:", userEmail);
-
-  // 1. requirements → In Progress + Drop out (scoped to this user)
+  // 1. Requirements — In Progress + Drop out (scoped to this BDE)
   const { data: reqData, error: reqError } = await supabase
     .from("requirements")
     .select("*, companies(company_name, contact_person, phone, email, poc)")
@@ -67,46 +59,28 @@ const fetchAll = async () => {
     .ilike("created_by", `%${user?.name || ""}%`)
     .order("created_at", { ascending: false });
 
- if (reqError) console.error("[requirements] fetch failed", reqError);
-  console.log("reqData:", reqData);
-  console.log("reqError:", reqError);
+  if (reqError) console.error("[requirements] fetch failed", reqError);
 
-  // 2. revenue_tracker → Closure
+  // 2. Revenue tracker — Closures scoped to this BDE via bd_name
   const { data: revData, error: revError } = await supabase
     .from("revenue_tracker")
     .select("*")
+    .eq("bd_name", user?.name || "")
     .order("doj", { ascending: false });
 
   if (revError) console.error("[revenue_tracker] fetch failed", revError);
 
-  // 3. Fetch requirements to match position → company
-  const { data: reqLookup } = await supabase
-    .from("requirements")
-    .select("job_title, company_id, companies(company_name, poc, phone, email)");
-
-  const reqMap = new Map();
-  (reqLookup || []).forEach((r) => {
-    const key = `${r.companies?.company_name?.trim().toLowerCase()}||${r.job_title?.trim().toLowerCase()}`;
-    if (r.companies?.poc) {
-      reqMap.set(key, r.companies);
-    }
-  });
-
-  // 4. Fetch this user's companies for closure scoping
-const { data: myCompanies } = await supabase
+  // 3. Companies map for SPOC/phone/email on closure rows
+  const { data: companiesData } = await supabase
     .from("companies")
-    .select("company_name, poc, phone, email")
-    .ilike("created_by", user?.name || "");
-
-  const myCompanyNames = new Set(
-    (myCompanies || []).map(c => c.company_name?.trim().toLowerCase())
-  );
+    .select("company_name, poc, phone, email, contact_person");
 
   const companyMap = new Map();
-  (myCompanies || []).forEach((c) => {
+  (companiesData || []).forEach((c) => {
     companyMap.set(c.company_name?.trim().toLowerCase(), c);
   });
 
+  // 4. Build requirement rows
   const requirementRows = (reqData || []).map((r) => ({
     _id: r.id,
     _type: r.status === "Drop out" ? "Drop Out" : "In Progress",
@@ -125,38 +99,29 @@ const { data: myCompanies } = await supabase
     payment_terms: r.payment_terms || r.created_by || "-",
   }));
 
-  const closureRows = (revData || [])
-    .filter((r) => {
-      const clientKey = r.client_name?.trim().toLowerCase();
-      // only this BDE's companies
-      if (!myCompanyNames.has(clientKey)) return false;
-      const reqKey = `${clientKey}||${r.position?.trim().toLowerCase()}`;
-      return reqMap.has(reqKey);
-    })
-    .map((r) => {
-      const reqKey = `${r.client_name?.trim().toLowerCase()}||${r.position?.trim().toLowerCase()}`;
-      const fromReq = reqMap.get(reqKey);
-      const fromCompany = companyMap.get(r.client_name?.trim().toLowerCase());
-      const matched = fromReq || fromCompany;
+  // 5. Build closure rows from revenue_tracker
+  const closureRows = (revData || []).map((r) => {
+    const clientKey = r.client_name?.trim().toLowerCase();
+    const matched = companyMap.get(clientKey);
 
-      return {
-        _id: r.id || r._id,
-        _type: "Closure",
-        date: r.doj || "-",
-        source: "-",
-        client: r.client_name || "-",
-        updates: r.position || "-",
-        status: "Closure",
-        status_from_ta: r.offer_status || "-",
-        hire_mode: r.hire || "-",
-        spoc_name: Array.isArray(matched?.poc)
-          ? matched.poc[0] || "-"
-          : matched?.poc || "-",
-        mobile: matched?.phone || "-",
-        mail: matched?.email || "-",
-        payment_terms: r.payment_terms || r.recruiter_name || "-",
-      };
-    });
+    return {
+      _id: r.id,
+      _type: "Closure",
+      date: r.doj || "-",
+      source: "-",
+      client: r.client_name || "-",
+      updates: r.position || "-",
+      status: "Closure",
+      status_from_ta: r.offer_status || "-",
+      hire_mode: r.hire || "-",
+      spoc_name: Array.isArray(matched?.poc)
+        ? matched.poc[0] || "-"
+        : matched?.poc || matched?.contact_person || "-",
+      mobile: matched?.phone || "-",
+      mail: matched?.email || "-",
+      payment_terms: r.recruiter_name || "-",
+    };
+  });
 
   setRows([...requirementRows, ...closureRows]);
   setLoading(false);

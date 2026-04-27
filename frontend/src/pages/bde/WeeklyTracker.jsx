@@ -103,18 +103,11 @@ function computeWeekKPIs(ws, we, companies, requirements, activities, revenueRow
 
   // ── Closures: revenue_tracker filtered by BDE's Client companies ─────────
   // Build a set of lowercase company_names that have status = "Client"
-  const clientNames = new Set(
-    companies
-      .filter(c => (c.status || "").toLowerCase() === "client")
-      .map(c => (c.company_name || "").trim().toLowerCase())
-  );
-
-  const weekClosures = revenueRows.filter(r => {
-    const doj = (r.doj || "").slice(0, 10);
-    if (doj < ws || doj > we) return false;
-    const cn = (r.client_name || "").trim().toLowerCase();
-    return clientNames.has(cn);
-  });
+ // AFTER — trust that revenueRows is already scoped to this BDE via bd_name
+const weekClosures = revenueRows.filter(r => {
+  const doj = (r.doj || "").slice(0, 10);
+  return doj >= ws && doj <= we;
+});
 
   // ── Total lead generation: unique (company_id, contact, job_title) ───────
   const reqsByComp = {};
@@ -359,7 +352,7 @@ function filterRowsByKpi(rows, filter) {
   }
 }
 
-const KPI_LABELS = { clients:"New Clients", total:"Total Leads", email:"Email Leads", phone:"Phone Leads", linkedin:"LinkedIn Leads", responses:"Responses Received", followups:"To-do Follow-ups", meets:"Client Meets (Demo + Meeting)" };
+const KPI_LABELS = { clients:"New Clients", total:"Total Leads", email:"Email Leads", phone:"Phone Leads", linkedin:"LinkedIn Leads", responses:"Responses Received", followups:"To-do Follow-ups", meets:"Client Meets (Demo + Meeting)", closures:"Closures (Revenue Tracker)" };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN COMPONENT
@@ -384,44 +377,51 @@ export default function WeeklyTrackerVisual({ user: userProp }) {
 
   // ── Fetch all four tables in parallel ────────────────────────────────────
 useEffect(() => {
+  if (!user?.name) return;
+
   (async () => {
     setLoading(true);
     setError(null);
 
     try {
-      // ✅ get session safely
       const { data: { session } } = await supabase.auth.getSession();
-
       const headers = {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${session?.access_token}`, // ✅ token added
+        "Authorization": `Bearer ${session?.access_token}`,
       };
 
-      const [cRes, rRes, aRes, revRes] = await Promise.all([
+      // Fetch companies, requirements, activities from API as before
+      const [cRes, rRes, aRes] = await Promise.all([
         fetch(`${API_BASE_URL}/bde/companies`, { headers }),
         fetch(`${API_BASE_URL}/bde/requirements`, { headers }),
         fetch(`${API_BASE_URL}/bde/activities`, { headers }),
-        fetch(`${API_BASE_URL}/bde/revenue-tracker`, { headers }),
       ]);
 
       const [cData, rData, aData] = await Promise.all([
         cRes.json(),
         rRes.json(),
-        aRes.json()
+        aRes.json(),
       ]);
 
-      const revData = revRes.ok ? await revRes.json() : [];
+      // ✅ Fetch revenue directly from Supabase filtered by bd_name
+      const { data: revData, error: revError } = await supabase
+        .from("revenue_tracker")
+        .select("*")
+        .eq("bd_name", user.name)
+        .order("doj", { ascending: false });
+
+      if (revError) console.error("[revenue_tracker] fetch failed", revError);
 
       setCompanies(cData || []);
       setRequirements((rData || []).map(r => ({
         ...r,
-        company_id: r.company_id ?? r.companies?.id
+        company_id: r.company_id ?? r.companies?.id,
       })));
       setActivities((aData || []).map(a => ({
         ...a,
-        company_id: a.company_id ?? a.companies?.id
+        company_id: a.company_id ?? a.companies?.id,
       })));
-      setRevenueRows(revData || []);
+      setRevenueRows(revData || []); // ✅ already scoped to this BDE
 
     } catch (err) {
       setError(err.message);
@@ -429,7 +429,7 @@ useEffect(() => {
 
     setLoading(false);
   })();
-}, []);
+}, [user?.name]);
 
   // ── Scope to this BDE's data ──────────────────────────────────────────────
   const matchedComps = userKeys.length ? companies.filter(c => matchesUser(c.created_by, userKeys)) : companies;
@@ -440,20 +440,17 @@ const userReqs    = requirements.filter(r => userCompIds.has(r.company_id));
 const userActs    = matchedActs;
 
   // ── Revenue rows scoped to this BDE's client companies ───────────────────
-  const bdeClientNames = new Set(
-    userComps
-      .filter(c => (c.status || "").toLowerCase() === "client")
-      .map(c => (c.company_name || "").trim().toLowerCase())
-  );
-  const userRevenue = revenueRows.filter(r =>
-    bdeClientNames.has((r.client_name || "").trim().toLowerCase())
-  );
+ // ── Revenue rows scoped to this BDE via bd_name ───────────────────────────
+const userRevenue = revenueRows.filter(r =>
+  (r.bd_name || "").trim().toLowerCase() === (user?.name || "").trim().toLowerCase()
+);
 
   // ── 8-week grid ───────────────────────────────────────────────────────────
   const weeks = buildWeeks(8);
-  const weekData = weeks.map(w =>
-    computeWeekKPIs(w.ws, w.we, userComps, userReqs, userActs, userRevenue)
-  );
+  // Make sure you're passing userRevenue, not revenueRows
+const weekData = weeks.map(w =>
+  computeWeekKPIs(w.ws, w.we, userComps, userReqs, userActs, userRevenue) // ✅ userRevenue
+);
 
   // ── Derived arrays ────────────────────────────────────────────────────────
   const wLabels   = weeks.map(w => w.label);
@@ -540,9 +537,23 @@ const rcDatasets = [
   const swLeadRows = buildLeadRows(swD.weekComps || [], swD.weekReqs || []);
   const swRequirementRows = buildRequirementRows(swD.weekReqs || [], swD.weekComps || []);
   const swActivityRows = buildActivityRows(swD.weekActs || [], swD.weekComps || []);
+  const swClosureRows = (swD.weekClosures || []).map((r, idx) => ({
+    id:            r.id || `closure-${idx}`,
+    activity_date: r.doj || "",
+    lead_name:     r.candidate_name || "-",
+    company:       r.client_name || "-",
+    position:      r.position || "-",
+    source:        r.hire || "-",
+    mobile:        "-",
+    email:         "-",
+    status:        r.offer_status || "-",
+    remarks:       r.recruiter_name || "-",
+  }));
+
   const kpiBaseRows =
     kpiFilter === "responses" ? swRequirementRows :
     ["followups", "meets"].includes(kpiFilter) ? swActivityRows :
+    kpiFilter === "closures" ? swClosureRows :
     swLeadRows;
   const kpiRows    = kpiFilter ? filterRowsByKpi(kpiBaseRows, kpiFilter) : [];
 
@@ -700,15 +711,10 @@ const rcDatasets = [
             </div>
 
             {/* Closures tile — read-only, sourced from revenue_tracker */}
-            <div style={{ padding:"12px 14px", borderRadius:10, background:"#E1F5EE", border:"0.5px solid #9FE1CB", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-              <div>
-                <p style={{ margin:"0 0 4px", fontSize:11, color:"#085041", textTransform:"uppercase", letterSpacing:"0.04em", fontWeight:600 }}>Closures</p>
-                <p style={{ margin:0, fontSize:22, fontWeight:600, color:C.green }}>{swClose}</p>
-              </div>
-              <div style={{ textAlign:"right" }}>
-                <span style={{ fontSize:10, color:"#085041", background:"#9FE1CB", borderRadius:6, padding:"3px 8px", display:"block", marginBottom:3 }}>revenue_tracker</span>
-                <span style={{ fontSize:10, color:C.muted }}>client_name ∈ Client companies · position match</span>
-              </div>
+            {/* Closures tile — clickable */}
+            <div onClick={() => setKpiFilter(f => f === "closures" ? null : "closures")} style={tileStyle("closures")}>
+              <p style={tileLbl("closures")}>Closures</p>
+              <p style={{ margin:0, fontSize:22, fontWeight:600, color:C.green }}>{swClose}</p>
             </div>
 
             {kpiFilter && (

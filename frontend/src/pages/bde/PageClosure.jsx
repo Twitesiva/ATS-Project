@@ -43,7 +43,6 @@ const SummaryCard = ({ label, value, sub, color }) => (
   </div>
 );
 
-// Get list of months from a dataset for filter dropdown
 function getMonthOptions(data) {
   const set = new Set();
   data.forEach((r) => {
@@ -55,11 +54,6 @@ function getMonthOptions(data) {
   return [...set].sort().reverse();
 }
 
-function fmt(n) {
-  if (n == null) return "—";
-  return Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 });
-}
-
 function fmtCurrency(n) {
   if (n == null) return "—";
   return "₹" + Number(n).toLocaleString("en-IN", { maximumFractionDigits: 0 });
@@ -67,100 +61,34 @@ function fmtCurrency(n) {
 
 export default function PageClosure() {
   const [allData, setAllData] = useState([]);
-  const [clientNames, setClientNames] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [monthFilter, setMonthFilter] = useState("");
   const [searchFilter, setSearchFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const { user } = useAuth();
+useEffect(() => {
+  const load = async () => {
+    setLoading(true);
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
+    const { data: revenue, error: revenueError } = await supabase
+      .from("revenue_tracker")
+      .select("*")
+      .eq("bd_name", user?.name || "")
+      .order("doj", { ascending: false });
 
-      // Get requirements created by the logged-in BDE user
-      const { data: requirements, error: reqError } = await supabase
-        .from("requirements")
-        .select("company_id, job_title")
-        .eq("created_by", user?.name || "");
-
-      if (reqError) {
-        console.error("Failed to fetch requirements:", reqError);
-        setLoading(false);
-        return;
-      }
-
-      // Build set of unique company IDs from requirements
-      const companyIds = [...new Set((requirements || []).map((r) => r.company_id).filter(Boolean))];
-
-      // Fetch company names for those IDs (to match revenue.client_name)
-      const { data: companies, error: compError } = await supabase
-        .from("companies")
-        .select("id, company_name")
-        .in("id", companyIds.length ? companyIds : ["none"]);
-
-      if (compError) {
-        console.error("Failed to fetch companies:", compError);
-        setLoading(false);
-        return;
-      }
-
-      // Map company_id -> company_name
-      const companyNameMap = {};
-      (companies || []).forEach((c) => {
-        companyNameMap[c.id] = c.company_name.trim().toLowerCase();
-      });
-
-      // Build arrays for revenue query filters
-      const validReqs = (requirements || []).filter((r) => r.company_id && r.job_title);
-      const matchingPairs = validReqs.map((r) => ({
-        client_name: companyNameMap[r.company_id],
-        position: r.job_title.trim(),
-      })).filter((p) => p.client_name && p.position);
-
-      // Fetch revenue entries created by this user
-      const { data: revenue, error: revenueError } = await supabase
-        .from("revenue_tracker")
-        .select("*")
-        .eq("created_by", user?.name || "")
-        .order("doj", { ascending: false });
-
-      if (revenueError) {
-        console.error("Failed to fetch revenue:", revenueError);
-        setLoading(false);
-        return;
-      }
-
-      // Filter revenue entries that match client_name + position from requirements
-      const filtered = (revenue || []).filter((r) =>
-        matchingPairs.some(
-          (p) =>
-            r.client_name?.trim().toLowerCase() === p.client_name &&
-            r.position?.trim().toLowerCase() === p.position.toLowerCase()
-        )
-      );
-
-      // Build client names set from filtered data
-      const names = new Set(filtered.map((r) => r.client_name?.trim().toLowerCase()).filter(Boolean));
-      setClientNames(names);
-
-      // Deduplicate by client_name + position
-      const uniqueByClientPosition = new Map();
-      filtered.forEach((row) => {
-        const key = `${row.client_name?.trim().toLowerCase() || ""}||${row.position?.trim().toLowerCase() || ""}`;
-        if (!uniqueByClientPosition.has(key)) {
-          uniqueByClientPosition.set(key, row);
-        }
-      });
-
-      setAllData([...uniqueByClientPosition.values()]);
+    if (revenueError) {
+      console.error("Failed to fetch revenue:", revenueError);
       setLoading(false);
-    };
+      return;
+    }
 
-    load();
-  }, [user?.name]);
+    setAllData(revenue || []);
+    setLoading(false);
+  };
 
-  // Apply UI filters
+  if (user?.name) load();
+}, [user?.name]);
+
   const monthOptions = getMonthOptions(allData);
 
   const displayed = allData.filter((r) => {
@@ -182,7 +110,6 @@ export default function PageClosure() {
     return true;
   });
 
-  // Summary stats from displayed rows
   const totalClosures = displayed.length;
   const totalBilling = displayed.reduce((s, r) => s + (r.billing_rate || 0), 0);
   const totalMargin = displayed.reduce((s, r) => s + (r.margin_value || 0), 0);
@@ -193,7 +120,6 @@ export default function PageClosure() {
   return (
     <div style={{ padding: "28px 32px", background: "#ffffff", minHeight: "100vh" }}>
 
-      {/* Header */}
       <div style={{ marginBottom: 24 }}>
         <h1 style={{ color: "#0f172a", fontSize: 24, fontWeight: 700, margin: 0 }}>Page Closures</h1>
         <p style={{ color: "#475569", margin: "4px 0 0", fontSize: 13 }}>
@@ -201,7 +127,6 @@ export default function PageClosure() {
         </p>
       </div>
 
-      {/* Summary Cards */}
       <div style={{ display: "flex", gap: 16, marginBottom: 28, flexWrap: "wrap" }}>
         <SummaryCard label="Total Closures" value={totalClosures} sub="entries matched" color="#4e8ef7" />
         <SummaryCard label="Total Billing" value={fmtCurrency(totalBilling)} sub="billing rate sum" color="#4ef7a4" />
@@ -209,7 +134,6 @@ export default function PageClosure() {
         <SummaryCard label="Avg Margin %" value={`${avgMarginPct}%`} sub="across closures" color="#f7a44e" />
       </div>
 
-      {/* Filters */}
       <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
         <input
           placeholder="Search client, candidate, recruiter..."
@@ -235,17 +159,20 @@ export default function PageClosure() {
           style={{ ...inputStyle, width: 160 }}
         >
           <option value="">All Offer Status</option>
-          {Object.keys(OFFER_STATUS_COLORS).map((s) => <option key={s}>{s}</option>)}
+          {Object.keys(OFFER_STATUS_COLORS).map((s) => (
+            <option key={s}>{s}</option>
+          ))}
         </select>
         {(monthFilter || searchFilter || statusFilter) && (
           <button
             onClick={() => { setMonthFilter(""); setSearchFilter(""); setStatusFilter(""); }}
             style={{ ...inputStyle, background: "#e2e8f0", color: "#0f172a", border: "none", cursor: "pointer" }}
-          >Clear</button>
+          >
+            Clear
+          </button>
         )}
       </div>
 
-      {/* Table */}
       <div style={{ background: "#ffffff", borderRadius: 12, overflowX: "auto", border: "1px solid #e2e8f0" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1100 }}>
           <thead>
@@ -253,7 +180,7 @@ export default function PageClosure() {
               {[
                 "SL", "DOJ", "Client", "Candidate", "Recruiter",
                 "Position", "Location", "Hire", "CTC", "Offered CTC",
-                "Billing Rate", "Margin Value", "Margin %", "Offer Status", "Status"
+                "Billing Rate", "Margin Value", "Margin %", "Offer Status", "Status",
               ].map((h) => (
                 <th key={h} style={{
                   color: "#475569", padding: "12px 12px", textAlign: "left",
@@ -279,60 +206,39 @@ export default function PageClosure() {
               </tr>
             ) : displayed.map((row, i) => (
               <tr key={row.id} style={{ borderTop: "1px solid #e2e8f0" }}>
-
                 <td style={{ padding: "12px 12px", color: "#475569", fontSize: 13, width: 36 }}>{i + 1}</td>
-
                 <td style={{ padding: "12px 12px", color: "#475569", fontSize: 13, whiteSpace: "nowrap" }}>
                   {row.doj ? new Date(row.doj).toLocaleDateString("en-IN") : "—"}
                 </td>
-
                 <td style={{ padding: "12px 12px" }}>
                   <div style={{ color: "#0f172a", fontWeight: 600, fontSize: 13 }}>{row.client_name}</div>
                 </td>
-
                 <td style={{ padding: "12px 12px" }}>
                   <div style={{ color: "#475569", fontSize: 13 }}>{row.candidate_name}</div>
                 </td>
-
                 <td style={{ padding: "12px 12px", color: "#475569", fontSize: 13 }}>{row.recruiter_name}</td>
-
                 <td style={{ padding: "12px 12px", color: "#475569", fontSize: 13 }}>{row.position || "—"}</td>
-
                 <td style={{ padding: "12px 12px", color: "#475569", fontSize: 12 }}>{row.location || "—"}</td>
-
                 <td style={{ padding: "12px 12px", color: "#475569", fontSize: 12 }}>{row.hire || "—"}</td>
-
                 <td style={{ padding: "12px 12px", color: "#4ef7a4", fontSize: 13, fontWeight: 600 }}>{fmtCurrency(row.ctc)}</td>
-
                 <td style={{ padding: "12px 12px", color: "#4ef7a4", fontSize: 13, fontWeight: 600 }}>{fmtCurrency(row.offered_ctc)}</td>
-
-                <td style={{ padding: "12px 12px", color: "#4ef7a4", fontSize: 13, fontWeight: 600 }}>
-                  {fmtCurrency(row.billing_rate)}
-                </td>
-
-                <td style={{ padding: "12px 12px", color: "#c97ef7", fontSize: 13, fontWeight: 600 }}>
-                  {fmtCurrency(row.margin_value)}
-                </td>
-
+                <td style={{ padding: "12px 12px", color: "#4ef7a4", fontSize: 13, fontWeight: 600 }}>{fmtCurrency(row.billing_rate)}</td>
+                <td style={{ padding: "12px 12px", color: "#c97ef7", fontSize: 13, fontWeight: 600 }}>{fmtCurrency(row.margin_value)}</td>
                 <td style={{ padding: "12px 12px", color: "#f7a44e", fontSize: 13, fontWeight: 600 }}>
                   {row.margin_percent != null ? `${Number(row.margin_percent).toFixed(1)}%` : "—"}
                 </td>
-
                 <td style={{ padding: "12px 12px" }}>
                   <Badge text={row.offer_status} colorMap={OFFER_STATUS_COLORS} />
                 </td>
-
                 <td style={{ padding: "12px 12px" }}>
                   <Badge text={row.status} colorMap={STATUS_COLORS} />
                 </td>
-
               </tr>
             ))}
           </tbody>
         </table>
       </div>
 
-      {/* Footer count */}
       {!loading && displayed.length > 0 && (
         <div style={{ color: "#556070", fontSize: 12, marginTop: 12, textAlign: "right" }}>
           Showing {displayed.length} of {allData.length} closure{allData.length !== 1 ? "s" : ""}

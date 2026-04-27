@@ -17,6 +17,7 @@ const columns = [
 
 const tableColumns = [
   ...columns,
+  { key: "bd_name", label: "BD Name" }, // ✅ ADDED
   { key: "offered_ctc", label: "Offered CTC / CTC per month" },
   { key: "billing_rate", label: "Twite BR / Billing Rate" },
   { key: "margin_value", label: "Margin" },
@@ -41,7 +42,9 @@ const headerMap = {
   "margin %": "margin_percent",
   "margin percent": "margin_percent",
   "offer_status": "offer_status",
-  "status": "status"
+  "status": "status",
+  "bd name": "bd_name", // ✅ ADDED
+  "bd_name": "bd_name", // ✅ ADDED
 };
 
 const normalize = (value) =>
@@ -68,7 +71,6 @@ const detectDelimiter = (csvText) => {
     ";": (firstLine.match(/;/g) || []).length,
     "|": (firstLine.match(/\|/g) || []).length,
   };
-
   let best = ",";
   let bestCount = -1;
   for (const [delimiter, count] of Object.entries(counts)) {
@@ -107,21 +109,14 @@ const marginPercent = (billingRate, ctcValue) => {
   return Number((((billingRate - ctcValue) / ctcValue) * 100).toFixed(2));
 };
 
-
 const calculateMargins = (row) => {
   const billing = numeric(row.billing_rate);
   const ctc = numeric(row.ctc) ?? numeric(row.offered_ctc);
-
   if (billing == null || ctc == null) {
     return { margin_value: null, margin_percent: 0 };
   }
-
   const margin_value = Number((billing - ctc).toFixed(2));
-
-  return {
-    margin_value,
-    margin_percent: marginPercent(billing, ctc),
-  };
+  return { margin_value, margin_percent: marginPercent(billing, ctc) };
 };
 
 const toPayload = (row, recruiterName) => {
@@ -129,11 +124,11 @@ const toPayload = (row, recruiterName) => {
     recruiter_name: recruiterName,
     hire: row.hire === "" ? null : row.hire ?? null,
     ctc: numeric(row.ctc),
+    bd_name: row.bd_name === "" ? null : row.bd_name ?? null, // ✅ ADDED
   };
 
   tableColumns.forEach((col) => {
-    if (col.key === "recruiter_name" || col.readOnly) return;
-
+    if (col.key === "recruiter_name" || col.key === "bd_name" || col.readOnly) return; // ✅ skip bd_name here, handled above
     const value = row[col.key];
     if (col.type === "date") {
       payload[col.key] = value || null;
@@ -153,13 +148,11 @@ const toPayload = (row, recruiterName) => {
 
 const validateNumericFields = (row) => {
   const invalid = [];
-
   ["offered_ctc", "billing_rate", "margin_value", "margin_percent"].forEach((key) => {
     const value = row[key];
     if (value == null || value === "") return;
     if (numeric(value) == null) invalid.push(key);
   });
-
   return invalid;
 };
 
@@ -170,12 +163,14 @@ const emptyForm = {
   }, {}),
   hire: "",
   ctc: "",
+  bd_name: "", // ✅ ADDED
 };
 
 export default function RRevenueTracker() {
   const { user } = useAuth();
 
   const [records, setRecords] = useState([]);
+  const [bdeList, setBdeList] = useState([]); // ✅ ADDED
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
@@ -186,9 +181,26 @@ export default function RRevenueTracker() {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
 
+  // ✅ ADDED — fetch BDE list from users table
+  useEffect(() => {
+    const fetchBdeList = async () => {
+      const { data, error } = await supabase
+        .from("users")
+        .select("name")
+        .eq("role", "bde")
+        .order("name", { ascending: true });
+
+      if (error) {
+        console.error("[users] failed to fetch BDE list", error);
+      } else {
+        setBdeList((data || []).map((u) => u.name).filter(Boolean));
+      }
+    };
+    fetchBdeList();
+  }, []);
+
   const fetchRecords = async () => {
     if (!user?.name) return;
-
     setLoading(true);
     let query = supabase
       .from("revenue_tracker")
@@ -238,25 +250,17 @@ export default function RRevenueTracker() {
 
   const openAdd = () => {
     setEditRecord(null);
-    setForm({
-      ...emptyForm,
-      recruiter_name: user?.name || "",
-    });
+    setForm({ ...emptyForm, recruiter_name: user?.name || "" });
     setShowModal(true);
   };
 
   const openEdit = (row) => {
     setEditRecord(row);
     const next = { ...emptyForm };
-
-    tableColumns.forEach((c) => {
-      next[c.key] = row[c.key] ?? "";
-    });
-
-    // load fields not in tableColumns
+    tableColumns.forEach((c) => { next[c.key] = row[c.key] ?? ""; });
     next.hire = row.hire ?? "";
     next.ctc = row.ctc ?? "";
-
+    next.bd_name = row.bd_name ?? ""; // ✅ ADDED
     setForm(next);
     setShowModal(true);
   };
@@ -270,7 +274,6 @@ export default function RRevenueTracker() {
   const handleSave = async (e) => {
     e.preventDefault();
     if (!user?.name) return;
-
     setSaving(true);
 
     const invalidFields = validateNumericFields(form);
@@ -288,10 +291,8 @@ export default function RRevenueTracker() {
         .update(payload)
         .eq("id", editRecord.id)
         .eq("recruiter_name", user.name);
-
       if (error) {
         alert(error.message);
-        console.error("[revenue_tracker] update failed", error);
         setSaving(false);
         return;
       }
@@ -299,7 +300,6 @@ export default function RRevenueTracker() {
       const { error } = await supabase.from("revenue_tracker").insert([payload]);
       if (error) {
         alert(error.message);
-        console.error("[revenue_tracker] insert failed", error);
         setSaving(false);
         return;
       }
@@ -313,25 +313,20 @@ export default function RRevenueTracker() {
 
   const handleDelete = async (id) => {
     if (!id || deletingId) return;
-
     const target = records.find((r) => r.id === id);
     const ok = window.confirm(`Delete revenue record for "${target?.candidate_name || "-"}"?`);
     if (!ok) return;
-
     setDeletingId(id);
     const { error } = await supabase
       .from("revenue_tracker")
       .delete()
       .eq("id", id)
       .eq("recruiter_name", user.name);
-
     if (error) {
       alert(error.message);
-      console.error("[revenue_tracker] delete failed", error);
       setDeletingId(null);
       return;
     }
-
     setRecords((prev) => prev.filter((r) => r.id !== id));
     setDeletingId(null);
   };
@@ -339,7 +334,6 @@ export default function RRevenueTracker() {
   const handleUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file || !user?.name) return;
-
     const fileName = file.name.toLowerCase();
     let parsedRows = [];
 
@@ -371,7 +365,6 @@ export default function RRevenueTracker() {
         });
       }
     } catch (err) {
-      console.error("[revenue_tracker] parse failed", err);
       alert("Unable to parse uploaded file");
       e.target.value = "";
       return;
@@ -384,21 +377,18 @@ export default function RRevenueTracker() {
         const mappedKey = normalizedHeaderMap[normalize(k)] || normalize(k);
         normalizedRow[mappedKey] = typeof v === "string" ? v.trim() : v;
       });
-
       const invalidFields = validateNumericFields(normalizedRow);
       if (invalidFields.length) {
         alert(`Invalid numeric values in upload row for: ${invalidFields.join(", ")}`);
         e.target.value = "";
         return;
       }
-
       payloadRows.push(toPayload(normalizedRow, user.name));
     }
 
     const validRows = payloadRows.filter((row) =>
       Object.values(row).some((v) => v !== null && v !== "")
     );
-
     if (!validRows.length) {
       alert("No valid rows found in file.");
       e.target.value = "";
@@ -408,7 +398,6 @@ export default function RRevenueTracker() {
     const { error } = await supabase.from("revenue_tracker").insert(validRows);
     if (error) {
       alert(error.message);
-      console.error("[revenue_tracker] upload insert failed", error);
       e.target.value = "";
       return;
     }
@@ -425,43 +414,31 @@ export default function RRevenueTracker() {
       <h2 style={styles.title}>Revenue Tracker</h2>
 
       <div style={styles.actionBar}>
-        <button onClick={openAdd} style={styles.primaryBtn}>
-          + Add Revenue
-        </button>
-
+        <button onClick={openAdd} style={styles.primaryBtn}>+ Add Revenue</button>
         <label style={styles.uploadBtn}>
           Upload CSV/XLSX
           <input type="file" accept=".csv,.xlsx,.xls" onChange={handleUpload} style={styles.hiddenInput} />
         </label>
-
         <input
           placeholder="Search Candidate / Client..."
           value={searchText}
           onChange={(e) => setSearchText(e.target.value)}
           style={styles.input}
         />
-
         <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
         <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
-
-        <button onClick={handleClearFilters} style={styles.secondaryBtn}>
-          Clear Filters
-        </button>
+        <button onClick={handleClearFilters} style={styles.secondaryBtn}>Clear Filters</button>
       </div>
 
       {loading ? (
-        <div style={styles.loaderWrap}>
-          <Loader text="Loading revenue records..." />
-        </div>
+        <div style={styles.loaderWrap}><Loader text="Loading revenue records..." /></div>
       ) : (
         <div style={styles.tableContainer}>
           <table style={styles.table}>
             <thead>
               <tr>
                 {tableColumns.map((c) => (
-                  <th key={c.key} style={styles.th}>
-                    {c.label}
-                  </th>
+                  <th key={c.key} style={styles.th}>{c.label}</th>
                 ))}
                 <th style={styles.th}>Actions</th>
               </tr>
@@ -469,9 +446,7 @@ export default function RRevenueTracker() {
             <tbody>
               {orderedRows.length === 0 ? (
                 <tr>
-                  <td style={styles.td} colSpan={tableColumns.length + 1}>
-                    No records found.
-                  </td>
+                  <td style={styles.td} colSpan={tableColumns.length + 1}>No records found.</td>
                 </tr>
               ) : (
                 orderedRows.map((row) => (
@@ -480,9 +455,7 @@ export default function RRevenueTracker() {
                       <td key={`${row.id}-${c.key}`} style={styles.td}>
                         {c.type === "date"
                           ? formatDate(row[c.key])
-                          : c.key === "offered_ctc" ||
-                            c.key === "billing_rate" ||
-                            c.key === "margin_value"
+                          : c.key === "offered_ctc" || c.key === "billing_rate" || c.key === "margin_value"
                             ? formatCurrency(row[c.key])
                             : c.key === "margin_percent"
                               ? row[c.key] == null || row[c.key] === ""
@@ -495,9 +468,7 @@ export default function RRevenueTracker() {
                     ))}
                     <td style={styles.td}>
                       <div style={styles.actionBtns}>
-                        <button style={styles.editBtn} onClick={() => openEdit(row)}>
-                          Edit
-                        </button>
+                        <button style={styles.editBtn} onClick={() => openEdit(row)}>Edit</button>
                         <button
                           style={styles.deleteBtn}
                           onClick={() => handleDelete(row.id)}
@@ -520,6 +491,7 @@ export default function RRevenueTracker() {
           form={form}
           saving={saving}
           editing={Boolean(editRecord)}
+          bdeList={bdeList}  // ✅ ADDED
           onChange={handleChange}
           onClose={closeModal}
           onSave={handleSave}
@@ -529,13 +501,12 @@ export default function RRevenueTracker() {
   );
 }
 
-function TeamRevenueModal({ form, saving, editing, onChange, onClose, onSave }) {
+// ✅ ADDED bdeList prop
+function RevenueModal({ form, saving, editing, bdeList, onChange, onClose, onSave }) {
   useEffect(() => {
     const originalOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = originalOverflow;
-    };
+    return () => { document.body.style.overflow = originalOverflow; };
   }, []);
 
   const formId = "team-revenue-form-manager";
@@ -558,9 +529,7 @@ function TeamRevenueModal({ form, saving, editing, onChange, onClose, onSave }) 
         <div style={styles.modalHeader}>
           <div style={styles.modalHeaderRow}>
             <h3 style={styles.modalTitle}>{editing ? "Edit Revenue" : "Add Revenue"}</h3>
-            <button type="button" onClick={onClose} style={styles.closeBtn} disabled={saving}>
-              x
-            </button>
+            <button type="button" onClick={onClose} style={styles.closeBtn} disabled={saving}>x</button>
           </div>
         </div>
 
@@ -584,6 +553,22 @@ function TeamRevenueModal({ form, saving, editing, onChange, onClose, onSave }) 
                   </label>
                 ))}
 
+                {/* ✅ ADDED — BD Name dropdown */}
+                <label style={styles.fieldLabel}>
+                  BD Name
+                  <select
+                    name="bd_name"
+                    value={form.bd_name ?? ""}
+                    onChange={onChange}
+                    style={styles.modalInput}
+                  >
+                    <option value="">Select BD</option>
+                    {bdeList.map((name) => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
+                  </select>
+                </label>
+
                 <label style={styles.fieldLabel}>
                   Hire
                   <select name="hire" value={form.hire ?? ""} onChange={onChange} style={styles.modalInput}>
@@ -595,48 +580,22 @@ function TeamRevenueModal({ form, saving, editing, onChange, onClose, onSave }) 
 
                 <label style={styles.fieldLabel}>
                   Offered CTC
-                  <input
-                    style={styles.modalInput}
-                    type="text"
-                    name="offered_ctc"
-                    value={form.offered_ctc ?? ""}
-                    onChange={onChange}
-                  />
+                  <input style={styles.modalInput} type="text" name="offered_ctc" value={form.offered_ctc ?? ""} onChange={onChange} />
                 </label>
 
                 {isPermanent && (
                   <>
                     <label style={styles.fieldLabel}>
                       CTC
-                      <input
-                        style={styles.modalInput}
-                        type="text"
-                        name="ctc"
-                        value={form.ctc ?? ""}
-                        onChange={onChange}
-                      />
+                      <input style={styles.modalInput} type="text" name="ctc" value={form.ctc ?? ""} onChange={onChange} />
                     </label>
-
                     <label style={styles.fieldLabel}>
                       Twite Billing Rate
-                      <input
-                        style={styles.modalInput}
-                        type="text"
-                        name="billing_rate"
-                        value={form.billing_rate ?? ""}
-                        onChange={onChange}
-                      />
+                      <input style={styles.modalInput} type="text" name="billing_rate" value={form.billing_rate ?? ""} onChange={onChange} />
                     </label>
-
                     <label style={styles.fieldLabel}>
                       Margin
-                      <input
-                        style={styles.modalInput}
-                        type="text"
-                        name="margin_value"
-                        value={form.margin_value ?? ""}
-                        onChange={onChange}
-                      />
+                      <input style={styles.modalInput} type="text" name="margin_value" value={form.margin_value ?? ""} onChange={onChange} />
                     </label>
                   </>
                 )}
@@ -645,43 +604,21 @@ function TeamRevenueModal({ form, saving, editing, onChange, onClose, onSave }) 
                   <>
                     <label style={styles.fieldLabel}>
                       CTC Per Month
-                      <input
-                        style={styles.modalInput}
-                        type="text"
-                        name="ctc"
-                        value={form.ctc ?? ""}
-                        onChange={onChange}
-                      />
+                      <input style={styles.modalInput} type="text" name="ctc" value={form.ctc ?? ""} onChange={onChange} />
                     </label>
-
                     <label style={styles.fieldLabel}>
                       Billing Rate
-                      <input
-                        style={styles.modalInput}
-                        type="text"
-                        name="billing_rate"
-                        value={form.billing_rate ?? ""}
-                        onChange={onChange}
-                      />
+                      <input style={styles.modalInput} type="text" name="billing_rate" value={form.billing_rate ?? ""} onChange={onChange} />
                     </label>
-
                     <label style={styles.fieldLabel}>
                       Margin
-                      <input
-                        style={styles.modalInput}
-                        type="text"
-                        name="margin_value"
-                        value={form.margin_value ?? ""}
-                        onChange={onChange}
-                      />
+                      <input style={styles.modalInput} type="text" name="margin_value" value={form.margin_value ?? ""} onChange={onChange} />
                     </label>
                   </>
                 )}
 
                 {!isPermanent && !isTemporary && (
-                  <div style={styles.hintCard}>
-                    Select Hire type to enter CTC/Billing/Margin fields.
-                  </div>
+                  <div style={styles.hintCard}>Select Hire type to enter CTC/Billing/Margin fields.</div>
                 )}
               </div>
             </div>
@@ -690,9 +627,7 @@ function TeamRevenueModal({ form, saving, editing, onChange, onClose, onSave }) 
 
         <div style={styles.modalFooter}>
           <div style={styles.footerActions}>
-            <button type="button" onClick={onClose} style={styles.secondaryBtn} disabled={saving}>
-              Cancel
-            </button>
+            <button type="button" onClick={onClose} style={styles.secondaryBtn} disabled={saving}>Cancel</button>
             <button type="submit" form={formId} style={styles.primaryBtn} disabled={saving}>
               {saving ? "Saving..." : editing ? "Update" : "Save"}
             </button>
@@ -703,252 +638,38 @@ function TeamRevenueModal({ form, saving, editing, onChange, onClose, onSave }) 
   );
 }
 
-
 const styles = {
-  page: {
-    width: "100%",
-    minWidth: 0,
-    overflowX: "hidden",
-  },
-  title: {
-    margin: "0 0 12px 0",
-    fontSize: "32px",
-    fontWeight: 700,
-    color: "#0f172a",
-  },
-  actionBar: {
-    display: "flex",
-    gap: "10px",
-    marginBottom: "14px",
-    flexWrap: "wrap",
-  },
-  primaryBtn: {
-    padding: "10px 18px",
-    background: "#2563eb",
-    color: "#fff",
-    border: "none",
-    borderRadius: "10px",
-    cursor: "pointer",
-    fontWeight: 600,
-  },
-  uploadBtn: {
-    padding: "10px 18px",
-    background: "#0f172a",
-    color: "#fff",
-    border: "none",
-    borderRadius: "10px",
-    cursor: "pointer",
-    fontWeight: 600,
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  hiddenInput: {
-    display: "none",
-  },
-  editBtn: {
-    padding: "6px 10px",
-    border: "1px solid #cbd5e1",
-    borderRadius: "8px",
-    background: "#fff",
-    color: "#0f172a",
-    cursor: "pointer",
-  },
-  deleteBtn: {
-    padding: "6px 10px",
-    border: "1px solid #fecaca",
-    borderRadius: "8px",
-    background: "#fff1f2",
-    color: "#b91c1c",
-    cursor: "pointer",
-  },
-  actionBtns: {
-    display: "flex",
-    gap: "8px",
-  },
-  input: {
-    padding: "6px",
-    width: "220px",
-    border: "1px solid #cbd5e1",
-    borderRadius: "6px",
-    fontSize: "14px",
-  },
-  loaderWrap: {
-    width: "100%",
-    minHeight: "280px",
-    border: "1px solid #cbd5e1",
-    borderRadius: "6px",
-    background: "#fff",
-  },
-  tableContainer: {
-    width: "100%",
-    maxWidth: "100%",
-    minWidth: 0,
-    overflowX: "auto",
-    overflowY: "auto",
-    maxHeight: "70vh",
-    border: "1px solid #cbd5e1",
-    borderRadius: "6px",
-    background: "#fff",
-  },
-  table: {
-    width: "max-content",
-    minWidth: "100%",
-    borderCollapse: "collapse",
-    tableLayout: "auto",
-  },
-  th: {
-    border: "1px solid #cbd5e1",
-    padding: "8px 10px",
-    whiteSpace: "nowrap",
-    background: "#f8fafc",
-    position: "sticky",
-    top: 0,
-    zIndex: 2,
-    fontWeight: 600,
-    textAlign: "left",
-  },
-  td: {
-    border: "1px solid #cbd5e1",
-    padding: "8px 10px",
-    whiteSpace: "nowrap",
-    background: "#fff",
-  },
-  overlay: {
-    position: "fixed",
-    inset: 0,
-    background: "rgba(0,0,0,0.4)",
-    zIndex: 1000,
-  },
-  modalShell: {
-    position: "fixed",
-    top: "50%",
-    left: "50%",
-    transform: "translate(-50%, -50%)",
-    background: "#fff",
-    width: "78vw",
-    maxWidth: "1100px",
-    minWidth: "320px",
-    maxHeight: "88vh",
-    borderRadius: "14px",
-    boxShadow: "0 20px 50px rgba(2, 6, 23, 0.25)",
-    display: "flex",
-    flexDirection: "column",
-    overflow: "hidden",
-  },
-  modalHeader: {
-    padding: "16px 20px",
-    borderBottom: "1px solid #e2e8f0",
-    background: "#fff",
-    flexShrink: 0,
-  },
-  modalHeaderRow: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: "12px",
-  },
-  modalTitle: {
-    margin: 0,
-    fontSize: "30px",
-    fontWeight: 800,
-    color: "#0f172a",
-  },
-  closeBtn: {
-    width: "38px",
-    height: "38px",
-    borderRadius: "10px",
-    border: "1px solid #d1d5db",
-    background: "#fff",
-    color: "#111827",
-    cursor: "pointer",
-    fontSize: "22px",
-    lineHeight: 1,
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  modalBody: {
-    padding: "18px 20px",
-    overflowY: "auto",
-    overflowX: "hidden",
-    flex: 1,
-    background: "#f8fafc",
-  },
-  modalFooter: {
-    padding: "14px 20px",
-    borderTop: "1px solid #e2e8f0",
-    background: "#fff",
-    flexShrink: 0,
-  },
-  footerActions: {
-    display: "flex",
-    justifyContent: "space-between",
-    width: "100%",
-    alignItems: "center",
-    gap: "10px",
-  },
-  secondaryBtn: {
-    padding: "10px 18px",
-    borderRadius: "10px",
-    border: "1px solid #d1d5db",
-    background: "#fff",
-    color: "#111827",
-    cursor: "pointer",
-  },
-  form: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "16px",
-  },
-  sectionCard: {
-    background: "#ffffff",
-    border: "1px solid #e2e8f0",
-    borderRadius: "14px",
-    padding: "14px",
-  },
-  sectionHead: {
-    marginBottom: "10px",
-    paddingBottom: "8px",
-    borderBottom: "1px solid #e5e7eb",
-  },
-  sectionTitle: {
-    margin: 0,
-    fontSize: "18px",
-    fontWeight: 700,
-    color: "#0f172a",
-  },
-  sectionGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-    gap: "12px 16px",
-  },
-  fieldLabel: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "6px",
-    fontSize: "12px",
-    fontWeight: 600,
-    color: "#64748b",
-    textTransform: "uppercase",
-    letterSpacing: "0.02em",
-  },
-  modalInput: {
-    height: "44px",
-    borderRadius: "12px",
-    border: "1px solid #cbd5e1",
-    background: "#fff",
-    padding: "0 12px",
-    fontSize: "15px",
-    color: "#0f172a",
-    outline: "none",
-  },
-  hintCard: {
-    gridColumn: "1 / -1",
-    padding: "12px 16px",
-    background: "#f1f5f9",
-    borderRadius: "10px",
-    color: "#64748b",
-    fontSize: "14px",
-  },
+  page: { width: "100%", minWidth: 0, overflowX: "hidden" },
+  title: { margin: "0 0 12px 0", fontSize: "32px", fontWeight: 700, color: "#0f172a" },
+  actionBar: { display: "flex", gap: "10px", marginBottom: "14px", flexWrap: "wrap" },
+  primaryBtn: { padding: "10px 18px", background: "#2563eb", color: "#fff", border: "none", borderRadius: "10px", cursor: "pointer", fontWeight: 600 },
+  uploadBtn: { padding: "10px 18px", background: "#0f172a", color: "#fff", border: "none", borderRadius: "10px", cursor: "pointer", fontWeight: 600, display: "inline-flex", alignItems: "center", justifyContent: "center" },
+  hiddenInput: { display: "none" },
+  editBtn: { padding: "6px 10px", border: "1px solid #cbd5e1", borderRadius: "8px", background: "#fff", color: "#0f172a", cursor: "pointer" },
+  deleteBtn: { padding: "6px 10px", border: "1px solid #fecaca", borderRadius: "8px", background: "#fff1f2", color: "#b91c1c", cursor: "pointer" },
+  actionBtns: { display: "flex", gap: "8px" },
+  input: { padding: "6px", width: "220px", border: "1px solid #cbd5e1", borderRadius: "6px", fontSize: "14px" },
+  loaderWrap: { width: "100%", minHeight: "280px", border: "1px solid #cbd5e1", borderRadius: "6px", background: "#fff" },
+  tableContainer: { width: "100%", maxWidth: "100%", minWidth: 0, overflowX: "auto", overflowY: "auto", maxHeight: "70vh", border: "1px solid #cbd5e1", borderRadius: "6px", background: "#fff" },
+  table: { width: "max-content", minWidth: "100%", borderCollapse: "collapse", tableLayout: "auto" },
+  th: { border: "1px solid #cbd5e1", padding: "8px 10px", whiteSpace: "nowrap", background: "#f8fafc", position: "sticky", top: 0, zIndex: 2, fontWeight: 600, textAlign: "left" },
+  td: { border: "1px solid #cbd5e1", padding: "8px 10px", whiteSpace: "nowrap", background: "#fff" },
+  overlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 1000 },
+  modalShell: { position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", background: "#fff", width: "78vw", maxWidth: "1100px", minWidth: "320px", maxHeight: "88vh", borderRadius: "14px", boxShadow: "0 20px 50px rgba(2, 6, 23, 0.25)", display: "flex", flexDirection: "column", overflow: "hidden" },
+  modalHeader: { padding: "16px 20px", borderBottom: "1px solid #e2e8f0", background: "#fff", flexShrink: 0 },
+  modalHeaderRow: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" },
+  modalTitle: { margin: 0, fontSize: "30px", fontWeight: 800, color: "#0f172a" },
+  closeBtn: { width: "38px", height: "38px", borderRadius: "10px", border: "1px solid #d1d5db", background: "#fff", color: "#111827", cursor: "pointer", fontSize: "22px", lineHeight: 1, display: "inline-flex", alignItems: "center", justifyContent: "center" },
+  modalBody: { padding: "18px 20px", overflowY: "auto", overflowX: "hidden", flex: 1, background: "#f8fafc" },
+  modalFooter: { padding: "14px 20px", borderTop: "1px solid #e2e8f0", background: "#fff", flexShrink: 0 },
+  footerActions: { display: "flex", justifyContent: "space-between", width: "100%", alignItems: "center", gap: "10px" },
+  secondaryBtn: { padding: "10px 18px", borderRadius: "10px", border: "1px solid #d1d5db", background: "#fff", color: "#111827", cursor: "pointer" },
+  form: { display: "flex", flexDirection: "column", gap: "16px" },
+  sectionCard: { background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "14px", padding: "14px" },
+  sectionHead: { marginBottom: "10px", paddingBottom: "8px", borderBottom: "1px solid #e5e7eb" },
+  sectionTitle: { margin: 0, fontSize: "18px", fontWeight: 700, color: "#0f172a" },
+  sectionGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "12px 16px" },
+  fieldLabel: { display: "flex", flexDirection: "column", gap: "6px", fontSize: "12px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.02em" },
+  modalInput: { height: "44px", borderRadius: "12px", border: "1px solid #cbd5e1", background: "#fff", padding: "0 12px", fontSize: "15px", color: "#0f172a", outline: "none" },
+  hintCard: { gridColumn: "1 / -1", padding: "12px 16px", background: "#f1f5f9", borderRadius: "10px", color: "#64748b", fontSize: "14px" },
 };

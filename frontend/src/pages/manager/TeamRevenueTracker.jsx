@@ -15,6 +15,7 @@ const columns = [
 
 const tableColumns = [
   ...columns,
+  { key: "bd_name", label: "BD Name" }, // ✅ ADDED
   { key: "offered_ctc", label: "Offered CTC / CTC per month" },
   { key: "billing_rate", label: "Twite BR / Billing Rate" },
   { key: "margin_value", label: "Margin" },
@@ -71,6 +72,7 @@ const emptyForm = {
   }, {}),
   hire: "",
   ctc: "",
+  bd_name: "", 
 };
 
 export default function TeamTracker() {
@@ -84,7 +86,9 @@ export default function TeamTracker() {
   const [clientSearch, setClientSearch] = useState("");
   const [locationSearch, setLocationSearch] = useState("");
   const [recruiterOptions, setRecruiterOptions] = useState([]);
-  const [showUpload, setShowUpload] = useState(false);
+  const [bdeOptions, setBdeOptions] = useState([]);       // ✅ ADD THIS LINE
+const [selectedBde, setSelectedBde] = useState("");
+const [showUpload, setShowUpload] = useState(false);
   const [file, setFile] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [editRecord, setEditRecord] = useState(null);
@@ -146,6 +150,7 @@ export default function TeamTracker() {
     if (fromDate) query = query.gte("doj", fromDate);
     if (toDate) query = query.lte("doj", toDate);
     if (selectedRecruiter) query = query.eq("recruiter_name", selectedRecruiter);
+    if (selectedBde) query = query.eq("bd_name", selectedBde);           
     if (clientSearch.trim()) query = query.ilike("client_name", `%${clientSearch.trim()}%`);
     if (locationSearch.trim()) query = query.ilike("location", `%${locationSearch.trim()}%`);
 
@@ -159,7 +164,7 @@ export default function TeamTracker() {
 
     setRecords(data || []);
     setLoading(false);
-  }, [fromDate, toDate, selectedRecruiter, clientSearch, locationSearch]);
+  }, [fromDate, toDate, selectedRecruiter, selectedBde, clientSearch, locationSearch]);
 
   const fetchRecruiterOptions = useCallback(async () => {
     const { data, error } = await supabase
@@ -184,7 +189,23 @@ export default function TeamTracker() {
   useEffect(() => {
     fetchRecruiterOptions();
   }, [fetchRecruiterOptions]);
+// ✅ ADD THIS ENTIRE BLOCK AFTER THE ABOVE
+useEffect(() => {
+  const fetchBdeOptions = async () => {
+    const { data, error } = await supabase
+      .from("users")
+      .select("name")
+      .eq("role", "bde")
+      .order("name", { ascending: true });
 
+    if (error) {
+      console.error("[team-tracker] bde fetch failed", error);
+      return;
+    }
+    setBdeOptions((data || []).map((u) => u.name).filter(Boolean));
+  };
+  fetchBdeOptions();
+}, []);
   useEffect(() => {
     const channel = supabase
       .channel("team-tracker-realtime")
@@ -221,6 +242,7 @@ export default function TeamTracker() {
     });
     next.hire = row.hire ?? "";
     next.ctc = row.ctc ?? "";
+    next.bd_name = row.bd_name ?? ""; // ✅ ADD THIS LINE
     setForm(next);
     setShowModal(true);
   };
@@ -249,6 +271,7 @@ export default function TeamTracker() {
       recruiter_name: row.recruiter_name || null,
       hire: row.hire === "" ? null : row.hire ?? null,
       ctc: numeric(row.ctc),
+      bd_name: row.bd_name === "" ? null : row.bd_name ?? null, // ✅ ADD THIS LINE
     };
 
     tableColumns.forEach((col) => {
@@ -347,6 +370,16 @@ export default function TeamTracker() {
             </option>
           ))}
         </select>
+        <select
+  value={selectedBde}
+  onChange={(e) => setSelectedBde(e.target.value)}
+  style={styles.select}
+>
+  <option value="">All BDs</option>
+  {bdeOptions.map((name) => (
+    <option key={name} value={name}>{name}</option>
+  ))}
+</select>
 
         <input
           type="date"
@@ -465,6 +498,7 @@ export default function TeamTracker() {
         <TeamRevenueModal
           form={form}
           saving={saving}
+          bdeOptions={bdeOptions}
           editing={Boolean(editRecord)}
           onChange={handleChange}
           onClose={closeModal}
@@ -475,7 +509,7 @@ export default function TeamTracker() {
   );
 }
 
-function TeamRevenueModal({ form, saving, editing, onChange, onClose, onSave }) {
+function TeamRevenueModal({ form, saving, editing, bdeOptions, onChange, onClose, onSave }) {
   useEffect(() => {
     const originalOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -529,6 +563,20 @@ function TeamRevenueModal({ form, saving, editing, onChange, onClose, onSave }) 
                     />
                   </label>
                 ))}
+                <label style={styles.fieldLabel}>
+  BD Name
+  <select
+    name="bd_name"
+    value={form.bd_name ?? ""}
+    onChange={onChange}
+    style={styles.modalInput}
+  >
+    <option value="">Select BD</option>
+    {(bdeOptions || []).map((name) => (
+      <option key={name} value={name}>{name}</option>
+    ))}
+  </select>
+</label>
 
                 <label style={styles.fieldLabel}>
                   Hire

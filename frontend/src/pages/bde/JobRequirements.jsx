@@ -315,6 +315,8 @@ filtered.forEach((row) => {
                 <option>Open</option>
                 <option>In Progress</option>
                 <option>Drop out</option>
+                <option>Closure</option>
+    
               </select>
             </Field>
 
