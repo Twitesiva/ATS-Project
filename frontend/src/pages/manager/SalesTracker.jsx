@@ -207,6 +207,8 @@ const toMonthLabel = (value) => {
   return date.toLocaleDateString("en-IN", { month: "short", year: "numeric" });
 };
 
+
+
 const getAnalyticsFromRows = (rows) => {
   const clientMap = new Map();
   const pipelineMap = new Map();
@@ -312,6 +314,30 @@ const getAnalyticsFromRows = (rows) => {
     ],
   };
 };
+const mirrorToRequirements = async (row) => {
+  const clientName = String(row.client_name || "").trim();
+  if (!clientName) return;
+
+  const { data: companies } = await supabase
+    .from("companies")
+    .select("id")
+    .ilike("company_name", clientName)
+    .limit(1);
+
+  const company_id = companies?.[0]?.id ?? null;
+
+  const { error } = await supabase.from("requirements").insert([{
+    company_id,
+    job_title: "Client Upload",
+    hire: row.hire_mode || null,
+    status: row.status || "Open",
+    description: row.remarks || null,
+    created_by: row.bd || null,
+  }]);
+
+  if (error) console.error("[requirements] mirror failed", error);
+};
+
 export default function SalesTracker() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -425,7 +451,7 @@ export default function SalesTracker() {
         setSaving(false);
         return;
       }
-    } else {
+} else {
       const { error } = await supabase.from("sales_tracker").insert([payload]);
       if (error) {
         alert(error.message);
@@ -433,6 +459,7 @@ export default function SalesTracker() {
         setSaving(false);
         return;
       }
+      await mirrorToRequirements(form);  // ← ADD THIS LINE
     }
 
     setSaving(false);
@@ -518,6 +545,10 @@ export default function SalesTracker() {
       console.error("[sales_tracker] upload insert failed", error);
       event.target.value = "";
       return;
+    }
+     // ← ADD THESE 3 LINES
+    for (const r of validRows) {
+      await mirrorToRequirements(r);
     }
 
     alert("Upload successful.");

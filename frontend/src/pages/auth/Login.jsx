@@ -27,7 +27,7 @@ export default function Login({ title = "ATS Login" }) {
     setLoading(true);
     try {
       const result = await loginWithEmail(email, password);
-
+console.log("LOGIN RESULT =>", result); // ✅ ADD THIS LINE
       if (result.error) {
         setError(result.error);
         return;

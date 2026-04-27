@@ -52,9 +52,8 @@ export default function Sidebar({ role }) {
   { label: "Follow-ups",    path: "/bde/followups",     icon: <Activity size={18} /> },
   { label: "Daily Tracker", path: "/bde/daily-tracker", icon: <BarChart3 size={18} /> },
   { label: "Weekly Tracker", path: "/bde/weekly-tracker", icon: <BarChart3 size={18} /> },
-  { label: "Master Tracker", path: "/bde/master-tracker", icon: <BarChart3 size={18} /> },
-  { label: "Revenue",       path: "/bde/revenue",       icon: <IndianRupee size={18} /> },
-  { label: "Page Closures", path: "/bde/closures",      icon: <TrendingUp size={18} /> },
+   { label: "Master Tracker", path: "/bde/master-tracker", icon: <BarChart3 size={18} /> },
+   { label: "Page Closures", path: "/bde/closures",      icon: <TrendingUp size={18} /> },
   { label: "Communications",path: "/bde/communications",icon: <BarChart3 size={18} /> },
 ],
   };

@@ -145,9 +145,12 @@ export default function Clients() {
   const [kpiFilter, setKpiFilter] = useState(null);
 
   const fetchRows = async () => {
-    setLoading(true);
-
-    let query = supabase.from("client_records").select("*").order("id", { ascending: false });
+  setLoading(true);
+  let query = supabase
+    .from("client_records")
+    .select("*")
+    .order("id", { ascending: false })
+    .limit(100);
 
     if (clientSearch.trim()) {
       query = query.ilike("client_name", `%${clientSearch.trim()}%`);
@@ -208,20 +211,12 @@ export default function Clients() {
     let backout = 0;
 
     rows.forEach((row) => {
-      const mode = String(row.hire_mode || "").trim().toLowerCase();
-      const closureVal = Number(row.closure) || 0;
-      const backoutVal = Number(row.backout) || 0;
-
-      if (mode === "permanent") {
-        permanent += 1;
-        closure += closureVal;
-      }
-      if (mode === "contract") {
-        contract += 1;
-        backout += backoutVal;
-      }
-    });
-
+  const mode = String(row.hire_mode || "").trim().toLowerCase();
+  if (mode === "permanent") permanent += 1;
+  if (mode === "contract") contract += 1;
+  closure += Number(row.closure) || 0;
+  backout += Number(row.backout) || 0;
+});
     return { permanent, contract, closure, backout };
   }, [rows]);
 
@@ -252,39 +247,74 @@ export default function Clients() {
     setForm((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleSave = async (e) => {
-    e.preventDefault();
-    setSaving(true);
+const handleSave = async (e) => {
+  e.preventDefault();
+  setSaving(true);
 
-    const payload = toPayload(form);
+  const payload = toPayload(form);
 
-    if (editingRow?.id) {
-      const { error } = await supabase
-        .from("client_records")
-        .update(payload)
-        .eq("id", editingRow.id);
+  if (editingRow?.id) {
+    const { error } = await supabase
+      .from("client_records")
+      .update(payload)
+      .eq("id", editingRow.id);
 
-      if (error) {
-        alert(error.message);
-        console.error("[client_records] update failed", error);
-        setSaving(false);
-        return;
-      }
-    } else {
-      const { error } = await supabase.from("client_records").insert([payload]);
-      if (error) {
-        alert(error.message);
-        console.error("[client_records] insert failed", error);
-        setSaving(false);
-        return;
-      }
+    if (error) {
+      alert(error.message);
+      console.error("[client_records] update failed", error);
+      setSaving(false);
+      return;
     }
 
-    setSaving(false);
-    setShowModal(false);
-    setEditingRow(null);
-    fetchRows();
-  };
+  } else {
+    // ✅ INSERT into client_records (THIS WAS MISSING)
+    const { error } = await supabase
+      .from("client_records")
+      .insert([payload]);
+
+    if (error) {
+      alert(error.message);
+      console.error("[client_records] insert failed", error);
+      setSaving(false);
+      return;
+    }
+
+    // ✅ Mirror to requirements table
+    if (form.req_name) {
+      const { data: matchedCompany } = await supabase
+        .from("companies")
+        .select("id")
+        .ilike("company_name", `%${form.client_name || ""}%`)
+        .limit(1)
+        .single();
+
+      const { error: reqError } = await supabase
+        .from("requirements")
+        .insert([{
+          job_title: form.req_name || "N/A",
+          hire: form.hire_mode || null,
+          hire_mode: form.hire_mode || null,
+          status: "Open",
+          created_at: form.req_shared_date
+            ? new Date(form.req_shared_date).toISOString()
+            : new Date().toISOString(),
+          mode: form.source || null,
+          number_of_openings: toNullableNumber(form.number_of_openings),
+          company_id: matchedCompany?.id || null,
+        }]);
+
+      if (reqError) {
+        console.error("[requirements] mirror insert failed", reqError);
+      }
+    }
+  }
+
+  // ✅ Common cleanup
+  setSaving(false);
+  setShowModal(false);
+  setEditingRow(null);
+  fetchRows();
+};
 
   const handleDelete = async (id) => {
     if (!id || deletingId) return;
@@ -369,15 +399,36 @@ export default function Clients() {
       return;
     }
 
-    const { error } = await supabase.from("client_records").insert(validRows);
-    if (error) {
-      alert(error.message);
-      console.error("[client_records] upload insert failed", error);
-      e.target.value = "";
-      return;
-    }
+ const { error } = await supabase.from("client_records").insert(validRows);
+if (error) {
+  alert(error.message);
+  console.error("[client_records] upload insert failed", error);
+  e.target.value = "";
+  return;
+}
 
-    alert("Upload successful.");
+// Mirror uploaded rows to requirements table
+const reqRows = validRows
+  .filter(row => row.req_name)
+  .map(row => ({
+    job_title:          row.req_name         || "N/A",
+    hire:               row.hire_mode        || null,
+    hire_mode:          row.hire_mode        || null,
+    status:             "Open",
+    created_at:         row.req_shared_date
+                          ? new Date(row.req_shared_date).toISOString()
+                          : new Date().toISOString(),
+    mode:               row.source           || null,
+    number_of_openings: toNullableNumber(row.number_of_openings),
+    company_id:         null,
+  }));
+
+const { error: reqError } = await supabase.from("requirements").insert(reqRows);
+if (reqError) {
+  console.error("[requirements] bulk mirror failed", reqError);
+}
+
+alert("Upload successful.");
     fetchRows();
     e.target.value = "";
   };
@@ -663,6 +714,8 @@ const styles = {
   },
   kpiCardSmallActive: {
     background: "#eef2ff",
+    borderWidth: "2px",
+    borderStyle: "solid",
     borderColor: "#c7d2fe",
   },
   deleteBtn: {
@@ -838,7 +891,9 @@ const styles = {
   },
   kpiCardSmall: {
     background: "#f0fdf4",
-    border: "1px solid #bbf7d0",
+    borderWidth: "1px",
+    borderStyle: "solid",
+    borderColor: "#bbf7d0",
     borderRadius: "10px",
     padding: "12px 16px",
     minHeight: "70px",

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../../services/supabaseClient";
-
+import { useAuth } from "../../context/AuthContext";
 const inputStyle = {
   width: "100%", background: "#ffffff", border: "1px solid #d1d5db",
   color: "#0f172a", padding: "9px 12px", borderRadius: 8, fontSize: 13, boxSizing: "border-box",
@@ -22,6 +22,7 @@ const EMPTY_FORM = {
 };
 
 export default function CommunicationLog() {
+  const { user } = useAuth();
   const [logs, setLogs] = useState([]);
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -29,7 +30,7 @@ export default function CommunicationLog() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
 
-  const fetchLogs = async () => {
+const fetchLogs = async () => {
     setLoading(true);
     let query = supabase
       .from("activities")
@@ -37,6 +38,7 @@ export default function CommunicationLog() {
       .order("activity_datetime", { ascending: false });
 
     if (selectedCompany) query = query.eq("company_id", selectedCompany);
+    if (user?.name) query = query.eq("created_by", user.name);  // ← ADD THIS
 
     const { data, error } = await query;
     if (error) console.error(error);
@@ -45,9 +47,25 @@ export default function CommunicationLog() {
   };
 
   useEffect(() => {
-    supabase.from("companies").select("id, company_name, contact_person").order("company_name")
-      .then(({ data }) => setCompanies(data || []));
-  }, []);
+    if (!user?.name) return;
+    supabase
+      .from("activities")
+      .select("company_id, companies(id, company_name, contact_person)")
+      .eq("created_by", user.name)
+      .then(({ data }) => {
+        // Extract unique companies from this BDE's activities only
+        const seen = new Set();
+        const filtered = (data || [])
+          .map((a) => a.companies)
+          .filter((c) => {
+            if (!c || seen.has(c.id)) return false;
+            seen.add(c.id);
+            return true;
+          })
+          .sort((a, b) => a.company_name.localeCompare(b.company_name));
+        setCompanies(filtered);
+      });
+  }, [user?.name]);
 
   useEffect(() => { fetchLogs(); }, [selectedCompany]);
 
@@ -60,7 +78,7 @@ export default function CommunicationLog() {
       notes: form.notes || null,
       activity_datetime: form.activity_datetime,
       status: "Completed",
-    });
+      created_by: user?.name || "Unknown",});
     if (error) return alert(error.message);
     setShowForm(false);
     setForm({ ...EMPTY_FORM, company_id: selectedCompany });

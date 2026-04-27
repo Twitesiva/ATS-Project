@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../../services/supabaseClient";
+import { useAuth } from "../../context/AuthContext";
 
 const inputStyle = {
   background: "#ffffff", border: "1px solid #d1d5db",
@@ -71,56 +72,93 @@ export default function PageClosure() {
   const [monthFilter, setMonthFilter] = useState("");
   const [searchFilter, setSearchFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const { user } = useAuth();
 
-useEffect(() => {
-  const load = async () => {
-    setLoading(true);
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
 
-    const { data: companies, error: companiesError } = await supabase
-      .from("companies")
-      .select("company_name")
-      .eq("status", "Client");
+      // Get requirements created by the logged-in BDE user
+      const { data: requirements, error: reqError } = await supabase
+        .from("requirements")
+        .select("company_id, job_title")
+        .eq("created_by", user?.name || "");
 
-    if (companiesError) {
-      console.error(companiesError);
-      setLoading(false);
-      return;
-    }
-
-    const names = new Set(
-      (companies || []).map((c) => c.company_name.trim().toLowerCase())
-    );
-    setClientNames(names);
-
-    const { data: revenue, error: revenueError } = await supabase
-      .from("revenue_tracker")
-      .select("*")
-      .order("doj", { ascending: false });
-
-    if (revenueError) {
-      console.error(revenueError);
-      setLoading(false);
-      return;
-    }
-
-    const filtered = (revenue || []).filter((r) =>
-      names.has(r.client_name?.trim().toLowerCase())
-    );
-
-    const uniqueByClientPosition = new Map();
-    filtered.forEach((row) => {
-      const key = `${row.client_name?.trim().toLowerCase() || ""}||${row.position?.trim().toLowerCase() || ""}`;
-      if (!uniqueByClientPosition.has(key)) {
-        uniqueByClientPosition.set(key, row);
+      if (reqError) {
+        console.error("Failed to fetch requirements:", reqError);
+        setLoading(false);
+        return;
       }
-    });
 
-    setAllData([...uniqueByClientPosition.values()]);
-    setLoading(false);
-  };
+      // Build set of unique company IDs from requirements
+      const companyIds = [...new Set((requirements || []).map((r) => r.company_id).filter(Boolean))];
 
-  load();
-}, []);
+      // Fetch company names for those IDs (to match revenue.client_name)
+      const { data: companies, error: compError } = await supabase
+        .from("companies")
+        .select("id, company_name")
+        .in("id", companyIds.length ? companyIds : ["none"]);
+
+      if (compError) {
+        console.error("Failed to fetch companies:", compError);
+        setLoading(false);
+        return;
+      }
+
+      // Map company_id -> company_name
+      const companyNameMap = {};
+      (companies || []).forEach((c) => {
+        companyNameMap[c.id] = c.company_name.trim().toLowerCase();
+      });
+
+      // Build arrays for revenue query filters
+      const validReqs = (requirements || []).filter((r) => r.company_id && r.job_title);
+      const matchingPairs = validReqs.map((r) => ({
+        client_name: companyNameMap[r.company_id],
+        position: r.job_title.trim(),
+      })).filter((p) => p.client_name && p.position);
+
+      // Fetch revenue entries created by this user
+      const { data: revenue, error: revenueError } = await supabase
+        .from("revenue_tracker")
+        .select("*")
+        .eq("created_by", user?.name || "")
+        .order("doj", { ascending: false });
+
+      if (revenueError) {
+        console.error("Failed to fetch revenue:", revenueError);
+        setLoading(false);
+        return;
+      }
+
+      // Filter revenue entries that match client_name + position from requirements
+      const filtered = (revenue || []).filter((r) =>
+        matchingPairs.some(
+          (p) =>
+            r.client_name?.trim().toLowerCase() === p.client_name &&
+            r.position?.trim().toLowerCase() === p.position.toLowerCase()
+        )
+      );
+
+      // Build client names set from filtered data
+      const names = new Set(filtered.map((r) => r.client_name?.trim().toLowerCase()).filter(Boolean));
+      setClientNames(names);
+
+      // Deduplicate by client_name + position
+      const uniqueByClientPosition = new Map();
+      filtered.forEach((row) => {
+        const key = `${row.client_name?.trim().toLowerCase() || ""}||${row.position?.trim().toLowerCase() || ""}`;
+        if (!uniqueByClientPosition.has(key)) {
+          uniqueByClientPosition.set(key, row);
+        }
+      });
+
+      setAllData([...uniqueByClientPosition.values()]);
+      setLoading(false);
+    };
+
+    load();
+  }, [user?.name]);
 
   // Apply UI filters
   const monthOptions = getMonthOptions(allData);

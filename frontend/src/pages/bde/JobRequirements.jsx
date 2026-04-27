@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import { supabase } from "../../services/supabaseClient";
-
+import { useAuth } from "../../context/AuthContext";
 const inputStyle = {
   width: "100%", background: "#ffffff", border: "1px solid #d1d5db",
   color: "#0f172a", padding: "9px 12px", borderRadius: 8, fontSize: 13, boxSizing: "border-box",
@@ -9,7 +9,7 @@ const inputStyle = {
 
 const selectStyle = { ...inputStyle, cursor: "pointer" };
 
-const STATUS_COLORS = { Open: "#4e8ef7", "In Progress": "#f7a44e", Closed: "#4ef7a4" };
+const STATUS_COLORS = { Open: "#4e8ef7", "In Progress": "#f7a44e", "Drop out": "#4ef7a4" };
 const URGENCY_COLORS = { Critical: "#f74e4e", High: "#f7a44e", Medium: "#f7e44e", Low: "#4e8ef7" };
 
 const Badge = ({ text, colorMap }) => (
@@ -38,6 +38,7 @@ const Field = ({ label, children, span }) => (
 
 export default function JobRequirements() {
   const location = useLocation();
+  const { user } = useAuth(); 
   const passedCompany = location.state?.company || null;
   const passedCompanyId = location.state?.companyId || "";
   const passedCompanyName = location.state?.companyName || "";
@@ -53,11 +54,26 @@ export default function JobRequirements() {
     ...EMPTY_FORM,
     company_id: passedCompany?.id || passedCompanyId || "",
   });
+  const [expError, setExpError] = useState("");
+
+  const handleExpChange = (value) => {
+    const numericOnly = value.replace(/\D/g, "");
+    setForm((f) => ({ ...f, experience: numericOnly }));
+    if (numericOnly && isNaN(Number(numericOnly))) {
+      setExpError("Experience must be a number");
+    } else {
+      setExpError("");
+    }
+  };
 
   const fetchAll = async () => {
     setLoading(true);
     const [{ data: reqs }, { data: companies }] = await Promise.all([
-      supabase.from("requirements").select("*, companies(company_name)").order("created_at", { ascending: false }),
+      supabase
+        .from("requirements")
+        .select("*, companies(company_name)")
+        .ilike("created_by", `%${user?.name || ""}%`)  // ← filter by logged-in user
+        .order("created_at", { ascending: false }),
       supabase.from("companies").select("id, company_name").eq("status", "Client"),
     ]);
     setRequirements(reqs || []);
@@ -65,7 +81,9 @@ export default function JobRequirements() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchAll(); }, []);
+  useEffect(() => { 
+    if (user?.name) fetchAll();  // ← wait for user to load
+  }, [user?.name]);
 
   useEffect(() => {
     if (passedCompany) {
@@ -77,6 +95,10 @@ export default function JobRequirements() {
   const handleSubmit = async () => {
     if (!form.company_id) return alert("Please select a client.");
     if (!form.job_title.trim()) return alert("Job title is required.");
+    if (form.experience && isNaN(Number(form.experience))) {
+      setExpError("Experience must be a number");
+      return;
+    }
     setSaving(true);
     const payload = {
   company_id: Number(form.company_id),
@@ -92,6 +114,7 @@ export default function JobRequirements() {
   urgency: form.urgency,
   status: form.status,
   description: form.description || null,
+  created_by: user?.name, 
 };
     let error;
     if (editingId) {
@@ -106,6 +129,7 @@ export default function JobRequirements() {
     setShowForm(false);
     setForm(EMPTY_FORM);
     setEditingId(null);
+    setExpError("");
     fetchAll();
     setSaving(false);
   };
@@ -129,7 +153,7 @@ filtered.forEach((row) => {
           <p style={{ color: "#475569", margin: "4px 0 0", fontSize: 13 }}>BDE → Recruiter handoff</p>
         </div>
         <button
-          onClick={() => { setForm(EMPTY_FORM); setEditingId(null); setShowForm(!showForm); }}
+          onClick={() => { setForm(EMPTY_FORM); setEditingId(null); setExpError(""); setShowForm(!showForm); }}
           style={{ background: "#eff6ff", color: "#2563eb", border: "1px solid #c7d2fe", borderRadius: 8, padding: "10px 20px", fontWeight: 600, cursor: "pointer", fontSize: 14 }}
         >
           {showForm ? "Hide Form" : "+ Create Requirement"}
@@ -181,14 +205,21 @@ filtered.forEach((row) => {
                 onChange={(e) => setForm({ ...form, job_title: e.target.value })}
               />
             </Field>
-
+<Field label="Created By">
+  <input
+    style={{ ...inputStyle, background: "#f1f5f9", color: "#64748b" }}
+    value={user?.name || "—"}
+    readOnly
+  />
+</Field>
             <Field label="Experience">
               <input
                 style={inputStyle}
-                placeholder="e.g. 3-5 years"
+                placeholder="e.g. 3"
                 value={form.experience}
-                onChange={(e) => setForm({ ...form, experience: e.target.value })}
+                onChange={(e) => handleExpChange(e.target.value)}
               />
+              {expError && <div style={{ color: "#f74e4e", fontSize: 11, marginTop: 4 }}>{expError}</div>}
             </Field>
 
             <Field label="Skills Required (comma separated)" span={2}>
@@ -283,7 +314,7 @@ filtered.forEach((row) => {
               >
                 <option>Open</option>
                 <option>In Progress</option>
-                <option>Closed</option>
+                <option>Drop out</option>
               </select>
             </Field>
 
@@ -314,7 +345,7 @@ filtered.forEach((row) => {
 
       {/* Filter tabs */}
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        {["", "Open", "In Progress", "Closed"].map((s) => (
+        {["", "Open", "In Progress", "Drop out"].map((s) => (
           <button key={s} onClick={() => setFilterStatus(s)} style={{
             background: filterStatus === s ? "#eff6ff" : "transparent",
             border: `1px solid ${filterStatus === s ? "#bfdbfe" : "#e2e8f0"}`,
@@ -329,7 +360,7 @@ filtered.forEach((row) => {
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ background: "#f1f5f9" }}>
-             {["#", "Client", "Job Title", "Skills", "Location", "No of Opening", "Mode", "Salary", "Urgency", "Status", "Actions"].map((h) => (
+             {["#", "Client","Created By", "Job Title", "Skills", "Location", "No of Opening", "Mode", "Salary", "Urgency", "Status", "Actions"].map((h) => (
                 <th key={h} style={{ color: "#8892a4", padding: "12px 14px", textAlign: "left", fontSize: 12, fontWeight: 600 }}>{h}</th>
               ))}
             </tr>
@@ -341,6 +372,7 @@ filtered.forEach((row) => {
               <tr key={req.id} style={{ borderTop: "1px solid #e2e8f0" }}>
                 <td style={{ padding: "10px 14px", color: "#64748b", fontSize: 12 }}>{i + 1}</td>
                 <td style={{ padding: "10px 14px", color: "#0f172a", fontSize: 13 }}>{req.companies?.company_name || "—"}</td>
+                <td style={{ padding: "10px 14px", fontSize: 13, color: "#0f172a" }}>{req.created_by || "—"}</td>
                 <td style={{ padding: "10px 14px" }}>
                   <div style={{ color: "#0f172a", fontWeight: 500, fontSize: 13 }}>{req.job_title}</div>
                   <div style={{ color: "#64748b", fontSize: 11 }}>{req.experience}</div>

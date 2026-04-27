@@ -117,9 +117,8 @@ export default function App() {
               <Route path="weekly-tracker" element={<WeeklyTracker />} />
               <Route path="master-tracker" element={<MasterTracker />} />
               <Route path="closures" element={<PageClosure />} />
-              <Route path="followups" element={<FollowUps />} />
-              <Route path="revenue" element={<RevenueAndPipeline />} />
-              <Route path="communications" element={<CommunicationLog />} />
+               <Route path="followups" element={<FollowUps />} />
+               <Route path="communications" element={<CommunicationLog />} />
 
               <Route path="*" element={<Navigate to="dashboard" replace />} />
             </Route>

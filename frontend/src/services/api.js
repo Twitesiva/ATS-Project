@@ -18,7 +18,13 @@ const api = axios.create({
     "Content-Type": "application/json",
   },
 });
-
+api.interceptors.request.use((config) => {
+  const user = JSON.parse(localStorage.getItem("ats_user") || "{}");
+  if (user?.email) {
+    config.headers["X-User-Email"] = user.email;
+  }
+  return config;
+});
 /*
 Upload Job Description + Resume Files
 Supports:

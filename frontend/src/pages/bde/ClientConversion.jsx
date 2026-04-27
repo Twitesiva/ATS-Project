@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../services/supabaseClient"; 
-
+import { useAuth } from "../../context/AuthContext";
 const inputStyle = {
   width: "100%", background: "#0d1525", border: "1px solid #2a3550",
   color: "#fff", padding: "9px 12px", borderRadius: 8, fontSize: 13, boxSizing: "border-box",
@@ -38,7 +38,9 @@ export default function ClientConversion() {
   const [error, setError] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [saving, setSaving] = useState(false);
-
+  const [showProfileModal, setShowProfileModal] = useState(false);
+const [selectedClient, setSelectedClient] = useState(null);
+const { user } = useAuth();
   const [form, setForm] = useState({
     company_name: "",
     contact_person: "",
@@ -55,6 +57,7 @@ export default function ClientConversion() {
       .from("companies")
       .select("*")
       .eq("status", "Client")
+      .eq("created_by", user?.name)
       .order("created_at", { ascending: false });
 
     if (error) setError(error.message);
@@ -62,7 +65,9 @@ export default function ClientConversion() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchClients(); }, []);
+  useEffect(() => {
+  if (user?.name) fetchClients();
+}, [user?.name]);
 
   const handleSubmit = async () => {
     if (!form.company_name.trim()) return alert("Company name is required.");
@@ -74,6 +79,7 @@ export default function ClientConversion() {
       phone: form.phone.trim() || null,
       stage: form.stage,
       status: "Client", // always Client on this page
+      created_by: user?.name || null,
     });
 
     if (error) {
@@ -160,13 +166,10 @@ export default function ClientConversion() {
 
               <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
                 <button
-                onClick={() => navigate("/bde/requirements", { state: { companyId: c.id, companyName: c.company_name } })}
-                  style={{ flex: 1, background: "#e0e7ff", color: "#2563eb", border: "none", borderRadius: 8, padding: "7px 0", cursor: "pointer", fontSize: 12, fontWeight: 600 }}
-                >
-                  + Requirement
-                </button>
-                <button
-                  onClick={() => navigate("/bde/requirements", { state: { companyId: c.id, companyName: c.company_name } })}
+                onClick={() => {
+  setSelectedClient(c);
+  setShowProfileModal(true);
+}}
                   style={{ flex: 1, background: "#f1f5f9", color: "#0f172a", border: "none", borderRadius: 8, padding: "7px 0", cursor: "pointer", fontSize: 12 }}
                 >
                   View Profile
@@ -177,46 +180,133 @@ export default function ClientConversion() {
         )}
       </div>
 
-      {/* Create client modal */}
-      {showModal && (
-        <Modal title="Create Client Profile" onClose={() => setShowModal(false)}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-            <Field label="Company Name *">
-              <input style={inputStyle} value={form.company_name} onChange={set("company_name")} placeholder="Acme Corp" />
-            </Field>
-            <Field label="Contact Person">
-              <input style={inputStyle} value={form.contact_person} onChange={set("contact_person")} placeholder="Jane Smith" />
-            </Field>
-            <Field label="Email">
-              <input style={inputStyle} type="email" value={form.email} onChange={set("email")} placeholder="jane@acme.com" />
-            </Field>
-            <Field label="Phone">
-              <input style={inputStyle} value={form.phone} onChange={set("phone")} placeholder="+91 98765 43210" />
-            </Field>
-            <Field label="Stage">
-              <select style={{ ...inputStyle, cursor: "pointer" }} value={form.stage} onChange={set("stage")}>
-                {STAGES.map((s) => <option key={s}>{s}</option>)}
-              </select>
-            </Field>
-          </div>
+{/* Profile Modal */}
+{showProfileModal && selectedClient && (
+  <Modal title="Client Profile" onClose={() => {
+    setShowProfileModal(false);
+    setSelectedClient(null);
+  }}>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
 
-          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 16 }}>
-            <button
-              onClick={() => setShowModal(false)}
-              style={{ background: "#2a3550", color: "#cdd5e0", border: "none", borderRadius: 8, padding: "9px 20px", cursor: "pointer" }}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSubmit}
-              disabled={saving}
-              style={{ background: saving ? "#2a3550" : "#4ef7a4", color: "#0d1525", border: "none", borderRadius: 8, padding: "9px 20px", fontWeight: 700, cursor: saving ? "not-allowed" : "pointer" }}
-            >
-              {saving ? "Saving…" : "Create Client"}
-            </button>
-          </div>
-        </Modal>
-      )}
+      <Field label="Company Name">
+        <input style={inputStyle} value={selectedClient.company_name || ""}
+          onChange={e => setSelectedClient(c => ({ ...c, company_name: e.target.value }))} />
+      </Field>
+
+      <Field label="Contact Person">
+        <input style={inputStyle} value={selectedClient.contact_person || ""}
+          onChange={e => setSelectedClient(c => ({ ...c, contact_person: e.target.value }))} />
+      </Field>
+
+      <Field label="Email">
+        <input style={inputStyle} value={selectedClient.email || ""}
+          onChange={e => setSelectedClient(c => ({ ...c, email: e.target.value }))} />
+      </Field>
+
+      <Field label="Phone">
+        <input style={inputStyle} value={selectedClient.phone || ""}
+          onChange={e => setSelectedClient(c => ({ ...c, phone: e.target.value }))} />
+      </Field>
+
+      <Field label="Status">
+        <input style={inputStyle} value={selectedClient.status || ""}
+          onChange={e => setSelectedClient(c => ({ ...c, status: e.target.value }))} />
+      </Field>
+
+      <Field label="Stage">
+        <select style={{ ...inputStyle, cursor: "pointer" }} value={selectedClient.stage || ""}
+          onChange={e => setSelectedClient(c => ({ ...c, stage: e.target.value }))}>
+          {STAGES.map(s => <option key={s}>{s}</option>)}
+        </select>
+      </Field>
+
+      <Field label="Lead Status">
+        <input style={inputStyle} value={selectedClient.lead_status || ""}
+          onChange={e => setSelectedClient(c => ({ ...c, lead_status: e.target.value }))} />
+      </Field>
+
+      <Field label="Priority">
+        <input style={inputStyle} value={selectedClient.priority || ""}
+          onChange={e => setSelectedClient(c => ({ ...c, priority: e.target.value }))} />
+      </Field>
+
+      <Field label="Source">
+        <input style={inputStyle} value={selectedClient.source || ""}
+          onChange={e => setSelectedClient(c => ({ ...c, source: e.target.value }))} />
+      </Field>
+
+      <Field label="Mode of Source">
+        <input style={inputStyle} value={selectedClient.mode_of_source || ""}
+          onChange={e => setSelectedClient(c => ({ ...c, mode_of_source: e.target.value }))} />
+      </Field>
+
+      <Field label="Industry">
+        <input style={inputStyle} value={selectedClient.industry || ""}
+          onChange={e => setSelectedClient(c => ({ ...c, industry: e.target.value }))} />
+      </Field>
+
+      <Field label="Website">
+        <input style={inputStyle} value={selectedClient.website || ""}
+          onChange={e => setSelectedClient(c => ({ ...c, website: e.target.value }))} />
+      </Field>
+    </div>
+
+    <div style={{ marginTop: 16 }}>
+      <Field label="Notes">
+        <textarea style={{ ...inputStyle, minHeight: 60 }} value={selectedClient.notes || ""}
+          onChange={e => setSelectedClient(c => ({ ...c, notes: e.target.value }))} />
+      </Field>
+
+      <Field label="Remarks">
+        <textarea style={{ ...inputStyle, minHeight: 60 }} value={selectedClient.remarks || ""}
+          onChange={e => setSelectedClient(c => ({ ...c, remarks: e.target.value }))} />
+      </Field>
+    </div>
+
+    <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 }}>
+      <button
+        onClick={() => { setShowProfileModal(false); setSelectedClient(null); }}
+        style={{ background: "#2a3550", color: "#cdd5e0", border: "none", borderRadius: 8, padding: "9px 20px", cursor: "pointer" }}
+      >
+        Cancel
+      </button>
+      <button
+        onClick={async () => {
+          const { error } = await supabase
+            .from("companies")
+            .update({
+              company_name:    selectedClient.company_name,
+              contact_person:  selectedClient.contact_person,
+              email:           selectedClient.email,
+              phone:           selectedClient.phone,
+              status:          selectedClient.status,
+              stage:           selectedClient.stage,
+              lead_status:     selectedClient.lead_status,
+              priority:        selectedClient.priority,
+              source:          selectedClient.source,
+              mode_of_source:  selectedClient.mode_of_source,
+              industry:        selectedClient.industry,
+              website:         selectedClient.website,
+              notes:           selectedClient.notes,
+              remarks:         selectedClient.remarks,
+            })
+            .eq("id", selectedClient.id);
+
+          if (error) {
+            alert("Failed to save: " + error.message);
+          } else {
+            setShowProfileModal(false);
+            setSelectedClient(null);
+            await fetchClients();
+          }
+        }}
+        style={{ background: "#4ef7a4", color: "#0d1525", border: "none", borderRadius: 8, padding: "9px 20px", fontWeight: 700, cursor: "pointer" }}
+      >
+        Save
+      </button>
+    </div>
+  </Modal>
+)}
     </div>
   );
 }

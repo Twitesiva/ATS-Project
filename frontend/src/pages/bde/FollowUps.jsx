@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "../../services/supabaseClient";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
+import { useAuth } from "../../context/AuthContext";
 const inputStyle = {
   width: "100%", background: "#ffffff", border: "1px solid #d1d5db",
   color: "#0f172a", padding: "9px 12px", borderRadius: 8, fontSize: 13, boxSizing: "border-box",
@@ -77,6 +78,7 @@ export default function FollowUps() {
   const [tab, setTab] = useState("today");
   const [form, setForm] = useState(EMPTY_FORM);
   const [dateTime, setDateTime] = useState("");
+  const { user } = useAuth();
 
   const fetchAll = async () => {
     setLoading(true);
@@ -84,10 +86,12 @@ export default function FollowUps() {
       supabase
         .from("activities")
         .select("*, companies(company_name, contact_person)")
+        .eq("created_by", user?.name)     
         .order("activity_datetime", { ascending: true }),
       supabase
         .from("companies")
         .select("id, company_name, contact_person")
+        .eq("created_by", user?.name)
         .order("company_name"),
     ]);
     setFollowups(acts || []);
@@ -95,7 +99,9 @@ export default function FollowUps() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchAll(); }, []);
+  useEffect(() => {
+  if (user?.name) fetchAll();
+}, [user?.name]);
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -109,21 +115,32 @@ export default function FollowUps() {
     return true;
   });
 
-  const handleSubmit = async () => {
-    if (!form.company_id) return alert("Please select a company.");
-    if (!form.activity_datetime) return alert("Please set a date and time.");
-    const { error } = await supabase.from("activities").insert({
-      company_id: Number(form.company_id),
-      type: form.type,
-      activity_datetime: form.activity_datetime,
-      notes: form.notes || null,
-      status: form.status,
-    });
-    if (error) return alert(error.message);
-    setShowModal(false);
-    setForm(EMPTY_FORM);
-    fetchAll();
+const handleSubmit = async () => {
+  if (!form.company_id) return alert("Please select a company.");
+  if (!form.activity_datetime) return alert("Please select a date and time.");
+
+  const payload = {
+    company_id: Number(form.company_id),
+    type: form.type,
+    activity_datetime: form.activity_datetime,
+    notes: form.notes || null,
+    status: form.status,
+    created_by: user?.name || null,
   };
+
+  const { error } = await supabase.from("activities").insert([payload]);
+
+  if (error) {
+    alert(error.message);
+    console.error("[activities] insert failed", error);
+    return;
+  }
+
+  alert("Follow-up scheduled successfully ✅");
+  setForm(EMPTY_FORM);
+  setShowModal(false);
+  fetchAll();
+};
 
   const markDone = async (id) => {
     const { error } = await supabase.from("activities").update({ status: "Completed" }).eq("id", id);
@@ -177,6 +194,9 @@ export default function FollowUps() {
                 <div style={{ color: "#0f172a", fontWeight: 600, fontSize: 14 }}>
                   {f.companies?.company_name || "—"}
                 </div>
+                <div style={{ color: "#94a3b8", fontSize: 11, marginTop: 2 }}>
+  By: {f.created_by || "—"}   {/* ✅ ADD THIS */}
+</div>
                 <div style={{ color: "#475569", fontSize: 12, marginTop: 2 }}>{f.notes?.slice(0, 80)}</div>
               </div>
               <div style={{ textAlign: "right", flexShrink: 0 }}>

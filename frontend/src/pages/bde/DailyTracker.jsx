@@ -111,15 +111,19 @@ export default function DailyTracker() {
     }
   };
 
-  const isNewLead = (row) => row.activity_type === "new_lead" || row.created_at?.startsWith(today);
+  const isNewLead = (row) =>
+  row.activity_type === "new_lead" ||
+  (row.created_at?.startsWith(today) &&
+    !isFollowUp(row) &&
+    !isConverted(row));
   const isConverted = (row) =>
-    row.status === "Converted" ||
+  (row.status === "Converted" ||
     row.status === "Client" ||
     row.status === "Closure" ||
-    row.activity_type === "conversion";
-  const isRequirement = (row) =>
-    row.activity_type === "Demo" ||
-    row.status === "Requirement";
+    row.activity_type === "conversion") &&
+  row.activity_date &&
+  new Date(row.activity_date).toISOString().split("T")[0] === today;
+
   const isFollowUp = (row) =>
     row.status === "Pending" ||
     row.status === "Completed";
@@ -128,21 +132,19 @@ export default function DailyTracker() {
     (row.activity_date || row.created_at || "").startsWith(today)
   );
 
-  const filteredRows = activeTab === "new"
-    ? todayRows.filter(isNewLead)
-    : activeTab === "converted"
-    ? todayRows.filter(isConverted)
-    : activeTab === "requirement"
-    ? todayRows.filter(isRequirement)
-    : activeTab === "followup"
-    ? todayRows.filter(isFollowUp)
-    : todayRows;
+const filteredRows = activeTab === "new"
+  ? todayRows.filter(isNewLead)
+  : activeTab === "converted"
+  ? todayRows.filter(isConverted)
+  : activeTab === "followup"
+  ? todayRows.filter(isFollowUp)
+  : [...todayRows.filter(isNewLead), ...todayRows.filter(isFollowUp), ...todayRows.filter(isConverted)]
+    .filter((row, idx, arr) => arr.findIndex(r => r.id === row.id) === idx);
 
   const stats = {
     total: todayRows.length,
     new: todayRows.filter(isNewLead).length,
     converted: todayRows.filter(isConverted).length,
-    requirement: todayRows.filter(isRequirement).length,
     followup: todayRows.filter(isFollowUp).length,
   };
 
@@ -165,11 +167,10 @@ export default function DailyTracker() {
       {!loading && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 16, marginBottom: 24 }}>
           {[
-            { key: "all", label: "Total Activity Today", value: stats.total, color: "#eff6ff", border: "#bfdbfe", text: "#1d4ed8" },
+   { key: "all", label: "Total Activity Today", value: stats.total, color: "#eff6ff", border: "#bfdbfe", text: "#1d4ed8" },
             { key: "new", label: "New Leads Today", value: stats.new, color: "#f0fdf4", border: "#bbf7d0", text: "#15803d" },
             { key: "followup", label: "Follow Up Today", value: stats.followup, color: "#fef9c3", border: "#fde047", text: "#854d0e" },
             { key: "converted", label: "Converted Today", value: stats.converted, color: "#fef3c7", border: "#fde68a", text: "#92400e" },
-            { key: "requirement", label: "Requirements Today", value: stats.requirement, color: "#eef2ff", border: "#c7d2fe", text: "#4338ca" },
           ].map((card) => (
             <button
               key={card.key}
@@ -186,8 +187,8 @@ export default function DailyTracker() {
                 boxShadow: activeTab === card.key ? "0 10px 25px rgba(37, 99, 235, 0.12)" : "none",
               }}
             >
-              <div style={{ fontSize: 12, color: card.text, fontWeight: 600, marginBottom: 8 }}>{card.label}</div>
-              <div style={{ fontWeight: 700, fontSize: 28, color: card.text }}>{card.value}</div>
+             <div style={{ fontSize: 12, color: card.text, fontWeight: 600, marginBottom: 8 }}>{card.label}</div>
+<div style={{ fontWeight: 700, fontSize: 28, color: card.text }}>{card.value}</div>
             </button>
           ))}
         </div>

@@ -2,7 +2,7 @@
 
 from flask import Blueprint, request, jsonify
 from datetime import datetime, timezone
-
+from flask import request
 from backend.services.supabase_client import get_supabase_client
 
 bp = Blueprint("bde", __name__)
@@ -23,7 +23,53 @@ def to_int(val, default=0):
     except:
         return default
 
-# =========================
+def normalize_source_text(val):
+    return " ".join((val or "").strip().lower().replace("-", " ").split())
+
+def normalize_text(val):
+    return " ".join((val or "").strip().lower().split())
+
+def same_user_name(left, right):
+    return normalize_text(left) == normalize_text(right)
+
+def get_user_identifiers(user_name="", user_email=""):
+    identifiers = []
+    for val in [user_name, user_email]:
+        normalized = normalize_text(val)
+        if normalized and normalized not in identifiers:
+            identifiers.append(normalized)
+    return identifiers
+
+def matches_user_identifier(value, identifiers):
+    if not identifiers:
+        return True
+    return normalize_text(value) in identifiers
+
+def get_filtered_bde_companies(sb_client, user_name="", user_email=""):
+    companies = sb_client.from_("companies").select(
+        "id, company_name, contact_person, status, source, created_at, created_by, "
+        "phone, email, remarks"
+    ).execute().data or []
+    identifiers = get_user_identifiers(user_name, user_email)
+    if identifiers:
+        companies = [
+            c for c in companies
+            if matches_user_identifier(c.get("created_by"), identifiers)
+        ]
+    return companies
+
+def build_channel_split(companies):
+    def src_match(company, *keywords):
+        src = normalize_source_text(company.get("source"))
+        return any(kw in src for kw in keywords)
+
+    return {
+        "email": len([c for c in companies if src_match(c, "email")]),
+        "linkedin": len([c for c in companies if src_match(c, "linkedin", "linked in")]),
+        "phone": len([c for c in companies if src_match(c, "phone", "call", "cold call", "phone call", "calling")]),
+    }
+def clean_name(name):
+    return " ".join((name or "").lower().replace("ltd", "").replace("pvt", "").split())
 # COMPANIES (LEADS + CLIENTS)
 # =========================
 
@@ -42,8 +88,10 @@ def create_company():
         "contact_person": data.get("contactPerson"),
         "email": data.get("email"),
         "phone": data.get("phone"),
+        "source": data.get("source"),
         "status": data.get("status", "Lead"),
         "stage": data.get("stage", "New"),
+        "remarks": data.get("remarks") or data.get("notes"),
         "created_by": get_current_user(),  # logged-in user name
     }
 
@@ -66,8 +114,10 @@ def update_company(company_id):
         "contact_person": data.get("contactPerson"),
         "email": data.get("email"),
         "phone": data.get("phone"),
+        "source": data.get("source"),
         "status": data.get("status"),
         "stage": data.get("stage"),
+        "remarks": data.get("remarks") or data.get("notes"),
     }
 
     res = sb().from_("companies").update(payload).eq("id", company_id).execute()
@@ -149,20 +199,34 @@ def get_activities():
 
 @bp.route("/bde/activities", methods=["POST"])
 def create_activity():
-    data = request.json
+    try:
+        data = request.json
+        print("DATA RECEIVED:", data)
 
-    payload = {
-        "company_id": data.get("companyId"),
-        "type": data.get("type"),
-        "subject": data.get("subject"),
-        "notes": data.get("notes"),
-        "activity_datetime": data.get("datetime"),
-        "status": data.get("status", "Completed"),
-        "created_by": get_current_user(), # logged-in user name
-    }
+        created_by = request.headers.get("X-User-Name") or request.headers.get("X-User-Email")
+        print("USER:", created_by)
 
-    res = sb().from_("activities").insert(payload).execute()
-    return jsonify(res.data), 201
+        payload = {
+            "company_id": data.get("companyId"),
+            "type": data.get("type"),
+            "notes": data.get("notes"),
+            "activity_datetime": data.get("datetime"),
+            "status": data.get("status", "Pending"),
+            "created_by": created_by,
+            "created_at": now()
+        }
+
+        print("PAYLOAD:", payload)
+
+        res = sb().from_("activities").insert(payload).execute()
+
+        print("SUPABASE RESPONSE:", res)
+
+        return jsonify(res.data), 201
+
+    except Exception as e:
+        print("ERROR:", str(e))   # 👈 VERY IMPORTANT
+        return jsonify({"error": str(e)}), 500
 
 
 @bp.route("/bde/activities/<int:act_id>", methods=["PUT"])
@@ -284,6 +348,19 @@ def get_daily_tracker():
 
 # =========================
 # WEEKLY TRACKER
+# All KPIs computed live from companies / requirements / activities tables.
+#
+# KPI mapping:
+#   totalLeadGeneration  → companies created this week by this BDE (unique company+contact+job combos via requirements)
+#   newLeadsEmail        → companies.source contains 'email' this week
+#   newLeadsPhone        → companies.source contains 'phone' / 'call' this week
+#   newLeadsLinkedIn     → companies.source contains 'linkedin' this week
+#   responsesReceived    → activities where type = 'Response' this week
+#   clientMeet           → activities where type IN ('Demo', 'Meeting', 'Client Meet') this week
+#   followUps            → activities where status = 'Pending' this week
+#   requirements         → requirements created this week for this BDE's companies
+#   newClients           → companies where status = 'Client' created this week
+#   closures             → revenue_tracker rows matched to BDE's client companies this week
 # =========================
 
 @bp.route("/bde/weekly-tracker", methods=["GET"])
@@ -291,9 +368,8 @@ def get_weekly_tracker():
     from datetime import date, timedelta
 
     sb_client = sb()
-
-    # Optional: filter by logged-in user name
     user_name = request.args.get("user", "").strip()
+    user_email = request.args.get("email", "").strip()
 
     today = date.today()
     weeks = []
@@ -301,36 +377,53 @@ def get_weekly_tracker():
 
     for i in range(8):
         week_start = current_week_start - timedelta(weeks=i)
-        week_end = week_start + timedelta(days=6)
+        week_end   = week_start + timedelta(days=6)
         weeks.append((week_start, week_end))
 
-    # Fetch companies — filter by created_by if user provided
-    companies_query = sb_client.from_("companies").select("id, company_name, status, stage, created_at, created_by")
-    if user_name:
-        companies_query = companies_query.eq("created_by", user_name)
-    companies = companies_query.execute().data or []
-    company_ids = {c["id"] for c in companies if c.get("id") is not None}
+    # ── Fetch ALL companies for this BDE (no date filter — needed for client set) ──
+    identifiers = get_user_identifiers(user_name, user_email)
+    all_companies = get_filtered_bde_companies(sb_client, user_name, user_email)
+
+    company_ids = [c["id"] for c in all_companies if c.get("id") is not None]
+
+    # ── Fetch requirements for this BDE's companies ──
+    all_requirements = []
+    if company_ids:
+        reqs_res = sb_client.from_("requirements") \
+            .select("id, company_id, job_title, created_at") \
+            .in_("company_id", company_ids) \
+            .execute()
+        all_requirements = reqs_res.data or []
+
+    reqs_by_company = {}
+    for r in all_requirements:
+        cid = r.get("company_id")
+        if cid:
+            reqs_by_company.setdefault(cid, []).append(r)
+
+    # ── Fetch ALL activities for this BDE ──
+    # Activities are linked via created_by (same BDE user)
+    activities_query = sb_client.from_("activities").select(
+        "id, type, status, activity_datetime, company_id, created_by"
+    )
+    all_activities = activities_query.execute().data or []
+    if identifiers:
+        all_activities = [
+            a for a in all_activities
+            if matches_user_identifier(a.get("created_by"), identifiers)
+        ]
+
+    # ── Client set for closure matching ──
     client_names = {
         (c.get("company_name") or "").strip().lower()
-        for c in companies
-        if (c.get("status") == "Client") and c.get("company_name")
+        for c in all_companies
+        if c.get("status") == "Client" and c.get("company_name")
     }
 
-    # Fetch activities — filter by created_by if user provided
-    activities_query = sb_client.from_("activities").select("id, type, status, activity_datetime, company_id, created_by")
-    if user_name:
-        activities_query = activities_query.eq("created_by", user_name)
-    activities = activities_query.execute().data or []
-
-    requirements = sb_client.from_("requirements") \
-        .select("id, company_id, created_at") \
-        .execute().data or []
-
-    # Fetch revenue_tracker for joined candidates
-    revenue_res = sb_client.from_("revenue_tracker") \
+    # ── Revenue / closures ──
+    revenue = sb_client.from_("revenue_tracker") \
         .select("client_name, doj, offer_status") \
-        .execute()
-    revenue = revenue_res.data or []
+        .execute().data or []
 
     result = []
 
@@ -339,162 +432,198 @@ def get_weekly_tracker():
         we = week_end.isoformat()
         week_label = f"W{week_start.isocalendar()[1]}, {week_start.strftime('%d/%m')}"
 
-        week_activities = [
-            a for a in activities
-            if a.get("activity_datetime") and ws <= a["activity_datetime"][:10] <= we
-        ]
-
+        # ── Companies created this week ──
         week_companies = [
-            c for c in companies
+            c for c in all_companies
             if c.get("created_at") and ws <= c["created_at"][:10] <= we
         ]
 
+        # ── Total Lead Generation ──
+        # Unique (company_id, contact_person, job_title) combos for companies created this week
+        lead_combos = set()
+        for c in week_companies:
+            cid     = c["id"]
+            contact = (c.get("contact_person") or "").strip()
+            reqs    = reqs_by_company.get(cid, [])
+            if reqs:
+                for r in reqs:
+                    job = (r.get("job_title") or "").strip()
+                    lead_combos.add((cid, contact, job))
+            else:
+                lead_combos.add((cid, contact, ""))
+
+        total_lead_generation = len(lead_combos)
+
+        # ── Email / LinkedIn / Phone leads — from companies.source only ──
+
+        week_channel_split = build_channel_split(week_companies)
+        new_leads_email = week_channel_split["email"]
+        new_leads_linkedin = week_channel_split["linkedin"]
+        new_leads_phone = week_channel_split["phone"]
+
+        # ── New Clients this week ──
+        # Companies with status='Client' that were created this week
+        new_clients_this_week = len([
+            c for c in week_companies
+            if (c.get("status") or "").strip().lower() == "client"
+        ])
+
+        # ── Requirements created this week (for this BDE's companies) ──
         week_requirements = [
-            r for r in requirements
-            if r.get("created_at")
-            and ws <= r["created_at"][:10] <= we
+            r for r in all_requirements
+            if r.get("created_at") and ws <= r["created_at"][:10] <= we
         ]
 
+        # ── Activities this week ──
+        week_activities = [
+            a for a in all_activities
+            if a.get("activity_datetime") and ws <= a["activity_datetime"][:10] <= we
+        ]
+
+        # Responses: activities where type = 'Response'
+        responses_received = len([
+            a for a in week_activities
+            if (a.get("type") or "").strip().lower() == "response"
+        ])
+
+        # Client meets: activities where type is 'Demo', 'Meeting', or 'Client Meet'
+        client_meet = len([
+            a for a in week_activities
+            if (a.get("type") or "").strip().lower() in ("demo", "meeting", "client meet")
+        ])
+
+        # Follow-ups: activities where status = 'Pending'
+        follow_ups = len([
+            a for a in week_activities
+            if (a.get("status") or "").strip().lower() == "pending"
+        ])
+
+        # ── Closures from revenue_tracker ──
         week_closures = [
             r for r in revenue
-            if r.get("doj")
-            and ws <= r["doj"][:10] <= we
+            if r.get("doj") and ws <= r["doj"][:10] <= we
             and (
                 not user_name
                 or (r.get("client_name") or "").strip().lower() in client_names
             )
         ]
 
-        new_clients = len([
-            r for r in week_closures
-            if r.get("offer_status") == "Joined"
-        ])
+        closures_count = len(week_closures)
 
         result.append({
-            "week": week_label,
-            "week_start": ws,
-            "week_end": we,
-            "bdName": user_name or "All",
-            "newClients": new_clients,
-            "totalLeadGeneration": len(week_companies),
-            "requirements": len(week_requirements),
-            "closures": len(week_closures),
-            "newLeadsEmail": len([a for a in week_activities if a.get("type") == "Email"]),
-            "newLeadsPhone": len([a for a in week_activities if a.get("type") == "Call"]),
-            "newLeadsLinkedIn": len([a for a in week_activities if a.get("type") == "LinkedIn"]),
-            "responsesReceived": len([a for a in week_activities if a.get("type") == "Proposal"]),
-            "followUps": len([a for a in week_activities if a.get("status") == "Pending"]),
-            "clientMeet": len([a for a in week_activities if a.get("type") == "Meeting"]),
+            "week":                week_label,
+            "week_start":          ws,
+            "week_end":            we,
+            "bdName":              user_name or "All",
+            "newClients":          new_clients_this_week,
+            "totalLeadGeneration": total_lead_generation,
+            "requirements":        len(week_requirements),
+            "closures":            closures_count,
+            "newLeadsEmail":       new_leads_email,
+            "newLeadsPhone":       new_leads_phone,
+            "newLeadsLinkedIn":    new_leads_linkedin,
+            "responsesReceived":   responses_received,
+            "followUps":           follow_ups,
+            "clientMeet":          client_meet,
         })
 
     return jsonify(result)
 
 
-@bp.route("/bde/weekly-team-performance", methods=["GET"])
-def get_weekly_team_performance():
-    from datetime import date, timedelta
-
+@bp.route("/bde/channel-split-summary", methods=["GET"])
+def get_channel_split_summary():
     sb_client = sb()
-    week_start_param = request.args.get("week_start", "").strip()
+    user_name = request.args.get("user", "").strip()
+    user_email = request.args.get("email", "").strip()
+    companies = get_filtered_bde_companies(sb_client, user_name, user_email)
+    split = build_channel_split(companies)
 
-    today = date.today()
-    current_week_end = today - timedelta(days=today.weekday())
-    default_week_start = current_week_end - timedelta(days=6)
+    return jsonify({
+        "bdName": user_name or "All",
+        "scope": "all_companies",
+        "email": split["email"],
+        "linkedin": split["linkedin"],
+        "phone": split["phone"],
+        "total": split["email"] + split["linkedin"] + split["phone"],
+    })
 
-    try:
-        week_start = date.fromisoformat(week_start_param) if week_start_param else default_week_start
-    except ValueError:
-        week_start = default_week_start
 
-    week_end = week_start + timedelta(days=6)
-    ws = week_start.isoformat()
-    we = week_end.isoformat()
+@bp.route("/bde/weekly-leads", methods=["GET"])
+def get_weekly_leads():
+    """
+    Returns the flattened list of unique (company + contact_person + job_title) lead rows
+    for the table view in the frontend drilldown.
+    Filtered by BDE (created_by) and optional week_start / week_end date range.
+    """
+    sb_client  = sb()
+    user_name  = request.args.get("user",       "").strip()
+    user_email = request.args.get("email",      "").strip()
+    week_start = request.args.get("week_start", "").strip()
+    week_end   = request.args.get("week_end",   "").strip()
 
-    companies = sb_client.from_("companies") \
-        .select("id, company_name, status, created_by, created_at") \
-        .execute().data or []
-
-    requirements = sb_client.from_("requirements") \
-        .select("id, company_id, created_at") \
-        .execute().data or []
-
-    activities = sb_client.from_("activities") \
-        .select("type, company_id, created_by, activity_datetime") \
-        .execute().data or []
-
-    revenue = sb_client.from_("revenue_tracker") \
-        .select("client_name, doj, recruiter_name") \
-        .execute().data or []
-
-    team_map = {}
-    company_owner = {}
-    client_owner = {}
-
-    for company in companies:
-        owner = (company.get("created_by") or "").strip() or "manager"
-        team_map.setdefault(owner, {
-            "name": owner,
-            "requirements": 0,
-            "meets": 0,
-            "closures": 0,
-        })
-        if company.get("id") is not None:
-            company_owner[company["id"]] = owner
-        client_name = (company.get("company_name") or "").strip().lower()
-        if client_name and company.get("status") == "Client":
-            client_owner[client_name] = owner
-
-    for activity in activities:
-        owner = (activity.get("created_by") or "").strip() or company_owner.get(activity.get("company_id")) or "manager"
-        team_map.setdefault(owner, {
-            "name": owner,
-            "requirements": 0,
-            "meets": 0,
-            "closures": 0,
-        })
-
-    for row in revenue:
-        revenue_owner = (row.get("recruiter_name") or "").strip()
-        owner = revenue_owner or client_owner.get((row.get("client_name") or "").strip().lower()) or "manager"
-        team_map.setdefault(owner, {
-            "name": owner,
-            "requirements": 0,
-            "meets": 0,
-            "closures": 0,
-        })
-
-    for req in requirements:
-        created_at = req.get("created_at")
-        owner = company_owner.get(req.get("company_id"))
-        if created_at and owner and ws <= created_at[:10] <= we:
-            team_map.setdefault(owner, {"name": owner, "requirements": 0, "meets": 0, "closures": 0})
-            team_map[owner]["requirements"] += 1
-
-    for activity in activities:
-        activity_date = activity.get("activity_datetime")
-        owner = (activity.get("created_by") or "").strip() or company_owner.get(activity.get("company_id")) or "manager"
-        if activity_date and ws <= activity_date[:10] <= we and activity.get("type") == "Meeting":
-            team_map.setdefault(owner, {"name": owner, "requirements": 0, "meets": 0, "closures": 0})
-            team_map[owner]["meets"] += 1
-
-    for row in revenue:
-        doj = row.get("doj")
-        revenue_owner = (row.get("recruiter_name") or "").strip()
-        owner = revenue_owner or client_owner.get((row.get("client_name") or "").strip().lower()) or "manager"
-        if doj and owner and ws <= doj[:10] <= we:
-            team_map.setdefault(owner, {"name": owner, "requirements": 0, "meets": 0, "closures": 0})
-            team_map[owner]["closures"] += 1
-
-    result = sorted(
-        [
-            item for item in team_map.values()
-            if item["requirements"] > 0 or item["meets"] > 0 or item["closures"] > 0
-        ],
-        key=lambda item: (item["requirements"] + item["meets"] + item["closures"], item["name"].lower()),
-        reverse=True,
+    # Fetch companies
+    q = sb_client.from_("companies").select(
+        "id, company_name, contact_person, source, phone, email, status, remarks, created_at, created_by"
     )
+    if week_start:
+        q = q.gte("created_at", week_start)
+    if week_end:
+        q = q.lte("created_at", week_end + "T23:59:59")
+    companies = q.execute().data or []
+    identifiers = get_user_identifiers(user_name, user_email)
+    if identifiers:
+        companies = [
+            c for c in companies
+            if matches_user_identifier(c.get("created_by"), identifiers)
+        ]
 
-    return jsonify(result)
+    company_ids = [c["id"] for c in companies if c.get("id")]
+
+    # Fetch requirements for those companies
+    all_reqs = []
+    if company_ids:
+        all_reqs = sb_client.from_("requirements") \
+            .select("id, company_id, job_title, created_at") \
+            .in_("company_id", company_ids) \
+            .execute().data or []
+
+    reqs_by_company = {}
+    for r in all_reqs:
+        reqs_by_company.setdefault(r["company_id"], []).append(r)
+
+    # Build flattened lead rows: one row per (company × requirement) combo
+    # Companies with no requirements → 1 row with job_title = ""
+    rows = []
+    seen = set()
+
+    for c in companies:
+        cid     = c["id"]
+        contact = (c.get("contact_person") or "").strip()
+        reqs    = reqs_by_company.get(cid, [])
+
+        combos = reqs if reqs else [{"id": None, "job_title": "", "created_at": c.get("created_at")}]
+
+        for r in combos:
+            job = (r.get("job_title") or "").strip()
+            key = (cid, contact, job)
+            if key in seen:
+                continue
+            seen.add(key)
+
+            rows.append({
+                "id":            f"{cid}-{r.get('id') or 'none'}",
+                "activity_date": c.get("created_at", ""),
+                "lead_name":     contact or c.get("company_name", ""),
+                "company":       c.get("company_name", ""),
+                "source":        c.get("source", ""),
+                "mobile":        c.get("phone", ""),
+                "email":         c.get("email", ""),
+                "status":        c.get("status", ""),
+                "remarks":       c.get("remarks", ""),
+                "position":      job,
+            })
+
+    return jsonify(rows)
 
 
 # =========================
@@ -621,39 +750,69 @@ def get_closures_summary():
     })
 
 
+
 @bp.route("/bde/closures/months", methods=["GET"])
 def get_closure_months():
     sb_client = sb()
 
+    # ✅ Step 1: Get client companies
     clients_res = sb_client.from_("companies") \
         .select("company_name") \
         .eq("status", "Client") \
         .execute()
 
-    client_names = [
-        c["company_name"].strip().lower()
+    valid_companies = {
+        (c.get("company_name") or "").strip().lower()
         for c in (clients_res.data or [])
         if c.get("company_name")
-    ]
+    }
 
-    if not client_names:
+    if not valid_companies:
         return jsonify([])
 
-    revenue_res = sb_client.from_("revenue_tracker") \
-        .select("doj, client_name") \
-        .order("doj", desc=True) \
-        .execute()
+    # ✅ Step 2: Get ALL closures
+    all_closures = sb_client.from_("revenue_tracker") \
+        .select("doj, client_name, position") \
+        .execute().data or []
 
+    # ✅ Step 3: (OPTIONAL) define role mapping
+    # Example: company_roles = { "tcs": {"developer", "tester"} }
+    company_roles = {}  # <-- replace with your actual mapping if you have
+
+    def clean(val):
+        return (val or "").strip().lower()
+
+    # ✅ Step 4: Filter closures using company + role
+    filtered = []
+
+    for r in all_closures:
+        company = clean(r.get("client_name"))
+        role = clean(r.get("position"))
+
+        # ❌ skip if company not valid
+        if company not in valid_companies:
+            continue
+
+        roles = company_roles.get(company, set())
+
+        # ✅ if no roles defined → allow all
+        if len(roles) == 0:
+            filtered.append(r)
+            continue
+
+        # ✅ if role matches → allow
+        if role in roles:
+            filtered.append(r)
+            continue
+
+    # ✅ Step 5: Extract months
     months = set()
-    for r in (revenue_res.data or []):
-        if r.get("client_name", "").strip().lower() in client_names:
-            doj = r.get("doj", "")
-            if doj and len(doj) >= 7:
-                months.add(doj[:7])
+    for r in filtered:
+        doj = r.get("doj", "")
+        if doj and len(doj) >= 7:
+            months.add(doj[:7])
 
     return jsonify(sorted(months, reverse=True))
-
-
 # =========================
 # DASHBOARD
 # =========================
