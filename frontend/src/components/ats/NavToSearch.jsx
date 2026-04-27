@@ -20,7 +20,6 @@ export default function NavToSearch() {
   return (
     <div className="nav-to-search">
       <button type="button" className="btn btn-secondary" onClick={handleSearchNav}>
-        <span className="btn-icon">🔍</span>
         Search Database
       </button>
     </div>

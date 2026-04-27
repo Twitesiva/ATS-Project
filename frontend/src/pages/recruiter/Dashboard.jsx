@@ -589,8 +589,7 @@ export default function RecruiterDashboard() {
   );
 }
 
-function MetricCard({ label, value, note, trend, variant = "kpi" }) {
-  const trendIsPositive = Number(trend || 0) >= 0;
+function MetricCard({ label, value, note, variant = "kpi" }) {
   const tintClassByLabel = {
     "Candidates Added": "bg-blue-50/70 border-t-4 border-t-blue-500",
     "Interviews Scheduled": "bg-purple-50/70 border-t-4 border-t-purple-500",
@@ -603,55 +602,59 @@ function MetricCard({ label, value, note, trend, variant = "kpi" }) {
   const accentStyleByLabel = {
     "Candidates Added": {
       badge: "bg-blue-100 text-blue-700",
+      iconBg: "bg-blue-100",
       icon: Users,
     },
     "Interviews Scheduled": {
       badge: "bg-purple-100 text-purple-700",
+      iconBg: "bg-purple-100",
       icon: CalendarCheck2,
     },
     Offers: {
       badge: "bg-green-100 text-green-700",
+      iconBg: "bg-green-100",
       icon: CheckCircle2,
     },
     "Active Clients": {
       badge: "bg-orange-100 text-orange-700",
+      iconBg: "bg-orange-100",
       icon: Briefcase,
     },
     "Total Revenue": {
       badge: "bg-green-100 text-green-700",
+      iconBg: "bg-green-100",
       icon: CheckCircle2,
     },
     "Total Revenue Records": {
       badge: "bg-blue-100 text-blue-700",
+      iconBg: "bg-blue-100",
       icon: CircleAlert,
     },
   };
-  const accent = accentStyleByLabel[label] || { badge: "bg-slate-100 text-slate-700", icon: CircleAlert };
+  const accent = accentStyleByLabel[label] || { badge: "bg-slate-100 text-slate-700", iconBg: "bg-slate-100", icon: CircleAlert };
   const Icon = accent.icon;
   const cardElevation = variant === "revenue" ? "shadow-[0_8px_20px_rgba(15,23,42,0.06)]" : "shadow-[0_8px_24px_rgba(15,23,42,0.08)]";
   const contentPadding = variant === "kpi" ? "p-5" : "p-6";
-  const valueSize = variant === "kpi" ? "text-2xl xl:text-3xl" : "text-3xl xl:text-4xl";
-  const badgeSize = variant === "kpi" ? "h-7 w-7" : "h-8 w-8";
-  const iconSize = variant === "kpi" ? 14 : 16;
+  const valueSize = variant === "kpi" ? "text-3xl xl:text-4xl" : "text-4xl xl:text-5xl";
+  const badgeSize = variant === "kpi" ? "h-10 w-10" : "h-12 w-12";
+  const iconSize = variant === "kpi" ? 18 : 20;
+  
   return (
     <Card className={`h-full rounded-2xl border border-slate-200 ${tintClass} ${cardElevation} transition-all duration-200 ease-in-out hover:-translate-y-[4px] hover:shadow-[0_12px_28px_rgba(15,23,42,0.12)]`}>
       <CardContent className={`flex h-full flex-col justify-between ${contentPadding}`}>
-        <div className="flex items-center justify-between gap-2">
-          <p className="m-0 text-xs font-medium tracking-wide text-gray-500">{label}</p>
-          <span className={`inline-flex ${badgeSize} items-center justify-center rounded-lg ${accent.badge}`}>
-            <Icon size={iconSize} />
-          </span>
+        {/* Label + Icon Row */}
+        <div className="flex items-start justify-between gap-3">
+          <p className="m-0 text-xs font-medium tracking-wide text-gray-500 uppercase">{label}</p>
+          <div className={`inline-flex ${badgeSize} items-center justify-center rounded-lg ${accent.iconBg} flex-shrink-0`}>
+            <Icon size={iconSize} className="text-current" />
+          </div>
         </div>
-        <p className={`m-0 mt-2 font-bold text-gray-900 ${valueSize}`}>{value}</p>
-        <div className="mt-2 flex min-h-5 items-center justify-between gap-2">
-          <p className="m-0 text-xs text-gray-500">{note}</p>
-          {typeof trend === "number" ? (
-            <span className={`text-xs font-semibold ${trendIsPositive ? "text-emerald-600" : "text-rose-600"}`}>
-              {trendIsPositive ? "+" : ""}
-              {trend.toFixed(1)}%
-            </span>
-          ) : null}
-        </div>
+        
+        {/* Main Value - Big & Bold */}
+        <p className={`m-0 mt-3 font-extrabold text-gray-900 ${valueSize} leading-tight`}>{value}</p>
+        
+        {/* Description - Muted */}
+        <p className="m-0 mt-3 text-xs text-gray-500 leading-relaxed">{note}</p>
       </CardContent>
     </Card>
   );
@@ -686,8 +689,12 @@ function StyledTooltip({ active, payload, label }) {
 
 function ChartEmptyState() {
   return (
-    <div className="flex h-[220px] items-center justify-center">
-      <p className="m-0 text-sm text-slate-400">No data available yet</p>
+    <div className="flex h-[220px] flex-col items-center justify-center gap-3">
+      <div className="text-4xl">📊</div>
+      <div className="text-center">
+        <p className="m-0 text-sm font-medium text-slate-600">No data yet</p>
+        <p className="m-0 mt-1 text-xs text-slate-400">Add candidates to get started</p>
+      </div>
     </div>
   );
 }
