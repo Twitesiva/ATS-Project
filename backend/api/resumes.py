@@ -1,9 +1,9 @@
-"""GET /fetch-resumes: optional filters. GET /resume-file/<path>: serve original file for preview."""
+"""GET /fetch-resumes: optional filters. GET /resume-file/<path>: serve original file for preview (Supabase Storage only)."""
 import os
 import mimetypes
-from flask import Blueprint, request, jsonify, send_from_directory, Response
+from flask import Blueprint, request, jsonify, Response
 from backend.services.storage import fetch_resumes
-from backend.config import UPLOAD_FOLDER, SUPABASE_RESUME_BUCKET
+from backend.config import SUPABASE_RESUME_BUCKET
 from backend.services.supabase_client import get_supabase_client
 import numpy as np
 
@@ -34,42 +34,31 @@ def serialize_for_json(obj):
 
 @bp.route("/resume-file/<path:filename>", methods=["GET"])
 def serve_resume_file(filename):
-    """Serve a resume file from uploads folder for preview. No path traversal."""
+    """Serve a resume file from Supabase Storage for preview. No path traversal."""
     if not filename or ".." in filename or os.path.isabs(filename):
         return jsonify({"error": "Invalid file path"}), 400
+
     safe_name = os.path.basename(filename)
-    path = os.path.join(UPLOAD_FOLDER, safe_name)
     guessed_mime, _ = mimetypes.guess_type(safe_name)
 
-    # Primary: local uploads folder (fast path).
-    if os.path.isfile(path):
-        return send_from_directory(
-            UPLOAD_FOLDER,
-            safe_name,
-            mimetype=guessed_mime or "application/octet-stream",
-            as_attachment=False,
-            download_name=safe_name,
-        )
-
-    # Fallback: Supabase Storage (when uploads folder is missing/ephemeral).
     bucket = (SUPABASE_RESUME_BUCKET or "").strip()
-    if bucket:
-        try:
-            supabase = get_supabase_client()
-            downloaded = supabase.storage.from_(bucket).download(safe_name)
+    if not bucket:
+        return jsonify({"error": "Storage bucket not configured"}), 500
 
-            if isinstance(downloaded, (bytes, bytearray)):
-                data = bytes(downloaded)
-            elif hasattr(downloaded, "read"):
-                data = downloaded.read()
-            else:
-                data = bytes(downloaded)
+    try:
+        supabase = get_supabase_client()
+        downloaded = supabase.storage.from_(bucket).download(safe_name)
 
-            return Response(data, mimetype=guessed_mime or "application/octet-stream")
-        except Exception:
-            pass
+        if isinstance(downloaded, (bytes, bytearray)):
+            data = bytes(downloaded)
+        elif hasattr(downloaded, "read"):
+            data = downloaded.read()
+        else:
+            data = bytes(downloaded)
 
-    return jsonify({"error": "File not found"}), 404
+        return Response(data, mimetype=guessed_mime or "application/octet-stream")
+    except Exception as e:
+        return jsonify({"error": f"File not found: {e}"}), 404
 
 
 @bp.route("/fetch-resumes", methods=["GET"])

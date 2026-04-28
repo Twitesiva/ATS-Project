@@ -56,29 +56,48 @@ const applyRevenueFilters = (query, filters = {}) => {
   return q;
 };
 
+// ✅ Reusable pagination helper — fetches ALL rows beyond Supabase's 1000 row cap
+const fetchAllPages = async (buildQuery) => {
+  const pageSize = 1000;
+  let allData = [];
+  let from = 0;
+  let hasMore = true;
+
+  while (hasMore) {
+    const { data, error } = await buildQuery(from, from + pageSize - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) { hasMore = false; break; }
+    allData = allData.concat(data);
+    hasMore = data.length === pageSize;
+    from += pageSize;
+  }
+
+  return allData;
+};
+
 export const getCandidateStats = async (filters = {}) => {
-  const { data, error } = await applyCandidateFilters(
-    supabase.from("candidate_records").select("id,status"),
-    filters
+  const rows = await fetchAllPages((from, to) =>
+    applyCandidateFilters(
+      supabase.from("candidate_records").select("id,status")
+        .not("status", "in", "(Closure,Drop Out By Client,Drop Out By Candidate,Backout,Position Closed,L1 Reject,L2 Reject,Final Round Rejected)")
+        .range(from, to),
+      filters
+    )
   );
-
-  if (error) throw error;
-
-  const rows = data || [];
 
   const totalCandidates = rows.length;
-  const interviewsScheduled = rows.filter((r) => r.status === "Interview Scheduled").length;
+  const interviewsScheduled = rows.filter((r) => ["L1 Scheduled","L2 Scheduled","AI Interview","Assessment Round","HR Round","Interview Scheduled"].includes(r.status)).length;
   const shortlisted = rows.filter((r) => r.status === "Shortlisted").length;
-  const closures = rows.filter((r) => r.status === "Joined").length;
+  const closures = rows.filter((r) => r.status === "Closure").length;
 
-  const revenueQuery = applyRevenueFilters(
-    supabase.from("revenue_tracker").select("margin_value,doj"),
-    filters
+  const revenueRows = await fetchAllPages((from, to) =>
+    applyRevenueFilters(
+      supabase.from("revenue_tracker").select("margin_value,doj").range(from, to),
+      filters
+    )
   );
-  const { data: revenueRows, error: revenueError } = await revenueQuery;
-  if (revenueError) throw revenueError;
 
-  const revenue = (revenueRows || []).reduce(
+  const revenue = revenueRows.reduce(
     (sum, row) => sum + sanitizeMarginValue(row.margin_value),
     0
   );
@@ -93,31 +112,32 @@ export const getCandidateStats = async (filters = {}) => {
 };
 
 export const getRevenueTrend = async (filters = {}) => {
-  const { data, error } = await applyRevenueFilters(
-    supabase.from("revenue_tracker").select("margin_value,doj").order("doj", { ascending: true }),
-    filters
+  const data = await fetchAllPages((from, to) =>
+    applyRevenueFilters(
+      supabase.from("revenue_tracker").select("margin_value,doj").order("doj", { ascending: true }).range(from, to),
+      filters
+    )
   );
 
-  if (error) throw error;
-  return data || [];
+  return data;
 };
 
 export const getRecruiterPerformance = async (filters = {}) => {
-  const { data, error } = await applyCandidateFilters(
-    supabase.from("candidate_records").select("recruiter,id,status"),
-    filters
+  const allData = await fetchAllPages((from, to) =>
+    applyCandidateFilters(
+      supabase.from("candidate_records").select("recruiter,id,status").range(from, to),
+      filters
+    )
   );
 
-  if (error) throw error;
-
   const map = new Map();
-  (data || []).forEach((row) => {
+  allData.forEach((row) => {
     const recruiter = String(row.recruiter || "Unknown").trim() || "Unknown";
     const current = map.get(recruiter) || { recruiter, candidates: 0, interviews: 0, closures: 0 };
 
     current.candidates += 1;
-    if (row.status === "Interview Scheduled") current.interviews += 1;
-    if (row.status === "Joined") current.closures += 1;
+    if (["L1 Scheduled","L2 Scheduled","AI Interview","Assessment Round","HR Round","Interview Scheduled"].includes(row.status)) current.interviews += 1;
+    if (row.status === "Closure") current.closures += 1;
 
     map.set(recruiter, current);
   });
@@ -126,51 +146,38 @@ export const getRecruiterPerformance = async (filters = {}) => {
 };
 
 export const getClientPerformance = async (filters = {}) => {
-  const [candidateRes, revenueRes] = await Promise.all([
-    applyCandidateFilters(
-      supabase.from("candidate_records").select("client_name,id,status,recruiter"),
-      filters
+  const [candidateData, revenueData] = await Promise.all([
+    fetchAllPages((from, to) =>
+      applyCandidateFilters(
+        supabase.from("candidate_records").select("client_name,id,status,recruiter").range(from, to),
+        filters
+      )
     ),
-    applyRevenueFilters(
-      supabase.from("revenue_tracker").select("client_name,margin_value,recruiter_name,doj"),
-      filters
+    fetchAllPages((from, to) =>
+      applyRevenueFilters(
+        supabase.from("revenue_tracker").select("client_name,margin_value,recruiter_name,doj").range(from, to),
+        filters
+      )
     ),
   ]);
 
-  if (candidateRes.error) throw candidateRes.error;
-  if (revenueRes.error) throw revenueRes.error;
-
   const map = new Map();
 
-  (candidateRes.data || []).forEach((row) => {
+  candidateData.forEach((row) => {
     const client = String(row.client_name || "Unknown").trim() || "Unknown";
-    const current = map.get(client) || {
-      client,
-      candidates: 0,
-      interviews: 0,
-      shortlisted: 0,
-      closures: 0,
-      revenue: 0,
-    };
+    const current = map.get(client) || { client, candidates: 0, interviews: 0, shortlisted: 0, closures: 0, revenue: 0 };
 
     current.candidates += 1;
-    if (row.status === "Interview Scheduled") current.interviews += 1;
+    if (["L1 Scheduled","L2 Scheduled","AI Interview","Assessment Round","HR Round","Interview Scheduled"].includes(row.status)) current.interviews += 1;
     if (row.status === "Shortlisted") current.shortlisted += 1;
-    if (row.status === "Joined") current.closures += 1;
+    if (row.status === "Closure") current.closures += 1;
 
     map.set(client, current);
   });
 
-  (revenueRes.data || []).forEach((row) => {
+  revenueData.forEach((row) => {
     const client = String(row.client_name || "Unknown").trim() || "Unknown";
-    const current = map.get(client) || {
-      client,
-      candidates: 0,
-      interviews: 0,
-      shortlisted: 0,
-      closures: 0,
-      revenue: 0,
-    };
+    const current = map.get(client) || { client, candidates: 0, interviews: 0, shortlisted: 0, closures: 0, revenue: 0 };
 
     current.revenue += sanitizeMarginValue(row.margin_value);
     map.set(client, current);
@@ -180,15 +187,15 @@ export const getClientPerformance = async (filters = {}) => {
 };
 
 export const getStatusDistribution = async (filters = {}) => {
-  const { data, error } = await applyCandidateFilters(
-    supabase.from("candidate_records").select("status"),
-    filters
+  const allData = await fetchAllPages((from, to) =>
+    applyCandidateFilters(
+      supabase.from("candidate_records").select("status").range(from, to),
+      filters
+    )
   );
 
-  if (error) throw error;
-
   const map = new Map();
-  (data || []).forEach((row) => {
+  allData.forEach((row) => {
     const status = String(row.status || "Unknown").trim() || "Unknown";
     map.set(status, (map.get(status) || 0) + 1);
   });
@@ -197,81 +204,62 @@ export const getStatusDistribution = async (filters = {}) => {
 };
 
 export const getHiringFunnel = async (filters = {}) => {
-  const { data, error } = await applyCandidateFilters(
-    supabase.from("candidate_records").select("status"),
-    filters
+  const rows = await fetchAllPages((from, to) =>
+    applyCandidateFilters(
+      supabase.from("candidate_records").select("status").range(from, to),
+      filters
+    )
   );
 
-  if (error) throw error;
-
-  const rows = data || [];
-
   return [
-    { stage: "Submitted", value: rows.filter((r) => ["Profile Submitted", "Submitted"].includes(r.status)).length },
-    { stage: "Interview", value: rows.filter((r) => /interview/i.test(String(r.status || ""))).length },
-    { stage: "Offer", value: rows.filter((r) => /offer/i.test(String(r.status || ""))).length },
-    { stage: "Joined", value: rows.filter((r) => r.status === "Joined").length },
+    { stage: "Screening", value: rows.filter((r) => ["Screen Select","Screen Reject","Screen rejected"].includes(r.status)).length },
+    { stage: "Interview", value: rows.filter((r) => ["L1 Scheduled","L2 Scheduled"].includes(r.status)).length },
+    { stage: "Rejected", value: rows.filter((r) => ["L1 Reject","L2 Reject","Final Round Reject"].includes(r.status)).length },
+    { stage: "Dropout", value: rows.filter((r) => ["Drop Out","Back Out","Backout"].includes(r.status)).length },
+    { stage: "Closure", value: rows.filter((r) => r.status === "Closure").length },
   ];
 };
 
 export const getReportsTableData = async (filters = {}) => {
-  const [candidateRes, revenueRes] = await Promise.all([
-    applyCandidateFilters(
-      supabase.from("candidate_records").select("client_name,id,status,recruiter"),
-      filters
+  const [candidateData, revenueData] = await Promise.all([
+    fetchAllPages((from, to) =>
+      applyCandidateFilters(
+        supabase.from("candidate_records").select("client_name,id,status,recruiter").range(from, to),
+        filters
+      )
     ),
-    applyRevenueFilters(
-      supabase.from("revenue_tracker").select("client_name,margin_value,recruiter_name,doj"),
-      filters
+    fetchAllPages((from, to) =>
+      applyRevenueFilters(
+        supabase.from("revenue_tracker").select("client_name,margin_value,recruiter_name,doj").range(from, to),
+        filters
+      )
     ),
   ]);
 
-  if (candidateRes.error) throw candidateRes.error;
-  if (revenueRes.error) throw revenueRes.error;
-
-  // Single normalization function used everywhere
   const normalizeKey = (str) =>
     String(str || "").toLowerCase().replace(/[\s\-\[\]()_.,]/g, "");
 
   const map = new Map();
 
-  (candidateRes.data || []).forEach((row) => {
+  candidateData.forEach((row) => {
     const clientRaw = String(row.client_name || "Unknown").trim() || "Unknown";
     const recruiter = String(row.recruiter || "Unknown").trim() || "Unknown";
     const key = `${normalizeKey(clientRaw)}||${normalizeKey(recruiter)}`;
-
-    const current = map.get(key) || {
-      client: clientRaw,
-      recruiter,
-      candidates: 0,
-      interviews: 0,
-      shortlisted: 0,
-      closures: 0,
-      revenue: 0,
-    };
+    const current = map.get(key) || { client: clientRaw, recruiter, candidates: 0, interviews: 0, shortlisted: 0, closures: 0, revenue: 0 };
 
     current.candidates += 1;
-    if (row.status === "Interview Scheduled") current.interviews += 1;
+    if (["L1 Scheduled","L2 Scheduled","AI Interview","Assessment Round","HR Round","Interview Scheduled"].includes(row.status)) current.interviews += 1;
     if (row.status === "Shortlisted") current.shortlisted += 1;
-    if (row.status === "Joined") current.closures += 1;
+    if (row.status === "Closure") current.closures += 1;
 
     map.set(key, current);
   });
 
-  (revenueRes.data || []).forEach((row) => {
+  revenueData.forEach((row) => {
     const clientRaw = String(row.client_name || "Unknown").trim() || "Unknown";
     const recruiter = String(row.recruiter_name || "Unknown").trim() || "Unknown";
     const key = `${normalizeKey(clientRaw)}||${normalizeKey(recruiter)}`;
-
-    const current = map.get(key) || {
-      client: clientRaw,
-      recruiter,
-      candidates: 0,
-      interviews: 0,
-      shortlisted: 0,
-      closures: 0,
-      revenue: 0,
-    };
+    const current = map.get(key) || { client: clientRaw, recruiter, candidates: 0, interviews: 0, shortlisted: 0, closures: 0, revenue: 0 };
 
     current.revenue += sanitizeMarginValue(row.margin_value);
     map.set(key, current);
@@ -283,41 +271,30 @@ export const getReportsTableData = async (filters = {}) => {
 };
 
 export const getFilterOptions = async (filters = {}) => {
-  const [clientsRes, recruitersRes, statusesRes] = await Promise.all([
-    applyCandidateFilters(
-      supabase.from("candidate_records").select("client_name"),
-      { ...filters, client: "", status: "" }
+  const [clientsData, recruitersData, statusesData] = await Promise.all([
+    fetchAllPages((from, to) =>
+      applyCandidateFilters(
+        supabase.from("candidate_records").select("client_name").range(from, to),
+        { ...filters, client: "", status: "" }
+      )
     ),
-    applyCandidateFilters(
-      supabase.from("candidate_records").select("recruiter"),
-      { ...filters, recruiter: "", status: "" }
+    fetchAllPages((from, to) =>
+      applyCandidateFilters(
+        supabase.from("candidate_records").select("recruiter").range(from, to),
+        { ...filters, recruiter: "", status: "" }
+      )
     ),
-    applyCandidateFilters(
-      supabase.from("candidate_records").select("status"),
-      { ...filters, status: "" }
+    fetchAllPages((from, to) =>
+      applyCandidateFilters(
+        supabase.from("candidate_records").select("status").range(from, to),
+        { ...filters, status: "" }
+      )
     ),
   ]);
 
-  if (clientsRes.error) throw clientsRes.error;
-  if (recruitersRes.error) throw recruitersRes.error;
-  if (statusesRes.error) throw statusesRes.error;
-
-  const clients = Array.from(
-    new Set((clientsRes.data || []).map((r) => String(r.client_name || "").trim()).filter(Boolean))
-  ).sort((a, b) => a.localeCompare(b));
-
-  const recruiters = Array.from(
-    new Set((recruitersRes.data || []).map((r) => String(r.recruiter || "").trim()).filter(Boolean))
-  ).sort((a, b) => a.localeCompare(b));
-
-  const statuses = Array.from(
-    new Set((statusesRes.data || []).map((r) => String(r.status || "").trim()).filter(Boolean))
-  ).sort((a, b) => a.localeCompare(b));
+  const clients = [...new Set(clientsData.map((r) => String(r.client_name || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const recruiters = [...new Set(recruitersData.map((r) => String(r.recruiter || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const statuses = [...new Set(statusesData.map((r) => String(r.status || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 
   return { clients, recruiters, statuses };
 };
-
-
-
-
-

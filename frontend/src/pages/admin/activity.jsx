@@ -32,6 +32,7 @@ export default function AdminActivity() {
         ...getRoleQueryValues("manager"),
         ...getRoleQueryValues("recruiter"),
         ...getRoleQueryValues("tl"),
+        ...getRoleQueryValues("bde"),
       ])
       .order("last_seen_at", { ascending: false });
 
@@ -45,7 +46,7 @@ export default function AdminActivity() {
     const managers = allRows.filter((r) => String(r.role || "").toLowerCase() === "manager");
     const recruiters = allRows.filter((r) => String(r.role || "").toLowerCase() === "recruiter");
     const tls = allRows.filter((r) => String(r.role || "").toLowerCase() === "tl");
-
+const bdes = allRows.filter((r) => String(r.role || "").toLowerCase() === "bde"); 
     setStats({
       managersOnline: managers.filter((r) => r.is_online).length,
       managersOffline: managers.filter((r) => !r.is_online).length,
@@ -53,6 +54,8 @@ export default function AdminActivity() {
       recruitersOffline: recruiters.filter((r) => !r.is_online).length,
       tlsOnline: tls.filter((r) => r.is_online).length,
       tlsOffline: tls.filter((r) => !r.is_online).length,
+       bdesOnline: bdes.filter((r) => r.is_online).length,
+  bdesOffline: bdes.filter((r) => !r.is_online).length,
     });
 
     setRows(allRows);
@@ -81,6 +84,8 @@ export default function AdminActivity() {
     { title: "Recruiters Offline", value: stats.recruitersOffline, sub: "Currently inactive recruiters" },
     { title: "TL Online", value: stats.tlsOnline, sub: "Currently active team leads" },
     { title: "TL Offline", value: stats.tlsOffline, sub: "Currently inactive team leads" },
+      { title: "BDE Online", value: stats.bdesOnline, sub: "Currently active BDEs" },
+  { title: "BDE Offline", value: stats.bdesOffline, sub: "Currently inactive BDEs" },
   ];
 
   const filteredRows = roleFilter === "all" 
@@ -113,6 +118,13 @@ export default function AdminActivity() {
         >
           TL
         </button>
+        <button
+  type="button"
+  onClick={() => setRoleFilter(roleFilter === "all" ? "bde" : "all")}
+  style={roleFilter === "bde" ? styles.roleCardActive : styles.roleCard}
+>
+  BDE
+</button>
       </div>
 
       <div style={styles.grid}>

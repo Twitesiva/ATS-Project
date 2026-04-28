@@ -13,6 +13,10 @@ SUPABASE_URL = os.getenv("SUPABASE_URL", "https://vnojbpuphsvzrvmjxoei.supabase.
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZub2picHVwaHN2enJ2bWp4b2VpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4MTc1NDMsImV4cCI6MjA4NzM5MzU0M30.ah660DfGEpsa6XBcyjVDc7snPk8lqvadUZjgTtizbSQ")
 SUPABASE_RESUME_BUCKET = os.getenv("SUPABASE_RESUME_BUCKET", "resumes")
 
+# Storage mode: PRIMARY = Supabase Storage (no local file saving)
+# Set to False only for legacy local-only mode (not recommended for production)
+SUPABASE_STORAGE_PRIMARY = True
+
 MAX_CONTENT_LENGTH = 10 * 1024 * 1024  # 10 MB per file
 ALLOWED_EXTENSIONS = {"pdf", "docx"}
 MIN_RESUMES = 1

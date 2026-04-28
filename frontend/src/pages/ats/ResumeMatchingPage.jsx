@@ -137,9 +137,22 @@ export default function ResumeMatchingPage() {
       setProgressStep(3);
       await new Promise(resolve => setTimeout(resolve, 50));
       
-      setResults(matchData.results || []);
-      await storeResumes(matchData.results || []);
-      setProgressStep(4);
+     // Enrich results with resume_file_url from upload data
+const urlByPath = {};
+(uploadData.resume_paths || []).forEach(r => {
+  if (r.path && r.resume_file_url) {
+    urlByPath[r.path] = r.resume_file_url;
+  }
+});
+
+const enrichedResults = (matchData.results || []).map(result => ({
+  ...result,
+  resume_file_url: result.resume_file_url || urlByPath[result.path] || ""
+}));
+
+setResults(enrichedResults);
+await storeResumes(enrichedResults);
+setProgressStep(4);
     } catch (err) {
       setSubmitError(err.response?.data?.error || err.message || "Request failed");
       setShowEarlyResults(false);

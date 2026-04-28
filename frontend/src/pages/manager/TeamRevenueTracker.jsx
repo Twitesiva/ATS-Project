@@ -71,7 +71,6 @@ const emptyForm = {
     return acc;
   }, {}),
   hire: "",
-  ctc: "",
   bd_name: "", 
 };
 
@@ -251,7 +250,24 @@ useEffect(() => {
     if (saving) return;
     setShowModal(false);
     setEditRecord(null);
+  };const calculateMargins = (row) => {
+  const billingRate = numeric(row.billing_rate);
+  const ctc = numeric(row.ctc);
+
+  if (billingRate === null || ctc === null) {
+    return { margin_value: null, margin_percent: null };
+  }
+
+  const margin_value = billingRate - ctc;
+  const margin_percent = ctc !== 0 ? (margin_value / ctc) * 100 : null;
+
+  return {
+    margin_value: Number.isFinite(margin_value) ? margin_value : null,
+    margin_percent: Number.isFinite(margin_percent)
+      ? parseFloat(margin_percent.toFixed(2))
+      : null,
   };
+};
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -600,17 +616,7 @@ function TeamRevenueModal({ form, saving, editing, bdeOptions, onChange, onClose
 
                 {isPermanent && (
                   <>
-                    <label style={styles.fieldLabel}>
-                      CTC
-                      <input
-                        style={styles.modalInput}
-                        type="text"
-                        name="ctc"
-                        value={form.ctc ?? ""}
-                        onChange={onChange}
-                      />
-                    </label>
-
+                  
                     <label style={styles.fieldLabel}>
                       Twite Billing Rate
                       <input

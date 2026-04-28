@@ -126,14 +126,18 @@ def match():
         # FALLBACK: Full enhanced pipeline without ANN
         print("[STAGE 2] Parsing resumes...")
         parsed = parse_resumes_from_paths(resume_paths, max_workers=4)
-        
         resume_items = []
         for item in parsed:
             res_skills, res_exp, res_locations, res_phones, res_emails = extract_resume_entities(item["text"])
+            resume_file_url = next(
+                (r.get("resume_file_url") for r in resume_paths if r.get("path") == item["path"]),
+                None
+            )
             resume_items.append({
                 "text": item["text"],
                 "original_name": item["original_name"],
                 "path": item["path"],
+                "resume_file_url": resume_file_url,  # ✅ added
                 "skills": res_skills,
                 "experience_years": res_exp,
                 "locations": res_locations,

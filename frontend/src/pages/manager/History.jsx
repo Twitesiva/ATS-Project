@@ -3,32 +3,20 @@ import { supabase } from "../../services/supabaseClient";
 import Loader from "../../components/common/Loader";
 
 function dedupeHistoryRows(rows) {
-  const sorted = [...(rows || [])].sort(
+  return [...(rows || [])].sort(
     (a, b) =>
       new Date(b.updated_at || 0).getTime() - new Date(a.updated_at || 0).getTime() ||
       Number(b.id || 0) - Number(a.id || 0)
   );
-  const seen = new Set();
-  const deduped = [];
-
-  // Exact key required: recruiter_name + candidate_id + new_status
-  sorted.forEach((row) => {
-    const key = `${row.recruiter_name ?? ""}-${row.candidate_id ?? ""}-${row.new_status ?? ""}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-    deduped.push(row);
-  });
-
-  return deduped;
 }
 
 function mapRow(row) {
   return {
     id: row.id,
     candidateId: row.candidate_id ?? null,
-    recruiterName: row.recruiter_name || "-",
-    candidateName: row.candidate_name || "-",
-    status: row.new_status || "-",
+    recruiterName: (row.recruiter_name || "-").trim(),
+    candidateName: (row.candidate_name || "-").trim(),
+    status: (row.new_status || "-").trim(),
     updatedAt: row.updated_at || null,
   };
 }
@@ -37,24 +25,55 @@ export default function History() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [rows, setRows] = useState([]);
-  const [searchMode, setSearchMode] = useState("candidate"); // "candidate" | "recruiter"
+  const [searchMode, setSearchMode] = useState("candidate");
   const [searchText, setSearchText] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-const [dateFilter, setDateFilter] = useState("all"); // all | today | last7 | last30 | custom
+  const [dateFilter, setDateFilter] = useState("all");
   const [fromDate, setFromDate] = useState("");
-const [toDate, setToDate] = useState("");
-  const [roleFilter, setRoleFilter] = useState("all"); // all | manager | recruiter
+  const [toDate, setToDate] = useState("");
+  const [roleFilter, setRoleFilter] = useState("all");
   const tableWrapRef = useRef(null);
   const dragRef = useRef(null);
   const [scrollInfo, setScrollInfo] = useState({ scrollTop: 0, clientHeight: 0, scrollHeight: 0 });
+  const [recruiterOptions, setRecruiterOptions] = useState([]);
 
   useEffect(() => {
-    // Remove the outer page scrollbar on this screen (table has its own scroll area).
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = prev;
     };
+  }, []);
+
+  useEffect(() => {
+    const fetchRecruiters = async () => {
+      const pageSize = 1000;
+      let allNames = [];
+      let from = 0;
+      let hasMore = true;
+
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from("status_history")
+          .select("recruiter_name")
+          .not("recruiter_name", "is", null)
+          .neq("recruiter_name", "")
+          .range(from, from + pageSize - 1);
+
+        if (error) break;
+        if (!data || data.length === 0) { hasMore = false; break; }
+
+        allNames = allNames.concat(data.map((r) => r.recruiter_name));
+        hasMore = data.length === pageSize;
+        from += pageSize;
+      }
+
+      const unique = [...new Set(allNames)].sort((a, b) =>
+        a.localeCompare(b, undefined, { sensitivity: "base" })
+      );
+      setRecruiterOptions(unique);
+    };
+    fetchRecruiters();
   }, []);
 
   useEffect(() => {
@@ -64,28 +83,38 @@ const [toDate, setToDate] = useState("");
       setLoading(true);
       setError("");
 
-      const { data, error } = await supabase
-        .from("status_history")
-        .select("id,candidate_id,recruiter_name,candidate_name,new_status,updated_at")
-        .order("updated_at", { ascending: false })
-        .order("id", { ascending: false });
+      const pageSize = 1000;
+      let allData = [];
+      let from = 0;
+      let hasMore = true;
+
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from("status_history")
+          .select("id,candidate_id,recruiter_name,candidate_name,new_status,updated_at")
+          .order("updated_at", { ascending: false })
+          .order("id", { ascending: false })
+          .range(from, from + pageSize - 1);
+
+        if (error) {
+          console.error("[manager-history] fetch failed", error);
+          if (mounted) {
+            setError(error.message || "Failed to load history");
+            setLoading(false);
+          }
+          return;
+        }
+
+        if (!data || data.length === 0) { hasMore = false; break; }
+
+        allData = allData.concat(data);
+        hasMore = data.length === pageSize;
+        from += pageSize;
+      }
 
       if (!mounted) return;
 
-      if (error) {
-        console.error("[manager-history] fetch failed", error);
-        setError(error.message || "Failed to load history");
-        setLoading(false);
-        return;
-      }
-
-      console.log("[manager-history] fetch success", data || []);
-      const dedupedRows = dedupeHistoryRows(data || []);
-      console.log("[manager-history] rows after dedupe", {
-        total: (data || []).length,
-        deduped: dedupedRows.length,
-      });
-      setRows(dedupedRows);
+      setRows(dedupeHistoryRows(allData));
       setLoading(false);
     };
 
@@ -97,16 +126,13 @@ const [toDate, setToDate] = useState("");
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "status_history" },
         (payload) => {
-          console.log("[manager-history] realtime insert", payload.new);
           setRows((prev) => {
             const merged = [payload.new, ...prev];
             return dedupeHistoryRows(merged);
           });
         }
       )
-      .subscribe((status) => {
-        console.log("[manager-history] realtime status", status);
-      });
+      .subscribe();
 
     return () => {
       mounted = false;
@@ -116,7 +142,7 @@ const [toDate, setToDate] = useState("");
 
   const mappedRows = useMemo(() => rows.map(mapRow), [rows]);
 
-const filteredRows = useMemo(() => {
+  const filteredRows = useMemo(() => {
     const text = (searchText || "").trim().toLowerCase();
     const statusValue = (statusFilter || "all").trim();
 
@@ -141,22 +167,29 @@ const filteredRows = useMemo(() => {
     }
 
     return mappedRows.filter((r) => {
-      if (statusValue !== "all" && String(r.status || "").trim() !== statusValue) return false;
+      // Status filter
+      if (statusValue !== "all" && String(r.status || "").trim().toLowerCase() !== statusValue.trim().toLowerCase()) return false;
 
+      // Role filter
       if (roleFilter !== "all") {
         const isManager = r.recruiterName?.toLowerCase() === "manager";
         if (roleFilter === "manager" && !isManager) return false;
         if (roleFilter === "recruiter" && isManager) return false;
       }
 
+      // Search filter
       if (text) {
-        const hay =
-          searchMode === "recruiter"
-            ? String(r.recruiterName || "").toLowerCase()
-            : String(r.candidateName || "").toLowerCase();
-        if (!hay.includes(text)) return false;
+        if (searchMode === "recruiter") {
+          const recruiterLower = String(r.recruiterName || "").trim().toLowerCase();
+          const searchLower = (searchText || "").trim().toLowerCase();
+          if (recruiterLower !== searchLower) return false;
+        } else {
+          const candidateLower = String(r.candidateName || "").toLowerCase();
+          if (!candidateLower.includes(text)) return false;
+        }
       }
 
+      // Date range filter
       if (rangeStart || rangeEnd) {
         if (!r.updatedAt) return false;
         const d = new Date(r.updatedAt);
@@ -203,9 +236,8 @@ const filteredRows = useMemo(() => {
     const maxScrollTop = Math.max(0, scrollHeight - clientHeight);
     const canScroll = maxScrollTop > 1;
 
-    // Custom thumb: keep it visibly "longer" via a large min height, even for large datasets.
     const MIN_THUMB_PX = 160;
-    const trackHeight = Math.max(0, clientHeight - 10); // account for top/bottom padding
+    const trackHeight = Math.max(0, clientHeight - 10);
     let thumbHeight = canScroll ? Math.round((clientHeight * clientHeight) / scrollHeight) : trackHeight;
     thumbHeight = Math.max(MIN_THUMB_PX, thumbHeight);
     thumbHeight = Math.min(trackHeight, thumbHeight);
@@ -226,12 +258,11 @@ const filteredRows = useMemo(() => {
   };
 
   const handleTrackMouseDown = (e) => {
-    // Click on track jumps thumb (unless dragging thumb).
     if (e.target?.dataset?.thumb === "1") return;
     const el = tableWrapRef.current;
     if (!el) return;
     const trackRect = e.currentTarget.getBoundingClientRect();
-    const y = e.clientY - trackRect.top - 5; // matches track padding
+    const y = e.clientY - trackRect.top - 5;
     setScrollTopFromThumbTop(y - vScroll.thumbHeight / 2);
   };
 
@@ -281,27 +312,30 @@ const filteredRows = useMemo(() => {
     []
   );
 
+  const handleRoleFilter = (role) => {
+    setRoleFilter((prev) => (prev === role ? "all" : role));
+  };
+
   return (
     <div style={styles.page}>
       <style>{`
-        /* Hide native scrollbars (we render a custom vertical scrollbar). */
         .history-table-wrap { scrollbar-width: none; }
         .history-table-wrap::-webkit-scrollbar { width: 0; height: 0; }
-`}</style>
+      `}</style>
 
-<h2 style={styles.title}>Recruiters History</h2>
+      <h2 style={styles.title}>Recruiters History</h2>
 
       <div style={styles.roleCards}>
         <button
           type="button"
-          onClick={() => setRoleFilter(roleFilter === "all" ? "manager" : "all")}
+          onClick={() => handleRoleFilter("manager")}
           style={roleFilter === "manager" ? styles.roleCardActive : styles.roleCard}
         >
           Manager
         </button>
         <button
           type="button"
-          onClick={() => setRoleFilter(roleFilter === "all" ? "recruiter" : "all")}
+          onClick={() => handleRoleFilter("recruiter")}
           style={roleFilter === "recruiter" ? styles.roleCardActive : styles.roleCard}
         >
           Recruiter
@@ -312,26 +346,39 @@ const filteredRows = useMemo(() => {
         <div style={styles.searchModeGroup} role="group" aria-label="Search mode">
           <button
             type="button"
-            onClick={() => setSearchMode("candidate")}
+            onClick={() => { setSearchMode("candidate"); setSearchText(""); }}
             style={searchMode === "candidate" ? styles.modeBtnActive : styles.modeBtn}
           >
             Candidate
           </button>
           <button
             type="button"
-            onClick={() => setSearchMode("recruiter")}
+            onClick={() => { setSearchMode("recruiter"); setSearchText(""); }}
             style={searchMode === "recruiter" ? styles.modeBtnActive : styles.modeBtn}
           >
             Recruiter
           </button>
         </div>
 
-        <input
-          value={searchText}
-          onChange={(e) => setSearchText(e.target.value)}
-          placeholder={searchMode === "recruiter" ? "Search recruiter..." : "Search candidate..."}
-          style={styles.searchInput}
-        />
+        {searchMode === "recruiter" ? (
+          <select
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            style={styles.select}
+          >
+            <option value="">All Recruiters</option>
+            {recruiterOptions.map((name) => (
+              <option key={name} value={name}>{name}</option>
+            ))}
+          </select>
+        ) : (
+          <input
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            placeholder="Search candidate..."
+            style={styles.searchInput}
+          />
+        )}
 
         <select value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} style={styles.select}>
           <option value="all">All dates</option>
@@ -351,15 +398,13 @@ const filteredRows = useMemo(() => {
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={styles.select}>
           <option value="all">All status</option>
           {STATUS_OPTIONS.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
+            <option key={s} value={s}>{s}</option>
           ))}
         </select>
 
         <button
           type="button"
-onClick={() => {
+          onClick={() => {
             setSearchMode("candidate");
             setSearchText("");
             setStatusFilter("all");
@@ -396,21 +441,15 @@ onClick={() => {
                 </tr>
               ) : error ? (
                 <tr>
-                  <td style={styles.td} colSpan={4}>
-                    {error}
-                  </td>
+                  <td style={styles.td} colSpan={4}>{error}</td>
                 </tr>
               ) : mappedRows.length === 0 ? (
                 <tr>
-                  <td style={styles.td} colSpan={4}>
-                    No status updates found
-                  </td>
+                  <td style={styles.td} colSpan={4}>No status updates found</td>
                 </tr>
               ) : filteredRows.length === 0 ? (
                 <tr>
-                  <td style={styles.td} colSpan={4}>
-                    No results match your filters
-                  </td>
+                  <td style={styles.td} colSpan={4}>No results match your filters</td>
                 </tr>
               ) : (
                 filteredRows.map((r) => (
@@ -450,13 +489,12 @@ const styles = {
   page: {
     padding: "20px",
     height: "100vh",
-    // Keep scrolling inside the table only (no outer page scrollbar).
     overflow: "hidden",
     boxSizing: "border-box",
     display: "flex",
     flexDirection: "column",
   },
-title: {
+  title: {
     margin: "0 0 12px 0",
     flexShrink: 0,
   },

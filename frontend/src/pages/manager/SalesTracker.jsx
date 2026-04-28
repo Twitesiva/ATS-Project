@@ -219,9 +219,9 @@ const getAnalyticsFromRows = (rows) => {
   const totals = rows.reduce(
     (acc, row) => {
       const client = String(row.client_name || "").trim() || "Unknown";
-      const status = String(row.status || "").trim() || "Unknown";
-      const monthKey = toMonthKey(row.onboarded_month);
-      const monthLabel = toMonthLabel(row.onboarded_month);
+const status = String(row.status || "").trim() || "Unknown";
+const monthKey = toMonthKey(row.created_at);
+const monthLabel = toMonthLabel(row.created_at);
       const hireMode = normalizeHireMode(row.hire_mode);
 
       const submitted = toNumber(row.profiles_submitted);
@@ -255,7 +255,8 @@ const getAnalyticsFromRows = (rows) => {
       pipeline.closures += closures;
       pipelineMap.set(client, pipeline);
 
-      statusMap.set(status, (statusMap.get(status) || 0) + 1);
+const clientStatus = row.offboarded_month ? "Offboarded" : "Active";
+statusMap.set(clientStatus, (statusMap.get(clientStatus) || 0) + 1);
       hireModeMap.set(hireMode, (hireModeMap.get(hireMode) || 0) + submitted);
 
       if (monthKey) {
@@ -651,7 +652,7 @@ export default function SalesTracker() {
       </div>
 
       <div style={styles.chartGrid}>
-        <ChartCard title="Status Distribution" subtitle="Record count by status">
+<ChartCard title="Client Status Distribution" subtitle="Active vs Offboarded clients">
           <div style={styles.chartWrap}>
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -841,15 +842,29 @@ function SalesTrackerModal({ form, editingRow, saving, onChange, onClose, onSave
               </div>
               <div style={styles.sectionGrid}>
                 {columnConfig.map((column) => (
-                  <label key={column.key} style={styles.fieldLabel}>
-                    {column.label}
-                    {column.type === "textarea" ? (
-                      <textarea style={styles.modalTextarea} name={column.key} value={form[column.key]} onChange={onChange} />
-                    ) : (
-                      <input style={styles.modalInput} type={column.type === "month" ? "month" : "text"} name={column.key} value={form[column.key]} onChange={onChange} />
-                    )}
-                  </label>
-                ))}
+  <label key={column.key} style={styles.fieldLabel}>
+    {column.label}
+    {column.key === "status" ? (
+      <select style={styles.modalInput} name={column.key} value={form[column.key]} onChange={onChange}>
+        <option value="">Select Status</option>
+        <option value="Active">Active</option>
+        <option value="Inactive">Inactive</option>
+        <option value="On Hold">On Hold</option>
+        <option value="Offboarded">Offboarded</option>
+      </select>
+    ) : column.key === "hire_mode" ? (
+      <select style={styles.modalInput} name={column.key} value={form[column.key]} onChange={onChange}>
+        <option value="">Select Hire Mode</option>
+        <option value="Permanent">Permanent</option>
+        <option value="Contract">Contract</option>
+      </select>
+    ) : column.type === "textarea" ? (
+      <textarea style={styles.modalTextarea} name={column.key} value={form[column.key]} onChange={onChange} />
+    ) : (
+      <input style={styles.modalInput} type={column.type === "month" ? "month" : "text"} name={column.key} value={form[column.key]} onChange={onChange} />
+    )}
+  </label>
+))}
               </div>
             </div>
           </form>

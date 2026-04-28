@@ -536,7 +536,7 @@ const rcDatasets = [
 
   const swLeadRows = buildLeadRows(swD.weekComps || [], swD.weekReqs || []);
   const swRequirementRows = buildRequirementRows(swD.weekReqs || [], swD.weekComps || []);
-  const swActivityRows = buildActivityRows(swD.weekActs || [], swD.weekComps || []);
+const swActivityRows = buildActivityRows(swD.weekActs || [], userComps);
   const swClosureRows = (swD.weekClosures || []).map((r, idx) => ({
     id:            r.id || `closure-${idx}`,
     activity_date: r.doj || "",

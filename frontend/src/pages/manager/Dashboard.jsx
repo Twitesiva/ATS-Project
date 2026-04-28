@@ -49,8 +49,10 @@ const parseRevenueValue = (value) => {
 };
 
 const normalizeRecruiter = (value) => {
-  const name = String(value || "").trim().toLowerCase();
-  return name || "Unknown";
+  const name = String(value || "").trim();
+  if (!name) return "Unknown";
+  // Title case: "dhanavarshini" → "Dhanavarshini"
+  return name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
 };
 
 const normalizeClient = (value) => {
@@ -101,21 +103,28 @@ export default function Dashboard() {
       overallMarginRes,
     ] = await Promise.all([
       supabase
-        .from("candidate_records")
-        .select("*", { count: "exact" })
-        .neq("status", "Joined")
-        .neq("status", "Closure")
-        ,
+  .from("candidate_records")
+  .select("*", { count: "exact" })
+  .not("status", "in", "(Closure,Drop Out By Client,Drop Out By Candidate,Backout,Position Closed,L1 Reject,L2 Reject,Final Round Rejected)"),
       supabase.from("client_records").select("number_of_openings,closure"),
-      supabase
-        .from("status_history")
-        .select("new_status", { count: "exact" })
-        .in("new_status", Array.from(INTERVIEW_STATUSES))
+supabase
+  .from("candidate_records")
+  .select("*", { count: "exact" })
+  .in("status", [
+    "L1 Scheduled",
+    "L2 Scheduled",
+    "AI Interview",
+    "Assessment Round",
+    "HR Round",
+    "Interview Scheduled"
+  ])
         ,
-      supabase
-        .from("status_history")
-        .select("*", { count: "exact" })
-        .eq("new_status", "Closure")
+     supabase
+  .from("candidate_records")
+  .select("*", { count: "exact" })
+  .eq("status", "Closure")
+  .gte("updated_at", start)
+  .lte("updated_at", end)
         ,
       supabase
         .from("revenue_tracker")

@@ -1,6 +1,4 @@
 """Supabase schema: initialize database connection."""
-import os
-from backend.config import UPLOAD_FOLDER
 
 
 def get_db():
@@ -10,6 +8,5 @@ def get_db():
 
 
 def init_db():
-    """Create uploads dir. Database tables are managed in Supabase."""
-    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+    """Database tables are managed in Supabase. Local uploads dir is no longer needed."""
     print("Database initialized: Using Supabase PostgreSQL")

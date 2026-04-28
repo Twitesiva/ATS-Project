@@ -1,10 +1,14 @@
-"""Upload APIs: matching upload and bulk resume ingestion."""
+"""Upload APIs: matching upload and bulk resume ingestion.
+
+REFACTORED: Uploads now go directly to Supabase Storage (bucket: 'resumes').
+No local file saving is performed.
+"""
 from flask import Blueprint, request, jsonify
-from backend.config import UPLOAD_FOLDER
 from backend.utils.validation import validate_upload
 import os
 import uuid
 import re
+import io
 import zipfile
 import mimetypes
 from concurrent.futures import ThreadPoolExecutor
@@ -14,6 +18,128 @@ from backend.utils.jd_extractor import extract_jd_text
 
 bp = Blueprint("upload", __name__)
 
+
+# ─── Supabase Storage helpers ────────────────────────────────────────────────
+def _supabase_storage_upload(data: bytes, object_name: str, bucket: str = None):
+    from backend.services.supabase_client import get_supabase_client
+    from backend.config import SUPABASE_RESUME_BUCKET
+
+    bucket = (bucket or SUPABASE_RESUME_BUCKET or "").strip()
+    if not bucket:
+        raise RuntimeError("No Supabase Storage bucket configured (SUPABASE_RESUME_BUCKET)")
+
+    mime, _ = mimetypes.guess_type(object_name)
+    supabase = get_supabase_client()
+    
+    supabase.storage.from_(bucket).upload(
+        object_name,
+        data,
+        {
+            "content-type": mime or "application/octet-stream",
+            "upsert": "true",
+        },
+    )
+    
+    public_url = supabase.storage.from_(bucket).get_public_url(object_name)
+    
+    # ADD THESE DEBUG LINES
+    print("=== STORAGE DEBUG ===")
+    print(f"Bucket: {bucket}")
+    print(f"Object: {object_name}")
+    print(f"Public URL returned: {public_url}")
+    print(f"URL type: {type(public_url)}")
+    print("====================")
+    
+    return public_url
+
+
+def _save_uploaded_resume_file(file_obj):
+    """
+    Read an uploaded resume file and stream it directly to Supabase Storage.
+    Returns dict with path (object_name), original_name, resume_file_url, bytes.
+    """
+    ext = os.path.splitext(file_obj.filename or "")[-1].lower()
+    unique_name = f"{uuid.uuid4().hex}{ext}"
+    file_bytes = file_obj.read()
+
+    public_url = _supabase_storage_upload(file_bytes, unique_name)
+
+    return {
+        "path": unique_name,
+        "original_name": os.path.basename(file_obj.filename or unique_name),
+        "resume_file_url": public_url,
+         "bytes": file_bytes,  
+    }
+
+
+def _extract_resumes_from_zip(zip_file):
+    """
+    Extract supported resume files from an uploaded ZIP and upload each
+    directly to Supabase Storage (in-memory).
+    """
+    extracted = []
+    failures = []
+    zip_filename = zip_file.filename or "uploaded.zip"
+
+    try:
+        zip_file.stream.seek(0)
+        zip_bytes = zip_file.read()
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+            for info in zf.infolist():
+                if info.is_dir():
+                    continue
+
+                member_name = os.path.basename(info.filename or "")
+                if not member_name:
+                    continue
+                if not _is_supported_resume_ext(member_name):
+                    failures.append(
+                        {"file": member_name, "reason": "Unsupported format (only PDF/DOCX allowed)"}
+                    )
+                    continue
+
+                try:
+                    with zf.open(info) as source:
+                        content = source.read()
+                    ext = os.path.splitext(member_name)[-1].lower()
+                    unique_name = f"{uuid.uuid4().hex}{ext}"
+
+                    public_url = _supabase_storage_upload(content, unique_name)
+
+                    entry = {
+                        "path": unique_name,
+                        "original_name": member_name,
+                        "resume_file_url": public_url,
+                        "bytes": content,
+                    }
+                    extracted.append(entry)
+                except Exception:
+                    failures.append(
+                        {"file": member_name, "reason": "Corrupted file inside ZIP"}
+                    )
+    except zipfile.BadZipFile:
+        failures.append({"file": zip_filename, "reason": "Corrupted ZIP file"})
+    except Exception as e:
+        failures.append(
+            {"file": zip_filename, "reason": f"ZIP processing failed: {str(e)}"}
+        )
+
+    return extracted, failures
+
+
+def _is_supported_resume_ext(filename):
+    ext = os.path.splitext(filename or "")[-1].lower()
+    return ext in (".pdf", ".docx")
+
+
+def _name_from_filename(filename):
+    base = os.path.splitext(os.path.basename(filename or ""))[0]
+    cleaned = re.sub(r"[._\-]+", " ", base).strip()
+    cleaned = re.sub(r"\s{2,}", " ", cleaned)
+    return cleaned.title() if cleaned else "Unknown"
+
+
+# ─── Endpoints ───────────────────────────────────────────────────────────────
 
 @bp.route("/upload", methods=["POST"])
 def upload():
@@ -56,37 +182,32 @@ def upload():
             print(f"[UPLOAD ERROR] Validation failed: {err}")
             return jsonify({"error": err or "Please upload Job Description and Resume"}), 400
 
-        os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
         # PERFORMANCE ARCHITECTURE - CRITICAL: Import batch processing functions
         from backend.services.ann_index import init_ann_index, add_resume_to_index
         from backend.services.nlp_pipeline import extract_resume_entities
-        from backend.services.resume_parser import parse_resumes_from_paths
+        from backend.services.resume_parser import parse_resumes_from_entries
         from backend.services.batch_optimizer import clear_request_caches
 
         # Initialize ANN index if needed
         print(f"[UPLOAD] Initializing ANN index...")
         init_ann_index()
 
-        # PERFORMANCE OPTIMIZATION - CRITICAL: Batch save all files first
-        resume_paths = []
+        # Upload all files to Supabase Storage and collect entries with bytes
+        resume_entries = []
         for f in files:
             try:
-                ext = f.filename.rsplit(".", 1)[-1].lower()
-                unique_name = f"{uuid.uuid4().hex}.{ext}"
-                path = os.path.join(UPLOAD_FOLDER, unique_name)
-                print(f"[UPLOAD] Saving file: {path}")
-                f.save(path)
-                resume_paths.append({"path": unique_name, "original_name": f.filename})
+                entry = _save_uploaded_resume_file(f)
+                print(f"[UPLOAD] Uploaded to Supabase Storage: {entry['path']}")
+                resume_entries.append(entry)
             except Exception as file_error:
-                print(f"[UPLOAD ERROR] Failed to save file {f.filename}: {file_error}")
-                raise Exception(f"File save error: {str(file_error)}")
+                print(f"[UPLOAD ERROR] Failed to upload file {f.filename}: {file_error}")
+                raise Exception(f"File upload error: {str(file_error)}")
 
-        print(f"[UPLOAD] All files saved successfully")
+        print(f"[UPLOAD] All files uploaded to Supabase Storage successfully")
 
-        # PERFORMANCE OPTIMIZATION - CRITICAL: Batch parse all files in parallel
+        # PERFORMANCE OPTIMIZATION - CRITICAL: Batch parse all files in parallel (from memory)
         print(f"[UPLOAD] Parsing resumes...")
-        parsed_resumes = parse_resumes_from_paths(resume_paths)
+        parsed_resumes = parse_resumes_from_entries(resume_entries)
         print(f"[UPLOAD] Parsed {len(parsed_resumes)} resumes")
 
         # PERFORMANCE OPTIMIZATION - CRITICAL: Batch extract entities for all resumes
@@ -129,6 +250,16 @@ def upload():
         # PERFORMANCE OPTIMIZATION - CRITICAL: Clear caches after request
         clear_request_caches()
 
+        # Build response with resume_file_url for frontend
+        resume_paths = [
+            {
+                "path": e["path"],
+                "original_name": e["original_name"],
+                "resume_file_url": e.get("resume_file_url"),
+            }
+            for e in resume_entries
+        ]
+
         print(f"[UPLOAD SUCCESS] Upload completed successfully")
         return jsonify({"job_description": job_description, "resume_paths": resume_paths})
 
@@ -138,109 +269,6 @@ def upload():
 
         traceback.print_exc()
         return jsonify({"error": f"Upload failed: {str(e)}"}), 500
-
-
-def _is_supported_resume_ext(filename):
-    ext = os.path.splitext(filename or "")[-1].lower()
-    return ext in (".pdf", ".docx")
-
-
-def _name_from_filename(filename):
-    base = os.path.splitext(os.path.basename(filename or ""))[0]
-    cleaned = re.sub(r"[._\-]+", " ", base).strip()
-    cleaned = re.sub(r"\s{2,}", " ", cleaned)
-    return cleaned.title() if cleaned else "Unknown"
-
-
-def _save_uploaded_resume_file(file_obj):
-    """Save one uploaded resume file and return metadata dict."""
-    ext = os.path.splitext(file_obj.filename or "")[-1].lower()
-    unique_name = f"{uuid.uuid4().hex}{ext}"
-    target_path = os.path.join(UPLOAD_FOLDER, unique_name)
-    file_obj.save(target_path)
-
-    resume_file_url = _maybe_upload_to_supabase(target_path, unique_name)
-    entry = {"path": unique_name, "original_name": os.path.basename(file_obj.filename or unique_name)}
-    if resume_file_url:
-        entry["resume_file_url"] = resume_file_url
-    return entry
-
-
-def _maybe_upload_to_supabase(local_path, object_name):
-    """
-    Best-effort: also persist resumes into Supabase Storage so previews work even if the backend
-    uploads folder is missing/ephemeral. Returns a public URL when available.
-    """
-    try:
-        from backend.services.supabase_client import get_supabase_client
-        from backend.config import SUPABASE_RESUME_BUCKET
-
-        bucket = (SUPABASE_RESUME_BUCKET or "").strip()
-        if not bucket:
-            return None
-
-        mime, _ = mimetypes.guess_type(object_name)
-        with open(local_path, "rb") as f:
-            data = f.read()
-
-        supabase = get_supabase_client()
-        supabase.storage.from_(bucket).upload(
-            object_name,
-            data,
-            {
-                "content-type": mime or "application/octet-stream",
-                # Allow re-uploading the same name during retries.
-                "upsert": "true",
-            },
-        )
-        return supabase.storage.from_(bucket).get_public_url(object_name)
-    except Exception as e:
-        # Non-fatal: local file preview can still work.
-        print(f"[UPLOAD WARN] Supabase storage upload failed for {object_name}: {e}")
-        return None
-
-
-def _extract_resumes_from_zip(zip_file):
-    """Extract supported resume files from an uploaded ZIP into uploads folder."""
-    extracted = []
-    failures = []
-    zip_filename = zip_file.filename or "uploaded.zip"
-
-    try:
-        zip_file.stream.seek(0)
-        with zipfile.ZipFile(zip_file.stream) as zf:
-            for info in zf.infolist():
-                if info.is_dir():
-                    continue
-
-                member_name = os.path.basename(info.filename or "")
-                if not member_name:
-                    continue
-                if not _is_supported_resume_ext(member_name):
-                    failures.append({"file": member_name, "reason": "Unsupported format (only PDF/DOCX allowed)"})
-                    continue
-
-                try:
-                    with zf.open(info) as source:
-                        content = source.read()
-                    ext = os.path.splitext(member_name)[-1].lower()
-                    unique_name = f"{uuid.uuid4().hex}{ext}"
-                    target_path = os.path.join(UPLOAD_FOLDER, unique_name)
-                    with open(target_path, "wb") as out:
-                        out.write(content)
-                    resume_file_url = _maybe_upload_to_supabase(target_path, unique_name)
-                    entry = {"path": unique_name, "original_name": member_name}
-                    if resume_file_url:
-                        entry["resume_file_url"] = resume_file_url
-                    extracted.append(entry)
-                except Exception:
-                    failures.append({"file": member_name, "reason": "Corrupted file inside ZIP"})
-    except zipfile.BadZipFile:
-        failures.append({"file": zip_filename, "reason": "Corrupted ZIP file"})
-    except Exception as e:
-        failures.append({"file": zip_filename, "reason": f"ZIP processing failed: {str(e)}"})
-
-    return extracted, failures
 
 
 @bp.route("/bulk-upload-resumes", methods=["POST"])
@@ -256,8 +284,6 @@ def bulk_upload_resumes():
     upload -> parse text -> extract fields -> store DB -> create embeddings -> add to FAISS.
     """
     try:
-        os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
         uploaded_files = request.files.getlist("files") or request.files.getlist("resumes")
         if not uploaded_files:
             return jsonify({"error": "No files uploaded"}), 400
@@ -265,7 +291,7 @@ def bulk_upload_resumes():
         saved_resume_entries = []
         failed_files = []
 
-        # Stage 1: save direct resume files and extract zip members.
+        # Stage 1: Upload direct resume files and extract zip members to Supabase Storage.
         for f in uploaded_files:
             original_name = os.path.basename(f.filename or "")
             if not original_name:
@@ -279,13 +305,15 @@ def bulk_upload_resumes():
                 continue
 
             if not _is_supported_resume_ext(original_name):
-                failed_files.append({"file": original_name, "reason": "Unsupported format (only PDF/DOCX/ZIP allowed)"})
+                failed_files.append(
+                    {"file": original_name, "reason": "Unsupported format (only PDF/DOCX/ZIP allowed)"}
+                )
                 continue
 
             try:
                 saved_resume_entries.append(_save_uploaded_resume_file(f))
             except Exception:
-                failed_files.append({"file": original_name, "reason": "Failed to save uploaded file"})
+                failed_files.append({"file": original_name, "reason": "Failed to upload file to Supabase Storage"})
 
         if not saved_resume_entries:
             return jsonify(
@@ -300,20 +328,20 @@ def bulk_upload_resumes():
                 }
             ), 400
 
-        from backend.services.resume_parser import parse_resumes_from_paths
+        from backend.services.resume_parser import parse_resumes_from_entries
         from backend.services.nlp_pipeline import extract_resume_entities
         from backend.services.storage import store_resumes
         from backend.services.ann_index import init_ann_index, add_resume_to_index
         from backend.services.enterprise_matching import extract_semantic_role_intent
         from backend.utils.model_loader import get_encoder
 
-        # Stage 2: parse text.
+        # Stage 2: parse text from in-memory bytes.
         resume_url_by_path = {
             e.get("path"): e.get("resume_file_url")
             for e in (saved_resume_entries or [])
             if e.get("path") and e.get("resume_file_url")
         }
-        parsed_resumes = parse_resumes_from_paths(saved_resume_entries, max_workers=8)
+        parsed_resumes = parse_resumes_from_entries(saved_resume_entries, max_workers=8)
 
         valid_parsed = []
         for parsed in parsed_resumes:

@@ -1034,10 +1034,20 @@ function AddCandidateModal({ user, onClose, onSaved }) {
                   Email
                   <input style={styles.modalInput} name="email" onChange={handleChange} />
                 </label>
-                <label style={styles.fieldLabel}>
-                  Phone
-                  <input style={styles.modalInput} name="phone_number" onChange={handleChange} />
-                </label>
+              <label style={styles.fieldLabel}>
+  Phone
+  <input
+    style={styles.modalInput}
+    name="phone_number"
+    type="tel"
+    maxLength={10}
+    inputMode="numeric"
+    onChange={(e) => {
+      e.target.value = e.target.value.replace(/\D/g, "").slice(0, 10);
+      handleChange(e);
+    }}
+  />
+</label>
               </div>
             </div>
 
@@ -1058,14 +1068,39 @@ function AddCandidateModal({ user, onClose, onSaved }) {
                   Location
                   <input style={styles.modalInput} name="location" onChange={handleChange} />
                 </label>
-                <label style={styles.fieldLabel}>
-                  Hire Mode
-                  <input style={styles.modalInput} name="hire_mode" onChange={handleChange} />
-                </label>
-                <label style={styles.fieldLabel}>
-                  Status
-                  <input style={styles.modalInput} name="status" onChange={handleChange} />
-                </label>
+               <label style={styles.fieldLabel}>
+  Hire Mode
+  <select style={styles.modalInput} name="hire_mode" onChange={handleChange}>
+    <option value="">Select</option>
+    <option value="Permanent">Permanent</option>
+    <option value="Contract">Contract</option>
+  </select>
+</label>
+<label style={styles.fieldLabel}>
+  Status
+  <select style={styles.modalInput} name="status" onChange={handleChange}>
+    <option value="Profile Submitted">Profile Submitted</option>
+    <option value="Feedback Pending">Feedback Pending</option>
+    <option value="Duplicate">Duplicate</option>
+    <option value="Drop Out By Client">Drop Out By Client</option>
+    <option value="Drop Out By Candidate">Drop Out By Candidate</option>
+    <option value="Assessment Round">Assessment Round</option>
+    <option value="HR Round">HR Round</option>
+    <option value="L1 Scheduled">L1 Scheduled</option>
+    <option value="L2 Scheduled">L2 Scheduled</option>
+    <option value="AI Interview">AI Interview</option>
+    <option value="Offered">Offered</option>
+    <option value="Closure">Closure</option>
+    <option value="Backout">Backout</option>
+    <option value="L1 Reject">L1 Reject</option>
+    <option value="L2 Reject">L2 Reject</option>
+    <option value="Final Round Rejected">Final Round Rejected</option>
+    <option value="Shortlisted">Shortlisted</option>
+    <option value="Position Hold">Position Hold</option>
+    <option value="Position Closed">Position Closed</option>
+    <option value="Interview Scheduled">Interview Scheduled</option>
+  </select>
+</label>
                 <label style={styles.fieldLabel}>
                   Remarks
                   <textarea style={styles.modalTextarea} name="remarks" value={form.remarks} onChange={handleChange} />
@@ -1397,10 +1432,21 @@ function EditCandidateModal({ record, onClose, onUpdated }) {
                   Email
                   <input style={styles.modalInput} name="email" value={form.email} onChange={handleChange} />
                 </label>
-                <label style={styles.fieldLabel}>
-                  Phone
-                  <input style={styles.modalInput} name="phone_number" value={form.phone_number} onChange={handleChange} />
-                </label>
+             <label style={styles.fieldLabel}>
+  Phone
+  <input
+    style={styles.modalInput}
+    name="phone_number"
+    type="tel"
+    maxLength={10}
+    inputMode="numeric"
+    value={form.phone_number}
+    onChange={(e) => {
+      e.target.value = e.target.value.replace(/\D/g, "").slice(0, 10);
+      handleChange(e);
+    }}
+  />
+</label>
                 <label style={styles.fieldLabel}>
                   Location
                   <input style={styles.modalInput} name="location" value={form.location} onChange={handleChange} />

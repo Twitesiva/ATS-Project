@@ -454,11 +454,11 @@ const styles = {
     fontWeight: 600,
     cursor: "pointer",
   },
-  activeTab: {
-    borderColor: "#2563eb",
-    color: "#1d4ed8",
-    background: "#eff6ff",
-  },
+ activeTab: {
+  border: "1px solid #2563eb",
+  color: "#1d4ed8",
+  background: "#eff6ff",
+},
   grid2: {
     display: "grid",
     gap: "12px",
