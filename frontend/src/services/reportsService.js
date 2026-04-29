@@ -28,7 +28,7 @@ const applyCandidateFilters = (query, filters = {}) => {
   }
 
   if (filters.recruiter) {
-    q = q.eq("recruiter", filters.recruiter);
+    q = q.ilike("recruiter", filters.recruiter);
   }
 
   return q;
@@ -50,7 +50,7 @@ const applyRevenueFilters = (query, filters = {}) => {
   }
 
   if (filters.recruiter) {
-    q = q.eq("recruiter_name", filters.recruiter);
+    q = q.ilike("recruiter_name", filters.recruiter);
   }
 
   return q;
@@ -76,39 +76,61 @@ const fetchAllPages = async (buildQuery) => {
 };
 
 export const getCandidateStats = async (filters = {}) => {
-  const rows = await fetchAllPages((from, to) =>
-    applyCandidateFilters(
-      supabase.from("candidate_records").select("id,status")
-        .not("status", "in", "(Closure,Drop Out By Client,Drop Out By Candidate,Backout,Position Closed,L1 Reject,L2 Reject,Final Round Rejected)")
-        .range(from, to),
-      filters
-    )
-  );
+  try {
+    const rows = await fetchAllPages((from, to) =>
+      applyCandidateFilters(
+        supabase.from("candidate_records").select("id,status")
+          .not("status", "in", '(Closure,Drop Out By Client,Drop Out By Candidate,Backout,Position Closed,L1 Reject,L2 Reject,Final Round Rejected)')
+          .range(from, to),
+        filters
+      )
+    );
 
-  const totalCandidates = rows.length;
-  const interviewsScheduled = rows.filter((r) => ["L1 Scheduled","L2 Scheduled","AI Interview","Assessment Round","HR Round","Interview Scheduled"].includes(r.status)).length;
-  const shortlisted = rows.filter((r) => r.status === "Shortlisted").length;
-  const closures = rows.filter((r) => r.status === "Closure").length;
+    const totalCandidates = rows.length;
+    const interviewsScheduled = rows.filter((r) =>
+      ["L1 Scheduled","L2 Scheduled","AI Interview","Assessment Round","HR Round","Interview Scheduled"].includes(r.status)
+    ).length;
+    const shortlisted = rows.filter((r) => r.status === "Shortlisted").length;
 
-  const revenueRows = await fetchAllPages((from, to) =>
-    applyRevenueFilters(
-      supabase.from("revenue_tracker").select("margin_value,doj").range(from, to),
-      filters
-    )
-  );
+    const revenueRows = await fetchAllPages((from, to) =>
+      applyRevenueFilters(
+        supabase.from("revenue_tracker").select("margin_value,doj").range(from, to),
+        filters
+      )
+    );
 
-  const revenue = revenueRows.reduce(
-    (sum, row) => sum + sanitizeMarginValue(row.margin_value),
-    0
-  );
+    const revenue = revenueRows.reduce(
+      (sum, row) => sum + sanitizeMarginValue(row.margin_value),
+      0
+    );
 
-  return {
-    totalCandidates,
-    interviewsScheduled,
-    shortlisted,
-    closures,
-    revenue,
-  };
+    const now = new Date();
+    const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
+    const lastOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split("T")[0];
+
+    console.log("Querying closures between:", firstOfMonth, "and", lastOfMonth);
+
+    const { count, error: closureError } = await supabase
+      .from("revenue_tracker")
+      .select("id", { count: "exact", head: true })
+      .gte("doj", firstOfMonth)
+      .lte("doj", lastOfMonth);
+
+    console.log("closures count:", count, "error:", closureError);
+
+    if (closureError) throw closureError;
+
+    return {
+      totalCandidates,
+      interviewsScheduled,
+      shortlisted,
+      closures: count ?? 0,
+      revenue,
+    };
+  } catch (err) {
+    console.error("getCandidateStats crashed:", err);
+    return { totalCandidates: 0, interviewsScheduled: 0, shortlisted: 0, closures: 0, revenue: 0 };
+  }
 };
 
 export const getRevenueTrend = async (filters = {}) => {
@@ -236,15 +258,18 @@ export const getReportsTableData = async (filters = {}) => {
     ),
   ]);
 
-  const normalizeKey = (str) =>
-    String(str || "").toLowerCase().replace(/[\s\-\[\]()_.,]/g, "");
+ const normalizeKey = (str) =>
+  String(str || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "")
+    .trim();
 
   const map = new Map();
 
   candidateData.forEach((row) => {
     const clientRaw = String(row.client_name || "Unknown").trim() || "Unknown";
     const recruiter = String(row.recruiter || "Unknown").trim() || "Unknown";
-    const key = `${normalizeKey(clientRaw)}||${normalizeKey(recruiter)}`;
+const key = normalizeKey(clientRaw);
     const current = map.get(key) || { client: clientRaw, recruiter, candidates: 0, interviews: 0, shortlisted: 0, closures: 0, revenue: 0 };
 
     current.candidates += 1;
@@ -293,7 +318,18 @@ export const getFilterOptions = async (filters = {}) => {
   ]);
 
   const clients = [...new Set(clientsData.map((r) => String(r.client_name || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
-  const recruiters = [...new Set(recruitersData.map((r) => String(r.recruiter || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const recruiters = [
+  ...new Set(
+    recruitersData
+      .map((r) =>
+        String(r.recruiter || "")
+          .trim()
+          .toLowerCase() // 🔥 normalize
+      )
+      .filter(Boolean)
+  ),
+];
+console.log("recruitersData:", recruitersData);
   const statuses = [...new Set(statusesData.map((r) => String(r.status || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 
   return { clients, recruiters, statuses };

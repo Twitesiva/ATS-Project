@@ -8,17 +8,13 @@ import StatusPieChart from "../../components/reports/StatusPieChart";
 import HiringFunnelChart from "../../components/reports/HiringFunnelChart";
 import ClientPerformanceChart from "../../components/reports/ClientPerformanceChart";
 import ReportsTable from "../../components/reports/ReportsTable";
+
 import {
   getCandidateStats,
-  getRevenueTrend,
-  getRecruiterPerformance,
-  getClientPerformance,
-  getStatusDistribution,
-  getHiringFunnel,
   getReportsTableData,
   getFilterOptions,
+  getRevenueTrend,
 } from "../../services/reportsService";
-import { groupByMonth } from "../../utils/reportHelpers";
 
 const defaultFilters = {
   fromDate: "",
@@ -36,29 +32,129 @@ export default function Reports() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+const [quickFilter, setQuickFilter] = useState("");
+  const [revenueTrend, setRevenueTrend] = useState([]); // ✅ correct usage
 
-  const [options, setOptions] = useState({ clients: [], recruiters: [], statuses: [] });
+  const [options, setOptions] = useState({
+    clients: [],
+    recruiters: [],
+    statuses: [],
+  });
+
   const [stats, setStats] = useState({});
-  const [revenueTrend, setRevenueTrend] = useState([]);
-  const [recruiterPerformance, setRecruiterPerformance] = useState([]);
-  const [statusDistribution, setStatusDistribution] = useState([]);
-  const [hiringFunnel, setHiringFunnel] = useState([]);
-  const [clientPerformance, setClientPerformance] = useState([]);
   const [tableRows, setTableRows] = useState([]);
 
-  // Helper: Convert combined filter to client/recruiter fields
+  // ✅ Recruiter Performance
+  const recruiterPerformance = useMemo(() => {
+    const map = {};
+
+    tableRows.forEach((row) => {
+      const recruiter = row.recruiter || "Unknown";
+      const candidates = Number(row.candidates) || 0;
+
+      map[recruiter] = (map[recruiter] || 0) + candidates;
+    });
+
+    return Object.entries(map).map(([name, count]) => ({
+      name,
+      count,
+    }));
+  }, [tableRows]);
+  const handleQuickFilter = (value) => {
+  setQuickFilter(value);
+
+  setFilters(defaultFilters);
+
+  if (value === "manager") {
+    setAppliedFilters({
+      ...defaultFilters,
+      filterType: "recruiter",
+      filterValue: "manager",
+    });
+  } else {
+    setAppliedFilters(defaultFilters);
+  }
+};
+
+  // ✅ Status Distribution
+  const statusDistribution = useMemo(() => {
+    let shortlisted = 0;
+    let closures = 0;
+    let interviews = 0;
+
+    tableRows.forEach((row) => {
+      shortlisted += row.shortlisted || 0;
+      closures += row.closures || 0;
+      interviews += row.interviews || 0;
+    });
+
+    return [
+      { name: "Shortlisted", value: shortlisted },
+      { name: "Closures", value: closures },
+      { name: "Interviews", value: interviews },
+    ];
+  }, [tableRows]);
+
+  // ✅ Hiring Funnel
+  const hiringFunnel = useMemo(() => {
+    let screening = 0;
+    let interview = 0;
+    let closure = 0;
+
+    tableRows.forEach((row) => {
+      screening += row.candidates || 0;
+      interview += row.interviews || 0;
+      closure += row.closures || 0;
+    });
+
+    return [
+      { stage: "Screening", value: screening },
+      { stage: "Interview", value: interview },
+      { stage: "Closure", value: closure },
+    ];
+  }, [tableRows]);
+
+  // ✅ Client Performance
+  const clientPerformance = useMemo(() => {
+    const map = {};
+
+    tableRows.forEach((row) => {
+      const client = row.client || "Unknown";
+      const candidates = Number(row.candidates) || 0;
+
+      map[client] = (map[client] || 0) + candidates;
+    });
+
+    return Object.entries(map)
+      .map(([client, candidates]) => ({
+        client,
+        candidates,
+      }))
+      .sort((a, b) => b.candidates - a.candidates);
+  }, [tableRows]);
+
+  // ✅ Filter helper
   const getApiFilters = (filterObj) => {
     const apiFilters = { ...filterObj };
+
+    if (!filterObj.filterValue) {
+      apiFilters.client = "";
+      apiFilters.recruiter = "";
+      return apiFilters;
+    }
+
     if (filterObj.filterType === "recruiter") {
-      apiFilters.recruiter = filterObj.filterValue || "";
+      apiFilters.recruiter = filterObj.filterValue;
       apiFilters.client = "";
     } else {
-      apiFilters.client = filterObj.filterValue || "";
+      apiFilters.client = filterObj.filterValue;
       apiFilters.recruiter = "";
     }
+
     return apiFilters;
   };
 
+  // ✅ API Call
   const loadReports = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -66,32 +162,39 @@ export default function Reports() {
     try {
       const apiFilters = getApiFilters(appliedFilters);
 
-      const [
-        statsRes,
-        trendRes,
-        recruiterRes,
-        statusRes,
-        funnelRes,
-        clientRes,
-        tableRes,
-        optionsRes,
-      ] = await Promise.all([
-        getCandidateStats(apiFilters),
-        getRevenueTrend(apiFilters),
-        getRecruiterPerformance({ ...apiFilters }),
-        getStatusDistribution(apiFilters),
-        getHiringFunnel(apiFilters),
-        getClientPerformance(apiFilters),
-        getReportsTableData(apiFilters),
-        getFilterOptions(apiFilters),
-      ]);
+      const [statsRes, tableRes, optionsRes, trendRes] =
+        await Promise.all([
+          getCandidateStats(apiFilters),
+          getReportsTableData(apiFilters),
+          getFilterOptions(apiFilters),
+          getRevenueTrend(apiFilters),
+        ]);
+
+      // ✅ FIXED Revenue Trend logic
+      const grouped = {};
+
+      trendRes.forEach((row) => {
+        if (!row.doj) return;
+
+        const date = new Date(row.doj);
+        const month = date.toLocaleString("default", {
+          month: "short",
+          year: "numeric",
+        });
+
+        const revenue = Number(row.margin_value) || 0;
+
+        grouped[month] = (grouped[month] || 0) + revenue;
+      });
+
+      setRevenueTrend(
+        Object.entries(grouped).map(([month, revenue]) => ({
+          month,
+          revenue,
+        }))
+      );
 
       setStats(statsRes);
-      setRevenueTrend(groupByMonth(trendRes, "doj", "margin_value"));
-      setRecruiterPerformance(recruiterRes);
-      setStatusDistribution(statusRes);
-      setHiringFunnel(funnelRes);
-      setClientPerformance(clientRes);
       setTableRows(tableRes);
       setOptions(optionsRes);
     } catch (err) {
@@ -133,8 +236,9 @@ export default function Reports() {
         clients={options?.clients || []}
         recruiters={options?.recruiters || []}
         statuses={options?.statuses || []}
+        quickFilter={quickFilter}
+        onQuickFilter={handleQuickFilter}
       />
-
       {loading ? (
         <Loader text="Loading reports..." />
       ) : hasError ? (

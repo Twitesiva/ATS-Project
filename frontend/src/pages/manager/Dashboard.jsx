@@ -120,11 +120,10 @@ supabase
   ])
         ,
      supabase
-  .from("candidate_records")
+  .from("revenue_tracker")
   .select("*", { count: "exact" })
-  .eq("status", "Closure")
-  .gte("updated_at", start)
-  .lte("updated_at", end)
+  .gte("doj", start)
+  .lte("doj", end)
         ,
       supabase
         .from("revenue_tracker")

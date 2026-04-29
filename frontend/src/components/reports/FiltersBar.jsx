@@ -6,7 +6,9 @@ export default function FiltersBar({
   clients = [],
   recruiters = [],
   statuses = [],
-}) {
+  quickFilter,
+  onQuickFilter,
+}) { 
   return (
     <div style={styles.wrap}>
       <div style={styles.grid}>
@@ -15,7 +17,6 @@ export default function FiltersBar({
           value={filters.fromDate || ""}
           onChange={(e) => onChange("fromDate", e.target.value)}
           style={styles.input}
-          placeholder="From Date"
         />
 
         <input
@@ -23,16 +24,29 @@ export default function FiltersBar({
           value={filters.toDate || ""}
           onChange={(e) => onChange("toDate", e.target.value)}
           style={styles.input}
-          placeholder="To Date"
         />
+        <div style={{ display: "flex", gap: "10px", marginBottom: "10px" }}>
+          <button
+            onClick={() => onQuickFilter("")}
+            style={quickFilter === "" ? activeBtn : btn}
+          >
+            All
+          </button>
 
-        {/* Combined Client/Recruiter Filter */}
+          <button
+            onClick={() => onQuickFilter("manager")}
+            style={quickFilter === "manager" ? activeBtn : btn}
+          >
+            Manager
+          </button>
+        </div>
+
+        {/* Client / Recruiter */}
         <div style={styles.combinedFilterContainer}>
           <select
             value={filters.filterType || "client"}
             onChange={(e) => {
               onChange("filterType", e.target.value);
-              // Clear the search value when switching types
               onChange("filterValue", "");
             }}
             style={styles.filterTypeSelect}
@@ -47,8 +61,11 @@ export default function FiltersBar({
             style={styles.filterValueSelect}
           >
             <option value="">
-              {filters.filterType === "recruiter" ? "All Recruiters" : "All Clients"}
+              {filters.filterType === "recruiter"
+                ? "All Recruiters"
+                : "All Clients"}
             </option>
+
             {(filters.filterType === "recruiter" ? recruiters : clients).map(
               (item) => (
                 <option key={item} value={item}>
@@ -73,15 +90,33 @@ export default function FiltersBar({
         </select>
       </div>
 
+      {/* CLEAN BUTTONS */}
       <div style={styles.actions}>
-        <button type="button" style={styles.secondaryBtn} onClick={onReset}>
+        <button style={styles.primaryBtn} onClick={onApply}>
+          Apply
+        </button>
+
+        <button style={styles.secondaryBtn} onClick={onReset}>
           Reset
         </button>
       </div>
     </div>
   );
 }
+const btn = {
+  padding: "8px 12px",
+  borderRadius: "8px",
+  border: "1px solid #ccc",
+  background: "#fff",
+  cursor: "pointer",
+};
 
+const activeBtn = {
+  ...btn,
+  background: "#2563eb",
+  color: "#fff",
+  fontWeight: "bold",
+};
 const styles = {
   wrap: {
     border: "1px solid #e2e8f0",
@@ -97,61 +132,45 @@ const styles = {
     gap: "10px",
     gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
   },
+  
   input: {
-    width: "100%",
     border: "1px solid #cbd5e1",
     borderRadius: "8px",
     padding: "9px 10px",
-    fontSize: "14px",
-    boxSizing: "border-box",
-    background: "#fff",
   },
   combinedFilterContainer: {
     display: "grid",
     gridTemplateColumns: "120px 1fr",
     gap: "8px",
-    width: "100%",
   },
   filterTypeSelect: {
     border: "1px solid #cbd5e1",
     borderRadius: "8px",
     padding: "9px 10px",
-    fontSize: "14px",
-    boxSizing: "border-box",
-    background: "#fff",
-    cursor: "pointer",
-    fontWeight: 500,
   },
   filterValueSelect: {
     border: "1px solid #cbd5e1",
     borderRadius: "8px",
     padding: "9px 10px",
-    fontSize: "14px",
-    boxSizing: "border-box",
-    background: "#fff",
-    cursor: "pointer",
   },
   actions: {
     display: "flex",
-    gap: "8px",
+    gap: "10px",
     justifyContent: "flex-end",
   },
   primaryBtn: {
-    border: "none",
     background: "#2563eb",
     color: "#fff",
-    borderRadius: "8px",
+    border: "none",
     padding: "8px 14px",
-    fontWeight: 600,
+    borderRadius: "8px",
     cursor: "pointer",
   },
   secondaryBtn: {
     border: "1px solid #cbd5e1",
     background: "#fff",
-    color: "#0f172a",
-    borderRadius: "8px",
     padding: "8px 14px",
-    fontWeight: 600,
+    borderRadius: "8px",
     cursor: "pointer",
   },
 };

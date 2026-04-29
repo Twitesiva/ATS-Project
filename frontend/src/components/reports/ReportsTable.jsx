@@ -206,19 +206,19 @@ export default function ReportsTable({ data = [], clients = [], recruiters = [] 
                 </td>
               </tr>
             ) : (
-              filteredData.map((row, idx) => (
-                <tr key={`${row.client}-${row.recruiter || idx}`}>
-                  {selectedColumns.map((col) => (
-                    <td key={col.key} style={styles.td}>
-                      {col.key === "recruiter"
-                        ? row[col.key] || "-"
-                        : col.key === "revenue"
-                        ? formatCurrency(row[col.key])
-                        : row[col.key]}
-                    </td>
-                  ))}
-                </tr>
-              ))
+            filteredData.map((row, idx) => (
+  <tr key={`${row.client}-${row.recruiter || "unknown"}-${idx}`}>
+    {selectedColumns.map((col) => (
+      <td key={col.key} style={styles.td}>
+        {col.key === "recruiter"
+          ? row[col.key] || "-"
+          : col.key === "revenue"
+          ? formatCurrency(row[col.key])
+          : row[col.key]}
+      </td>
+    ))}
+  </tr>
+))
             )}
           </tbody>
         </table>

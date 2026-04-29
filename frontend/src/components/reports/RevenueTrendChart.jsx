@@ -7,20 +7,29 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { formatCurrency } from "../../utils/reportHelpers";
 
 export default function RevenueTrendChart({ data = [] }) {
   return (
     <div style={styles.card}>
       <h4 style={styles.title}>Revenue Trend</h4>
+
       <div style={styles.chartWrap}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data}>
             <CartesianGrid strokeDasharray="3 3" />
+
             <XAxis dataKey="month" />
+
             <YAxis />
-            <Tooltip formatter={(value) => formatCurrency(value)} />
-            <Line type="monotone" dataKey="value" stroke="#2563eb" strokeWidth={2} />
+
+            <Tooltip />
+
+            <Line
+              type="monotone"
+              dataKey="revenue"
+              stroke="#3b82f6"
+              strokeWidth={3}
+            />
           </LineChart>
         </ResponsiveContainer>
       </div>
