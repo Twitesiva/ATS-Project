@@ -2,6 +2,11 @@ import { useCallback, useEffect, useState } from "react";
 import Loader from "../../components/common/Loader";
 import { supabase } from "../../services/supabaseClient";
 import {
+  getRecruiterPerformance
+} from "../../services/reportsService";
+// FIX: parseRevenueValue added — it is used in loadDashboardKPIs
+import { normalizeRecruiter, parseRevenueValue } from "../../utils/reportHelpers";
+import {
   BarChart,
   Bar,
   PieChart,
@@ -39,39 +44,6 @@ const toNumber = (value) => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
-const parseRevenueValue = (value) => {
-  const cleanValue = String(value ?? "")
-    .replace(/[\u20B9,LPA\s]/gi, "")
-    .trim();
-
-  const numericValue = parseFloat(cleanValue);
-  return Number.isFinite(numericValue) ? numericValue : 0;
-};
-
-const normalizeRecruiter = (value) => {
-  const name = String(value || "").trim();
-  if (!name) return "Unknown";
-  // Title case: "dhanavarshini" → "Dhanavarshini"
-  return name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
-};
-
-const normalizeClient = (value) => {
-  const name = String(value || "").trim();
-  return name || "Unknown";
-};
-
-const getDayDiff = (startValue, endValue) => {
-  const start = new Date(startValue);
-  const end = new Date(endValue);
-
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-    return null;
-  }
-
-  const diff = (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
-  return Number.isFinite(diff) && diff >= 0 ? diff : null;
-};
-
 export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [analyticsLoading, setAnalyticsLoading] = useState(true);
@@ -103,34 +75,31 @@ export default function Dashboard() {
       overallMarginRes,
     ] = await Promise.all([
       supabase
-  .from("candidate_records")
-  .select("*", { count: "exact" })
-  .not("status", "in", "(Closure,Drop Out By Client,Drop Out By Candidate,Backout,Position Closed,L1 Reject,L2 Reject,Final Round Rejected)"),
+        .from("candidate_records")
+        .select("*", { count: "exact" })
+        .not("status", "in", "(Closure,Drop Out By Client,Drop Out By Candidate,Backout,Position Closed,L1 Reject,L2 Reject,Final Round Rejected)"),
       supabase.from("client_records").select("number_of_openings,closure"),
-supabase
-  .from("candidate_records")
-  .select("*", { count: "exact" })
-  .in("status", [
-    "L1 Scheduled",
-    "L2 Scheduled",
-    "AI Interview",
-    "Assessment Round",
-    "HR Round",
-    "Interview Scheduled"
-  ])
-        ,
-     supabase
-  .from("revenue_tracker")
-  .select("*", { count: "exact" })
-  .gte("doj", start)
-  .lte("doj", end)
-        ,
+      supabase
+        .from("candidate_records")
+        .select("*", { count: "exact" })
+        .in("status", [
+          "L1 Scheduled",
+          "L2 Scheduled",
+          "AI Interview",
+          "Assessment Round",
+          "HR Round",
+          "Interview Scheduled",
+        ]),
+      supabase
+        .from("revenue_tracker")
+        .select("*", { count: "exact" })
+        .gte("doj", start)
+        .lte("doj", end),
       supabase
         .from("revenue_tracker")
         .select("margin_value,doj")
         .gte("doj", start)
-        .lte("doj", end)
-        ,
+        .lte("doj", end),
       supabase.from("revenue_tracker").select("margin_value,billing_rate"),
     ]);
 
@@ -188,102 +157,50 @@ supabase
   const loadRecruiterAnalytics = useCallback(async () => {
     setAnalyticsLoading(true);
 
-    const [profilesRes, interviewsRes, closuresRes, revenueRes] = await Promise.all([
-      supabase
-        .from("status_history")
-        .select("recruiter_name,new_status")
-        .eq("new_status", "Profile Submitted"),
-      supabase
-        .from("status_history")
-        .select("recruiter_name,new_status")
-        .in("new_status", Array.from(INTERVIEW_STATUSES)),
-      supabase
-        .from("status_history")
-        .select("recruiter_name,new_status")
-        .eq("new_status", "Closure"),
-      supabase.from("revenue_tracker").select("recruiter_name,margin_value"),
+    const [recruiterPerf, revenueRes] = await Promise.all([
+      getRecruiterPerformance({}),
+      supabase.from("revenue_tracker").select("recruiter_name, margin_value"),
     ]);
 
-    const errors = [
-      profilesRes.error,
-      interviewsRes.error,
-      closuresRes.error,
-      revenueRes.error,
-    ].filter(Boolean);
-
-    if (errors.length) {
-      console.error("Failed to load recruiter analytics", errors);
-      setAnalyticsLoading(false);
-      return;
-    }
-
-    const recruiterMap = {};
-
-    // Count profile submissions per recruiter
-    (profilesRes.data || []).forEach((row) => {
-      const recruiter = normalizeRecruiter(row.recruiter_name);
-      if (!recruiterMap[recruiter]) {
-        recruiterMap[recruiter] = {
-          recruiter,
-          candidatesAdded: 0,
-          interviews: 0,
-          closures: 0,
-          revenue: 0,
-        };
-      }
-      recruiterMap[recruiter].candidatesAdded += 1;
-    });
-
-    // Count interviews per recruiter
-    (interviewsRes.data || []).forEach((row) => {
-      const recruiter = normalizeRecruiter(row.recruiter_name);
-      if (!recruiterMap[recruiter]) {
-        recruiterMap[recruiter] = {
-          recruiter,
-          candidatesAdded: 0,
-          interviews: 0,
-          closures: 0,
-          revenue: 0,
-        };
-      }
-      recruiterMap[recruiter].interviews += 1;
-    });
-
-    // Count closures per recruiter
-    (closuresRes.data || []).forEach((row) => {
-      const recruiter = normalizeRecruiter(row.recruiter_name);
-      if (!recruiterMap[recruiter]) {
-        recruiterMap[recruiter] = {
-          recruiter,
-          candidatesAdded: 0,
-          interviews: 0,
-          closures: 0,
-          revenue: 0,
-        };
-      }
-      recruiterMap[recruiter].closures += 1;
-    });
-
-    // Sum revenue per recruiter
+    // Build revenue and closures map from revenue_tracker
+    const revenueMap = {};
+    const closuresMap = {};
     (revenueRes.data || []).forEach((row) => {
-      const recruiter = normalizeRecruiter(row.recruiter_name);
-      if (!recruiterMap[recruiter]) {
-        recruiterMap[recruiter] = {
-          recruiter,
-          candidatesAdded: 0,
-          interviews: 0,
-          closures: 0,
-          revenue: 0,
-        };
-      }
-      recruiterMap[recruiter].revenue += parseRevenueValue(row.margin_value);
+      const name = normalizeRecruiter(row.recruiter_name);
+      if (!revenueMap[name]) revenueMap[name] = 0;
+      if (!closuresMap[name]) closuresMap[name] = 0;
+      revenueMap[name] += parseRevenueValue(row.margin_value);
+      closuresMap[name] += 1;
     });
 
-    const mergedRows = Object.values(recruiterMap).sort((a, b) =>
-      a.recruiter.localeCompare(b.recruiter)
-    );
+    // Transform: candidates/interviews from getRecruiterPerformance,
+    // closures and revenue from revenue_tracker
+    const transformed = recruiterPerf.map(r => ({
+      ...r,
+      candidatesAdded: r.candidates ?? r.candidatesAdded ?? 0,
+      closures: closuresMap[normalizeRecruiter(r.recruiter)] ?? 0,
+      revenue: revenueMap[normalizeRecruiter(r.recruiter)] ?? 0,
+    }));
 
-    setRecruiterAnalytics(mergedRows);
+    // Also add any recruiters present in revenue_tracker but missing from getRecruiterPerformance
+    const existingNames = new Set(transformed.map(r => normalizeRecruiter(r.recruiter)));
+    Object.keys(revenueMap).forEach(name => {
+      if (!existingNames.has(name)) {
+        transformed.push({
+          recruiter: name,
+          candidatesAdded: 0,
+          interviews: 0,
+          closures: closuresMap[name] ?? 0,
+          revenue: revenueMap[name] ?? 0,
+        });
+      }
+    });
+
+    // Sort alphabetically
+    transformed.sort((a, b) => a.recruiter.localeCompare(b.recruiter));
+
+    console.log("Recruiter analytics:", transformed);
+    setRecruiterAnalytics(transformed);
     setAnalyticsLoading(false);
   }, []);
 
@@ -326,7 +243,7 @@ supabase
       .channel("manager-dashboard-recruiter-analytics")
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "status_history" },
+        { event: "*", schema: "public", table: "candidate_records" },
         loadRecruiterAnalytics
       )
       .on(
@@ -393,8 +310,8 @@ supabase
               border: hoveredCard === card.title ? "2px solid #1e40af" : "1px solid #e2e8f0",
               borderRadius: "12px",
               padding: "16px",
-              boxShadow: hoveredCard === card.title 
-                ? "0 8px 16px rgba(30, 64, 175, 0.15)" 
+              boxShadow: hoveredCard === card.title
+                ? "0 8px 16px rgba(30, 64, 175, 0.15)"
                 : "0 2px 8px rgba(15, 23, 42, 0.06)",
               transition: "all 0.2s ease",
               cursor: "pointer",
@@ -439,9 +356,8 @@ supabase
           <div style={styles.emptyState}>No recruiter analytics found.</div>
         ) : (
 
-<div style={styles.chartsContainer}>
+          <div style={styles.chartsContainer}>
             {/* Left: Bar Chart */}
-
             <div style={styles.chartWrapper}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
                 <h4 style={styles.chartTitle}>Recruiter Performance Overview</h4>
@@ -483,20 +399,20 @@ supabase
                 </div>
               </div>
               <ResponsiveContainer width="100%" height={300}>
-                <BarChart 
+                <BarChart
                   data={selectedRecruiter === "all" ? recruiterAnalytics : recruiterAnalytics.filter(r => r.recruiter === selectedRecruiter)}
-                  margin={{ top: 20, right: 30, left: 0, bottom: 60 }}
+                  margin={{ top: 30, right: 30, left: 0, bottom: 60 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis 
-                    dataKey="recruiter" 
-                    angle={-45} 
-                    textAnchor="end" 
+                  <XAxis
+                    dataKey="recruiter"
+                    angle={-45}
+                    textAnchor="end"
                     height={100}
                     tick={{ fontSize: 12 }}
                   />
                   <YAxis tick={{ fontSize: 12 }} />
-                  <Tooltip 
+                  <Tooltip
                     contentStyle={{
                       background: "#fff",
                       border: "1px solid #e2e8f0",
@@ -505,7 +421,7 @@ supabase
                     formatter={(value) => value}
                     cursor={{ fill: "rgba(30, 64, 175, 0.1)" }}
                   />
-                  <Legend 
+                  <Legend
                     wrapperStyle={{ paddingTop: "20px" }}
                     onClick={(e) => {
                       const key = e.dataKey;
@@ -513,9 +429,15 @@ supabase
                     }}
                     style={{ cursor: "pointer" }}
                   />
-                  {(selectedMetric === null || selectedMetric === "candidatesAdded") && <Bar dataKey="candidatesAdded" fill="#1e40af" name="Candidates Added" />}
-                  {(selectedMetric === null || selectedMetric === "interviews") && <Bar dataKey="interviews" fill="#f59e0b" name="Interviews" />}
-                  {(selectedMetric === null || selectedMetric === "closures") && <Bar dataKey="closures" fill="#10b981" name="Closures" />}
+                  {(selectedMetric === null || selectedMetric === "candidatesAdded") && (
+                    <Bar dataKey="candidatesAdded" fill="#1e40af" name="Candidates Added" />
+                  )}
+                  {(selectedMetric === null || selectedMetric === "interviews") && (
+                    <Bar dataKey="interviews" fill="#f59e0b" name="Interviews" />
+                  )}
+                  {(selectedMetric === null || selectedMetric === "closures") && (
+                    <Bar dataKey="closures" fill="#10b981" name="Closures" />
+                  )}
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -547,7 +469,7 @@ supabase
                   <Pie
                     data={selectedRecruiter === "all" ? recruiterAnalytics : recruiterAnalytics.filter(r => r.recruiter === selectedRecruiter)}
                     dataKey="revenue"
-                    nameKey="recruiter"   
+                    nameKey="recruiter"
                     cx="50%"
                     cy="50%"
                     innerRadius={80}
@@ -561,8 +483,8 @@ supabase
                     }}
                   >
                     {(selectedRecruiter === "all" ? recruiterAnalytics : recruiterAnalytics.filter(r => r.recruiter === selectedRecruiter)).map((entry, index) => (
-                      <Cell 
-                        key={`cell-${index}`} 
+                      <Cell
+                        key={`cell-${index}`}
                         fill={COLORS[index % COLORS.length]}
                         opacity={activeIndex === null || index === activeIndex ? 1 : 0.5}
                         style={{
@@ -604,7 +526,7 @@ supabase
               <div style={styles.centerLabel}>
                 <div style={styles.totalRevenue}>
                   INR {recruiterAnalytics
-                    .reduce((sum, r) => sum + r.revenue, 0)
+                    .reduce((sum, r) => sum + (Number(r.revenue) || 0), 0)
                     .toLocaleString("en-IN")}
                 </div>
               </div>
@@ -795,8 +717,3 @@ const styles = {
     color: "#64748b",
   },
 };
-
-
-
-
-

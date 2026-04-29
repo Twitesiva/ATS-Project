@@ -1,12 +1,5 @@
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
+// Fixed
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 
 export default function RecruiterPerformanceChart({ data = [] }) {
   return (
@@ -14,12 +7,15 @@ export default function RecruiterPerformanceChart({ data = [] }) {
       <h4 style={styles.title}>Recruiter Performance</h4>
       <div style={styles.chartWrap}>
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="name" />
-            <YAxis />
+          <BarChart data={data} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+            <XAxis dataKey="recruiter" angle={-45} textAnchor="end" height={70} tick={{ fontSize: 12 }} />
+            <YAxis tick={{ fontSize: 12 }} />
             <Tooltip />
-          <Bar dataKey="count" fill="#22c55e" />
+            <Legend />
+            <Bar dataKey="candidates" fill="#1e40af" name="Candidates" />
+            <Bar dataKey="interviews" fill="#f59e0b" name="Interviews" />
+            <Bar dataKey="closures" fill="#10b981" name="Closures" />
           </BarChart>
         </ResponsiveContainer>
       </div>

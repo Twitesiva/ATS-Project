@@ -1,5 +1,5 @@
 import { supabase } from "./supabaseClient";
-import { sanitizeMarginValue } from "../utils/reportHelpers";
+import { sanitizeMarginValue, normalizeRecruiter } from "../utils/reportHelpers";
 
 const isValidDate = (value) => {
   const date = new Date(value);
@@ -145,6 +145,7 @@ export const getRevenueTrend = async (filters = {}) => {
 };
 
 export const getRecruiterPerformance = async (filters = {}) => {
+  console.log("getRecruiterPerformance filters:", filters);
   const allData = await fetchAllPages((from, to) =>
     applyCandidateFilters(
       supabase.from("candidate_records").select("recruiter,id,status").range(from, to),
@@ -152,9 +153,12 @@ export const getRecruiterPerformance = async (filters = {}) => {
     )
   );
 
+  console.log("Raw recruiter data sample:", allData.slice(0,5).map(r => ({recruiter_raw: r.recruiter, status: r.status})));
+
   const map = new Map();
   allData.forEach((row) => {
-    const recruiter = String(row.recruiter || "Unknown").trim() || "Unknown";
+    const recruiterRaw = row.recruiter;
+    const recruiter = normalizeRecruiter(recruiterRaw);
     const current = map.get(recruiter) || { recruiter, candidates: 0, interviews: 0, closures: 0 };
 
     current.candidates += 1;
@@ -164,7 +168,9 @@ export const getRecruiterPerformance = async (filters = {}) => {
     map.set(recruiter, current);
   });
 
-  return Array.from(map.values()).sort((a, b) => a.recruiter.localeCompare(b.recruiter));
+  const result = Array.from(map.values()).sort((a, b) => a.recruiter.localeCompare(b.recruiter));
+  console.log("RecruiterPerformance result (Nandhini/Manager):", result.filter(r => r.recruiter.toLowerCase().includes('nand') || r.recruiter.toLowerCase().includes('manag')).map(r => ({recruiter: r.recruiter, cand: r.candidates, int: r.interviews, clos: r.closures})));
+  return result;
 };
 
 export const getClientPerformance = async (filters = {}) => {
@@ -258,19 +264,18 @@ export const getReportsTableData = async (filters = {}) => {
     ),
   ]);
 
- const normalizeKey = (str) =>
-  String(str || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, "")
-    .trim();
+  // Add normalizeClient for consistency (Dashboard has it)
+  const normalizeClient = (value) => String(value || "").trim() || "Unknown";
 
   const map = new Map();
 
   candidateData.forEach((row) => {
     const clientRaw = String(row.client_name || "Unknown").trim() || "Unknown";
-    const recruiter = String(row.recruiter || "Unknown").trim() || "Unknown";
-const key = normalizeKey(clientRaw);
-    const current = map.get(key) || { client: clientRaw, recruiter, candidates: 0, interviews: 0, shortlisted: 0, closures: 0, revenue: 0 };
+    const recruiterRaw = row.recruiter;
+    const recruiterNorm = normalizeRecruiter(recruiterRaw);
+    const clientNorm = normalizeClient(clientRaw);
+    const key = `${clientNorm}|||${recruiterNorm}`;
+    const current = map.get(key) || { client: clientRaw, recruiter: recruiterNorm, candidates: 0, interviews: 0, shortlisted: 0, closures: 0, revenue: 0 };
 
     current.candidates += 1;
     if (["L1 Scheduled","L2 Scheduled","AI Interview","Assessment Round","HR Round","Interview Scheduled"].includes(row.status)) current.interviews += 1;
@@ -282,12 +287,16 @@ const key = normalizeKey(clientRaw);
 
   revenueData.forEach((row) => {
     const clientRaw = String(row.client_name || "Unknown").trim() || "Unknown";
-    const recruiter = String(row.recruiter_name || "Unknown").trim() || "Unknown";
-    const key = `${normalizeKey(clientRaw)}||${normalizeKey(recruiter)}`;
-    const current = map.get(key) || { client: clientRaw, recruiter, candidates: 0, interviews: 0, shortlisted: 0, closures: 0, revenue: 0 };
+    const recruiterNorm = normalizeRecruiter(row.recruiter_name);
+    const clientNorm = normalizeClient(clientRaw);
+    const key = `${clientNorm}|||${recruiterNorm}`;
+    let current = map.get(key);
+    if (!current) {
+      current = { client: clientRaw, recruiter: recruiterNorm, candidates: 0, interviews: 0, shortlisted: 0, closures: 0, revenue: 0 };
+      map.set(key, current);
+    }
 
     current.revenue += sanitizeMarginValue(row.margin_value);
-    map.set(key, current);
   });
 
   return Array.from(map.values()).sort((a, b) =>

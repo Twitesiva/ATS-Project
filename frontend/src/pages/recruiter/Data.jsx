@@ -130,6 +130,7 @@ export default function RecruiterData({ scopeRole }) {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [interviewFromDate, setInterviewFromDate] = useState("");
+  const [statusFilter, setStatusFilter] = useState(null);
   const [interviewToDate, setInterviewToDate] = useState("");
 
   const handleClearFilters = () => {
@@ -139,6 +140,7 @@ export default function RecruiterData({ scopeRole }) {
     setToDate("");
     setInterviewFromDate("");
     setInterviewToDate("");
+    setStatusFilter(null);
   };
 
   const fetchRecords = useCallback(async () => {
@@ -597,7 +599,6 @@ export default function RecruiterData({ scopeRole }) {
       await insertStatusHistoryRows(historyRows, "csv_upload");
     }
     await touchUserLastSeen(user?.id, "csv_upload");
-
     alert("CSV uploaded successfully ✅");
     fetchRecords();
   };
@@ -682,12 +683,20 @@ export default function RecruiterData({ scopeRole }) {
       return;
     }
 
-    setRecords((prev) => prev.filter((r) => r.id !== id));
-    setDeletingId(null);
-  };
+      setRecords((prev) => prev.filter((r) => r.id !== id));
+      setDeletingId(null);
+    };
 
   /* ----------------------------- UI ----------------------------- */
-
+const displayedRecords = statusFilter
+  ? records.filter(r =>{
+      const s = String(r.status || "").trim().toLowerCase();
+      return statusFilter === "drop out"
+        ? s.includes("drop out")
+        : s === statusFilter;
+        console.log("statuses", records.map(r => r.status));
+ } )
+  : records;
   return (
     <div style={styles.page}>
       <h2>{isManagerView ? "Monthly Report" : "Recruiter Data"}</h2>
@@ -695,12 +704,15 @@ export default function RecruiterData({ scopeRole }) {
       {isManagerView && (
         <div style={styles.cardGrid4}>
           {[
-            { label: "Closures", value: metrics.closures, subtitle: "Closure count" },
-            { label: "Offered", value: metrics.offered, subtitle: "Offer stage count" },
-            { label: "Profile Submitted", value: metrics.profileSubmitted, subtitle: "Submitted candidates" },
-            { label: "Drop Out", value: metrics.dropOut, subtitle: "Dropout count" },
+ { label: "Closures",  value: metrics.closures,  subtitle: "Closure count",  filter: "closure" },
+ { label: "Offered",   value: metrics.offered,   subtitle: "Offer stage count", filter: "offered" },
+  { label: "Profile Submitted", value: metrics.profileSubmitted, subtitle: "Submitted candidates", filter: "profile submitted" },
+    { label: "Drop Out",  value: metrics.dropOut,   subtitle: "Dropout count",     filter: "drop out" },
           ].map((card) => (
-            <div key={card.label} style={styles.metricCard}>
+           <div key={card.label}
+      onClick={() => setStatusFilter(f => f === card.filter ? null : card.filter)}
+      style={{ ...styles.metricCard, cursor: "pointer",
+        outline: statusFilter === card.filter ? "2px solid #6c5ce7" : "none" }}>
               <p style={styles.metricLabel}>{card.label}</p>
               <p style={styles.metricValue}>{card.value}</p>
               <p style={styles.metricSubtitle}>{card.subtitle}</p>
@@ -788,7 +800,7 @@ export default function RecruiterData({ scopeRole }) {
             </thead>
 
             <tbody>
-              {records.map((r) => (
+              {displayedRecords.map((r) => (
                 <tr key={r.id}>
                   <td style={styles.td}>{r.sl_no}</td>
                   <td style={styles.td}>{formatDate(r.record_date)}</td>

@@ -11,10 +11,13 @@ import ReportsTable from "../../components/reports/ReportsTable";
 
 import {
   getCandidateStats,
+  getRecruiterPerformance,
   getReportsTableData,
   getFilterOptions,
   getRevenueTrend,
+  getStatusDistribution,
 } from "../../services/reportsService";
+import { normalizeRecruiter } from "../../utils/reportHelpers";
 
 const defaultFilters = {
   fromDate: "",
@@ -32,8 +35,9 @@ export default function Reports() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-const [quickFilter, setQuickFilter] = useState("");
-  const [revenueTrend, setRevenueTrend] = useState([]); // ✅ correct usage
+  const [quickFilter, setQuickFilter] = useState("");
+  const [revenueTrend, setRevenueTrend] = useState([]); // correct usage
+  const [statusDistribution, setStatusDistribution] = useState([]);
 
   const [options, setOptions] = useState({
     clients: [],
@@ -43,59 +47,27 @@ const [quickFilter, setQuickFilter] = useState("");
 
   const [stats, setStats] = useState({});
   const [tableRows, setTableRows] = useState([]);
+  const [recruiterPerformance, setRecruiterPerformance] = useState([]);
 
-  // ✅ Recruiter Performance
-  const recruiterPerformance = useMemo(() => {
-    const map = {};
-
-    tableRows.forEach((row) => {
-      const recruiter = row.recruiter || "Unknown";
-      const candidates = Number(row.candidates) || 0;
-
-      map[recruiter] = (map[recruiter] || 0) + candidates;
-    });
-
-    return Object.entries(map).map(([name, count]) => ({
-      name,
-      count,
-    }));
-  }, [tableRows]);
   const handleQuickFilter = (value) => {
-  setQuickFilter(value);
+    setQuickFilter(value);
 
-  setFilters(defaultFilters);
+    setFilters(defaultFilters);
 
-  if (value === "manager") {
-    setAppliedFilters({
-      ...defaultFilters,
-      filterType: "recruiter",
-      filterValue: "manager",
-    });
-  } else {
-    setAppliedFilters(defaultFilters);
-  }
-};
+    if (value === "manager") {
+      setAppliedFilters({
+        ...defaultFilters,
+        filterType: "recruiter",
+        filterValue: "manager",
+      });
+    } else {
+      setAppliedFilters(defaultFilters);
+    }
+  };
 
-  // ✅ Status Distribution
-  const statusDistribution = useMemo(() => {
-    let shortlisted = 0;
-    let closures = 0;
-    let interviews = 0;
+  // Status Distribution now uses API data for all statuses (or filtered)
 
-    tableRows.forEach((row) => {
-      shortlisted += row.shortlisted || 0;
-      closures += row.closures || 0;
-      interviews += row.interviews || 0;
-    });
-
-    return [
-      { name: "Shortlisted", value: shortlisted },
-      { name: "Closures", value: closures },
-      { name: "Interviews", value: interviews },
-    ];
-  }, [tableRows]);
-
-  // ✅ Hiring Funnel
+  // Hiring Funnel
   const hiringFunnel = useMemo(() => {
     let screening = 0;
     let interview = 0;
@@ -114,7 +86,7 @@ const [quickFilter, setQuickFilter] = useState("");
     ];
   }, [tableRows]);
 
-  // ✅ Client Performance
+  // Client Performance
   const clientPerformance = useMemo(() => {
     const map = {};
 
@@ -133,7 +105,7 @@ const [quickFilter, setQuickFilter] = useState("");
       .sort((a, b) => b.candidates - a.candidates);
   }, [tableRows]);
 
-  // ✅ Filter helper
+  // Filter helper
   const getApiFilters = (filterObj) => {
     const apiFilters = { ...filterObj };
 
@@ -154,23 +126,30 @@ const [quickFilter, setQuickFilter] = useState("");
     return apiFilters;
   };
 
-  // ✅ API Call
+  // API Call
   const loadReports = useCallback(async () => {
     setLoading(true);
     setError("");
 
     try {
       const apiFilters = getApiFilters(appliedFilters);
+      console.log("Manager Reports apiFilters:", apiFilters);
 
-      const [statsRes, tableRes, optionsRes, trendRes] =
-        await Promise.all([
-          getCandidateStats(apiFilters),
-          getReportsTableData(apiFilters),
-          getFilterOptions(apiFilters),
-          getRevenueTrend(apiFilters),
-        ]);
+      const [statsRes, recruiterPerfRes, tableRes, optionsRes, trendRes, statusDistRes] = await Promise.all([
+        getCandidateStats(apiFilters),
+        getRecruiterPerformance(apiFilters),
+        getReportsTableData(apiFilters),
+        getFilterOptions(apiFilters),
+        getRevenueTrend(apiFilters),
+        getStatusDistribution(apiFilters),
+      ]);
 
-      // ✅ FIXED Revenue Trend logic
+      setStatusDistribution(statusDistRes);
+
+      console.log("Manager Reports recruiterPerfRes (Nandhini/Manager):", recruiterPerfRes.filter(r => r.recruiter.toLowerCase().includes('nand') || r.recruiter.toLowerCase().includes('manag')).map(r => ({recruiter: r.recruiter, cand: r.candidates, int: r.interviews, clos: r.closures})));
+      console.log("Manager Reports tableRows sample:", tableRes.slice(0,3));
+
+      // FIXED Revenue Trend logic
       const grouped = {};
 
       trendRes.forEach((row) => {
@@ -195,6 +174,7 @@ const [quickFilter, setQuickFilter] = useState("");
       );
 
       setStats(statsRes);
+      setRecruiterPerformance(recruiterPerfRes);
       setTableRows(tableRes);
       setOptions(optionsRes);
     } catch (err) {
@@ -295,3 +275,4 @@ const styles = {
     fontSize: "14px",
   },
 };
+
