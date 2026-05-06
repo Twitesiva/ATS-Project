@@ -165,51 +165,61 @@ export default function Dashboard() {
   const loadRecruiterAnalytics = useCallback(async () => {
     setAnalyticsLoading(true);
 
-    const [recruiterPerf, revenueRes] = await Promise.all([
-      getRecruiterPerformance({}),
-      supabase.from("revenue_tracker").select("recruiter_name, margin_value"),
-    ]);
+    try {
+      const [recruiterPerf, revenueRes] = await Promise.all([
+        getRecruiterPerformance({}),
+        supabase.from("revenue_tracker").select("recruiter_name, margin_value"),
+      ]);
 
-    // Build revenue and closures map from revenue_tracker
-    const revenueMap = {};
-    const closuresMap = {};
-    (revenueRes.data || []).forEach((row) => {
-      const name = normalizeRecruiter(row.recruiter_name);
-      if (!revenueMap[name]) revenueMap[name] = 0;
-      if (!closuresMap[name]) closuresMap[name] = 0;
-      revenueMap[name] += parseRevenueValue(row.margin_value);
-      closuresMap[name] += 1;
-    });
-
-    // Transform: candidates/interviews from getRecruiterPerformance,
-    // closures and revenue from revenue_tracker
-    const transformed = recruiterPerf.map(r => ({
-      ...r,
-      candidatesAdded: r.candidates ?? r.candidatesAdded ?? 0,
-      closures: closuresMap[normalizeRecruiter(r.recruiter)] ?? 0,
-      revenue: revenueMap[normalizeRecruiter(r.recruiter)] ?? 0,
-    }));
-
-    // Also add any recruiters present in revenue_tracker but missing from getRecruiterPerformance
-    const existingNames = new Set(transformed.map(r => normalizeRecruiter(r.recruiter)));
-    Object.keys(revenueMap).forEach(name => {
-      if (!existingNames.has(name)) {
-        transformed.push({
-          recruiter: name,
-          candidatesAdded: 0,
-          interviews: 0,
-          closures: closuresMap[name] ?? 0,
-          revenue: revenueMap[name] ?? 0,
-        });
+      if (revenueRes.error) {
+        throw revenueRes.error;
       }
-    });
 
-    // Sort alphabetically
-    transformed.sort((a, b) => a.recruiter.localeCompare(b.recruiter));
+      // Build revenue and closures map from revenue_tracker
+      const revenueMap = {};
+      const closuresMap = {};
+      (revenueRes.data || []).forEach((row) => {
+        const name = normalizeRecruiter(row.recruiter_name);
+        if (!revenueMap[name]) revenueMap[name] = 0;
+        if (!closuresMap[name]) closuresMap[name] = 0;
+        revenueMap[name] += parseRevenueValue(row.margin_value);
+        closuresMap[name] += 1;
+      });
 
-    console.log("Recruiter analytics:", transformed);
-    setRecruiterAnalytics(transformed);
-    setAnalyticsLoading(false);
+      // Transform: candidates/interviews from getRecruiterPerformance,
+      // closures and revenue from revenue_tracker
+      const transformed = (recruiterPerf || []).map(r => ({
+        ...r,
+        candidatesAdded: r.candidates ?? r.candidatesAdded ?? 0,
+        closures: closuresMap[normalizeRecruiter(r.recruiter)] ?? 0,
+        revenue: revenueMap[normalizeRecruiter(r.recruiter)] ?? 0,
+      }));
+
+      // Also add any recruiters present in revenue_tracker but missing from getRecruiterPerformance
+      const existingNames = new Set(transformed.map(r => normalizeRecruiter(r.recruiter)));
+      Object.keys(revenueMap).forEach(name => {
+        if (!existingNames.has(name)) {
+          transformed.push({
+            recruiter: name,
+            candidatesAdded: 0,
+            interviews: 0,
+            closures: closuresMap[name] ?? 0,
+            revenue: revenueMap[name] ?? 0,
+          });
+        }
+      });
+
+      // Sort alphabetically
+      transformed.sort((a, b) => a.recruiter.localeCompare(b.recruiter));
+
+      console.log("Recruiter analytics:", transformed);
+      setRecruiterAnalytics(transformed);
+    } catch (err) {
+      console.error("Failed to load recruiter analytics", err);
+      setRecruiterAnalytics([]);
+    } finally {
+      setAnalyticsLoading(false);
+    }
   }, []);
 
   useEffect(() => {

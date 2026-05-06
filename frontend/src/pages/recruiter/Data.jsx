@@ -623,11 +623,50 @@ export default function RecruiterData({ scopeRole }) {
         <button onClick={() => setShowModal(true)} style={styles.primaryBtn}>
           + Add Candidate
         </button>
+<label style={styles.uploadBtn}>
+  Upload CSV/XLSX
+  <input type="file" accept=".csv,.xlsx,.xls" onChange={handleCSVUpload} style={styles.hiddenInput} />
+</label>
 
-        <label style={styles.uploadBtn}>
-          Upload CSV/XLSX
-          <input type="file" accept=".csv,.xlsx,.xls" onChange={handleCSVUpload} style={styles.hiddenInput} />
-        </label>
+{/* ADD THIS RIGHT AFTER */}
+<select
+  value={statusFilter || ""}
+  onChange={(e) => setStatusFilter(e.target.value || null)}
+  style={{
+    padding: "10px 16px",
+    borderRadius: "10px",
+    border: "1px solid #cbd5e1",
+    background: "#fff",
+    fontSize: "14px",
+    fontWeight: 600,
+    color: "#0f172a",
+    cursor: "pointer",
+    minWidth: "220px",
+  }}
+>
+  <option value="">All Statuses</option>
+  <option value="profile submitted">Profile Submitted</option>
+  <option value="feedback pending">Feedback Pending</option>
+  <option value="duplicate">Duplicate</option>
+  <option value="drop out by client">Drop Out By Client</option>
+  <option value="drop out by candidate">Drop Out By Candidate</option>
+  <option value="assessment round">Assessment Round</option>
+  <option value="hr round">HR Round</option>
+  <option value="l1 scheduled">L1 Scheduled</option>
+  <option value="l2 scheduled">L2 Scheduled</option>
+  <option value="ai interview">AI Interview</option>
+  <option value="offered">Offered</option>
+  <option value="closure">Closure</option>
+  <option value="backout">Backout</option>
+  <option value="l1 reject">L1 Reject</option>
+  <option value="l2 reject">L2 Reject</option>
+  <option value="final round rejected">Final Round Rejected</option>
+  <option value="shortlisted">Shortlisted</option>
+  <option value="position hold">Position Hold</option>
+  <option value="position closed">Position Closed</option>
+  <option value="interview scheduled">Interview Scheduled</option>
+</select>
+     
 
         <select value={searchBy} onChange={(e) => setSearchBy(e.target.value)} style={styles.select}>
           <option value="candidate_name">Candidate Name</option>
