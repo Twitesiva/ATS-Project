@@ -13,14 +13,15 @@ const columns = [
   { key: "location", label: "Location" },
 ];
 
+// ✅ offered_ctc removed from table
 const tableColumns = [
   ...columns,
-  { key: "bd_name", label: "BD Name" }, // ✅ ADDED
-  { key: "offered_ctc", label: "Offered CTC / CTC per month" },
-  { key: "billing_rate", label: "Twite BR / Billing Rate" },
+  { key: "bd_name", label: "BD Name" },
+  { key: "billing_rate", label: "Billing Rate" },
   { key: "margin_value", label: "Margin" },
   { key: "margin_percent", label: "Margin %" },
 ];
+
 const headerMap = {
   doj: "doj",
   recruiter: "recruiter_name",
@@ -33,18 +34,16 @@ const headerMap = {
   position: "position",
   location: "location",
   hire: "hire",
-  "offered ctc": "offered_ctc",
   "billing rate": "billing_rate",
   "margin value": "margin_value",
   "margin %": "margin_percent",
   "margin percent": "margin_percent",
-  "offer_status": "offer_status",
-  "status": "status"
+  offer_status: "offer_status",
+  status: "status",
 };
 
 const NUMERIC_FIELDS = new Set([
   "ctc",
-  "offered_ctc",
   "billing_rate",
   "margin_value",
   "margin_percent",
@@ -65,13 +64,15 @@ const formatCurrency = (v) => {
   return `\u20B9${parsed.toLocaleString("en-IN")}`;
 };
 
+// ✅ offered_ctc removed from emptyForm
 const emptyForm = {
   ...tableColumns.reduce((acc, col) => {
     acc[col.key] = "";
     return acc;
   }, {}),
   hire: "",
-  bd_name: "", 
+  ctc: "",
+  bd_name: "",
 };
 
 export default function TeamTracker() {
@@ -85,9 +86,9 @@ export default function TeamTracker() {
   const [clientSearch, setClientSearch] = useState("");
   const [locationSearch, setLocationSearch] = useState("");
   const [recruiterOptions, setRecruiterOptions] = useState([]);
-  const [bdeOptions, setBdeOptions] = useState([]);       // ✅ ADD THIS LINE
-const [selectedBde, setSelectedBde] = useState("");
-const [showUpload, setShowUpload] = useState(false);
+  const [bdeOptions, setBdeOptions] = useState([]);
+  const [selectedBde, setSelectedBde] = useState("");
+  const [showUpload, setShowUpload] = useState(false);
   const [file, setFile] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [editRecord, setEditRecord] = useState(null);
@@ -116,7 +117,6 @@ const [showUpload, setShowUpload] = useState(false);
         location: row.location || null,
         hire: row.hire || null,
         ctc: numeric(row.ctc),
-        offered_ctc: numeric(row.offered_ctc),
         billing_rate: numeric(row.billing_rate),
         margin_value: numeric(row.margin_value),
         margin_percent: numeric(row.margin_percent),
@@ -149,7 +149,7 @@ const [showUpload, setShowUpload] = useState(false);
     if (fromDate) query = query.gte("doj", fromDate);
     if (toDate) query = query.lte("doj", toDate);
     if (selectedRecruiter) query = query.eq("recruiter_name", selectedRecruiter);
-    if (selectedBde) query = query.eq("bd_name", selectedBde);           
+    if (selectedBde) query = query.eq("bd_name", selectedBde);
     if (clientSearch.trim()) query = query.ilike("client_name", `%${clientSearch.trim()}%`);
     if (locationSearch.trim()) query = query.ilike("location", `%${locationSearch.trim()}%`);
 
@@ -188,23 +188,24 @@ const [showUpload, setShowUpload] = useState(false);
   useEffect(() => {
     fetchRecruiterOptions();
   }, [fetchRecruiterOptions]);
-// ✅ ADD THIS ENTIRE BLOCK AFTER THE ABOVE
-useEffect(() => {
-  const fetchBdeOptions = async () => {
-    const { data, error } = await supabase
-      .from("users")
-      .select("name")
-      .eq("role", "bde")
-      .order("name", { ascending: true });
 
-    if (error) {
-      console.error("[team-tracker] bde fetch failed", error);
-      return;
-    }
-    setBdeOptions((data || []).map((u) => u.name).filter(Boolean));
-  };
-  fetchBdeOptions();
-}, []);
+  useEffect(() => {
+    const fetchBdeOptions = async () => {
+      const { data, error } = await supabase
+        .from("users")
+        .select("name")
+        .eq("role", "bde")
+        .order("name", { ascending: true });
+
+      if (error) {
+        console.error("[team-tracker] bde fetch failed", error);
+        return;
+      }
+      setBdeOptions((data || []).map((u) => u.name).filter(Boolean));
+    };
+    fetchBdeOptions();
+  }, []);
+
   useEffect(() => {
     const channel = supabase
       .channel("team-tracker-realtime")
@@ -241,7 +242,7 @@ useEffect(() => {
     });
     next.hire = row.hire ?? "";
     next.ctc = row.ctc ?? "";
-    next.bd_name = row.bd_name ?? ""; // ✅ ADD THIS LINE
+    next.bd_name = row.bd_name ?? "";
     setForm(next);
     setShowModal(true);
   };
@@ -250,35 +251,61 @@ useEffect(() => {
     if (saving) return;
     setShowModal(false);
     setEditRecord(null);
-  };const calculateMargins = (row) => {
-  const billingRate = numeric(row.billing_rate);
-  const ctc = numeric(row.ctc);
-
-  if (billingRate === null || ctc === null) {
-    return { margin_value: null, margin_percent: null };
-  }
-
-  const margin_value = billingRate - ctc;
-  const margin_percent = ctc !== 0 ? (margin_value / ctc) * 100 : null;
-
-  return {
-    margin_value: Number.isFinite(margin_value) ? margin_value : null,
-    margin_percent: Number.isFinite(margin_percent)
-      ? parseFloat(margin_percent.toFixed(2))
-      : null,
   };
-};
+
+  // ✅ Option A: both Permanent and Temporary use Margin = Billing Rate - CTC
+  // Auto-calc but margin_value stays editable if user wants to override
+  const calculateMargins = (row) => {
+    const billingRate = numeric(row.billing_rate);
+    const ctc = numeric(row.ctc);
+
+    if (billingRate === null || ctc === null) {
+      // If margin_value was manually typed, keep margin_percent in sync
+      const marginValue = numeric(row.margin_value);
+      const margin_percent =
+        billingRate !== null && billingRate !== 0 && marginValue !== null
+          ? parseFloat(((marginValue / billingRate) * 100).toFixed(2))
+          : null;
+      return { margin_value: null, margin_percent };
+    }
+
+    const margin_value = billingRate - ctc;
+    const margin_percent =
+      ctc !== 0 ? parseFloat(((margin_value / ctc) * 100).toFixed(2)) : null;
+
+    return {
+      margin_value: Number.isFinite(margin_value) ? margin_value : null,
+      margin_percent: Number.isFinite(margin_percent) ? margin_percent : null,
+    };
+  };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
     setForm((prev) => {
       const next = { ...prev, [name]: value };
-      const margins = calculateMargins(next);
-      return {
-        ...next,
-        margin_value: margins.margin_value ?? "",
-        margin_percent: margins.margin_percent ?? "",
-      };
+
+      // ✅ If user manually edits margin_value, only recalc margin_percent
+      if (name === "margin_value") {
+        const billingRate = numeric(next.billing_rate);
+        const marginValue = numeric(value);
+        const margin_percent =
+          billingRate !== null && billingRate !== 0 && marginValue !== null
+            ? parseFloat(((marginValue / billingRate) * 100).toFixed(2))
+            : null;
+        return { ...next, margin_percent: margin_percent ?? "" };
+      }
+
+      // ✅ For billing_rate or ctc changes — auto-calc margin_value and margin_percent
+      if (name === "billing_rate" || name === "ctc") {
+        const margins = calculateMargins(next);
+        return {
+          ...next,
+          margin_value: margins.margin_value ?? "",
+          margin_percent: margins.margin_percent ?? "",
+        };
+      }
+
+      return next;
     });
   };
 
@@ -287,7 +314,7 @@ useEffect(() => {
       recruiter_name: row.recruiter_name || null,
       hire: row.hire === "" ? null : row.hire ?? null,
       ctc: numeric(row.ctc),
-      bd_name: row.bd_name === "" ? null : row.bd_name ?? null, // ✅ ADD THIS LINE
+      bd_name: row.bd_name === "" ? null : row.bd_name ?? null,
     };
 
     tableColumns.forEach((col) => {
@@ -302,9 +329,15 @@ useEffect(() => {
       }
     });
 
-    const margins = calculateMargins(row);
-    payload.margin_value = margins.margin_value;
-    payload.margin_percent = margins.margin_percent;
+    // ✅ Both Permanent and Temporary: use whatever margin_value user has (auto or manual)
+    // margin_percent is always auto from margin_value / billing_rate
+    const billingRate = numeric(row.billing_rate);
+    const marginValue = numeric(row.margin_value);
+    payload.margin_value = marginValue;
+    payload.margin_percent =
+      billingRate !== null && billingRate !== 0 && marginValue !== null
+        ? parseFloat(((marginValue / billingRate) * 100).toFixed(2))
+        : null;
 
     return payload;
   };
@@ -317,7 +350,10 @@ useEffect(() => {
     const payload = toPayload(form);
 
     if (editRecord?.id) {
-      const { error } = await supabase.from("revenue_tracker").update(payload).eq("id", editRecord.id);
+      const { error } = await supabase
+        .from("revenue_tracker")
+        .update(payload)
+        .eq("id", editRecord.id);
       if (error) {
         alert(error.message);
         console.error("[team-tracker] update failed", error);
@@ -345,7 +381,9 @@ useEffect(() => {
     if (!id || deletingId) return;
 
     const target = records.find((r) => r.id === id);
-    const ok = window.confirm(`Delete revenue record for "${target?.candidate_name || "-"}"?`);
+    const ok = window.confirm(
+      `Delete revenue record for "${target?.candidate_name || "-"}"?`
+    );
     if (!ok) return;
 
     setDeletingId(id);
@@ -374,6 +412,7 @@ useEffect(() => {
         <button style={styles.button} onClick={openAdd}>
           + Add Revenue
         </button>
+
         <select
           value={selectedRecruiter}
           onChange={(e) => setSelectedRecruiter(e.target.value)}
@@ -386,16 +425,19 @@ useEffect(() => {
             </option>
           ))}
         </select>
+
         <select
-  value={selectedBde}
-  onChange={(e) => setSelectedBde(e.target.value)}
-  style={styles.select}
->
-  <option value="">All BDs</option>
-  {bdeOptions.map((name) => (
-    <option key={name} value={name}>{name}</option>
-  ))}
-</select>
+          value={selectedBde}
+          onChange={(e) => setSelectedBde(e.target.value)}
+          style={styles.select}
+        >
+          <option value="">All BDs</option>
+          {bdeOptions.map((name) => (
+            <option key={name} value={name}>
+              {name}
+            </option>
+          ))}
+        </select>
 
         <input
           type="date"
@@ -421,17 +463,16 @@ useEffect(() => {
           style={styles.input}
         />
       </div>
+
       {showUpload && (
         <div style={styles.modal}>
           <div style={styles.modalBox}>
             <h3>Upload CSV / XLSX</h3>
-
             <input
               type="file"
               accept=".csv,.xlsx"
               onChange={(e) => setFile(e.target.files[0])}
             />
-
             <div style={{ marginTop: "10px", display: "flex", gap: "10px" }}>
               <button style={styles.button} onClick={handleFileUpload}>
                 Upload
@@ -475,17 +516,15 @@ useEffect(() => {
                       <td key={`${row.id}-${c.key}`} style={styles.td}>
                         {c.type === "date"
                           ? formatDate(row[c.key])
-                          : c.key === "offered_ctc" ||
-                            c.key === "billing_rate" ||
-                            c.key === "margin_value"
-                            ? formatCurrency(row[c.key])
-                            : c.key === "margin_percent"
-                              ? row[c.key] == null || row[c.key] === ""
-                                ? "-"
-                                : `${Number(row[c.key]).toFixed(2)}%`
-                              : row[c.key] == null || row[c.key] === ""
-                                ? "-"
-                                : String(row[c.key])}
+                          : c.key === "billing_rate" || c.key === "margin_value"
+                          ? formatCurrency(row[c.key])
+                          : c.key === "margin_percent"
+                          ? row[c.key] == null || row[c.key] === ""
+                            ? "-"
+                            : `${Number(row[c.key]).toFixed(2)}%`
+                          : row[c.key] == null || row[c.key] === ""
+                          ? "-"
+                          : String(row[c.key])}
                       </td>
                     ))}
                     <td style={styles.td}>
@@ -554,7 +593,12 @@ function TeamRevenueModal({ form, saving, editing, bdeOptions, onChange, onClose
         <div style={styles.modalHeader}>
           <div style={styles.modalHeaderRow}>
             <h3 style={styles.modalTitle}>{editing ? "Edit Revenue" : "Add Revenue"}</h3>
-            <button type="button" onClick={onClose} style={styles.closeBtn} disabled={saving}>
+            <button
+              type="button"
+              onClick={onClose}
+              style={styles.closeBtn}
+              disabled={saving}
+            >
               x
             </button>
           </div>
@@ -567,6 +611,7 @@ function TeamRevenueModal({ form, saving, editing, bdeOptions, onChange, onClose
                 <h4 style={styles.sectionTitle}>Revenue Details</h4>
               </div>
               <div style={styles.sectionGrid}>
+                {/* Base fields */}
                 {baseFields.map((col) => (
                   <label key={col.key} style={styles.fieldLabel}>
                     {col.label}
@@ -579,78 +624,52 @@ function TeamRevenueModal({ form, saving, editing, bdeOptions, onChange, onClose
                     />
                   </label>
                 ))}
-                <label style={styles.fieldLabel}>
-  BD Name
-  <select
-    name="bd_name"
-    value={form.bd_name ?? ""}
-    onChange={onChange}
-    style={styles.modalInput}
-  >
-    <option value="">Select BD</option>
-    {(bdeOptions || []).map((name) => (
-      <option key={name} value={name}>{name}</option>
-    ))}
-  </select>
-</label>
 
+                {/* BD Name */}
+                <label style={styles.fieldLabel}>
+                  BD Name
+                  <select
+                    name="bd_name"
+                    value={form.bd_name ?? ""}
+                    onChange={onChange}
+                    style={styles.modalInput}
+                  >
+                    <option value="">Select BD</option>
+                    {(bdeOptions || []).map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                {/* Hire Type */}
                 <label style={styles.fieldLabel}>
                   Hire
-                  <select name="hire" value={form.hire ?? ""} onChange={onChange} style={styles.modalInput}>
+                  <select
+                    name="hire"
+                    value={form.hire ?? ""}
+                    onChange={onChange}
+                    style={styles.modalInput}
+                  >
                     <option value="">Select</option>
                     <option value="Permanent">Permanent</option>
                     <option value="Temporary">Temporary</option>
                   </select>
                 </label>
 
-                <label style={styles.fieldLabel}>
-                  Offered CTC
-                  <input
-                    style={styles.modalInput}
-                    type="text"
-                    name="offered_ctc"
-                    value={form.offered_ctc ?? ""}
-                    onChange={onChange}
-                  />
-                </label>
-
+                {/* ✅ PERMANENT: CTC + Billing Rate → auto Margin = BR - CTC, editable, auto Margin % */}
                 {isPermanent && (
                   <>
-                  
                     <label style={styles.fieldLabel}>
-                      Twite Billing Rate
-                      <input
-                        style={styles.modalInput}
-                        type="text"
-                        name="billing_rate"
-                        value={form.billing_rate ?? ""}
-                        onChange={onChange}
-                      />
-                    </label>
-
-                    <label style={styles.fieldLabel}>
-                      Margin
-                      <input
-                        style={styles.modalInput}
-                        type="text"
-                        name="margin_value"
-                        value={form.margin_value ?? ""}
-                        onChange={onChange}
-                      />
-                    </label>
-                  </>
-                )}
-
-                {isTemporary && (
-                  <>
-                    <label style={styles.fieldLabel}>
-                      CTC Per Month
+                      CTC
                       <input
                         style={styles.modalInput}
                         type="text"
                         name="ctc"
                         value={form.ctc ?? ""}
                         onChange={onChange}
+                        placeholder="Enter CTC"
                       />
                     </label>
 
@@ -662,17 +681,84 @@ function TeamRevenueModal({ form, saving, editing, bdeOptions, onChange, onClose
                         name="billing_rate"
                         value={form.billing_rate ?? ""}
                         onChange={onChange}
+                        placeholder="Enter billing rate"
                       />
                     </label>
 
                     <label style={styles.fieldLabel}>
-                      Margin
+                      Margin (auto = BR − CTC, editable)
                       <input
                         style={styles.modalInput}
                         type="text"
                         name="margin_value"
                         value={form.margin_value ?? ""}
                         onChange={onChange}
+                        placeholder="Auto-calculated, override if needed"
+                      />
+                    </label>
+
+                    <label style={styles.fieldLabel}>
+                      Margin %
+                      <input
+                        style={{ ...styles.modalInput, background: "#f1f5f9", color: "#64748b" }}
+                        type="text"
+                        name="margin_percent"
+                        value={form.margin_percent ?? ""}
+                        readOnly
+                        placeholder="Auto-calculated"
+                      />
+                    </label>
+                  </>
+                )}
+
+                {/* ✅ TEMPORARY: CTC + Billing Rate → auto Margin + auto Margin % (both editable) */}
+                {isTemporary && (
+                  <>
+                    <label style={styles.fieldLabel}>
+                      CTC Per Month
+                      <input
+                        style={styles.modalInput}
+                        type="text"
+                        name="ctc"
+                        value={form.ctc ?? ""}
+                        onChange={onChange}
+                        placeholder="Enter CTC"
+                      />
+                    </label>
+
+                    <label style={styles.fieldLabel}>
+                      Billing Rate
+                      <input
+                        style={styles.modalInput}
+                        type="text"
+                        name="billing_rate"
+                        value={form.billing_rate ?? ""}
+                        onChange={onChange}
+                        placeholder="Enter billing rate"
+                      />
+                    </label>
+
+                    <label style={styles.fieldLabel}>
+                      Margin (auto-calc, editable)
+                      <input
+                        style={styles.modalInput}
+                        type="text"
+                        name="margin_value"
+                        value={form.margin_value ?? ""}
+                        onChange={onChange}
+                        placeholder="Auto = Billing - CTC"
+                      />
+                    </label>
+
+                    <label style={styles.fieldLabel}>
+                      Margin %
+                      <input
+                        style={{ ...styles.modalInput, background: "#f1f5f9", color: "#64748b" }}
+                        type="text"
+                        name="margin_percent"
+                        value={form.margin_percent ?? ""}
+                        readOnly
+                        placeholder="Auto-calculated"
                       />
                     </label>
                   </>
@@ -680,7 +766,7 @@ function TeamRevenueModal({ form, saving, editing, bdeOptions, onChange, onClose
 
                 {!isPermanent && !isTemporary && (
                   <div style={styles.hintCard}>
-                    Select Hire type to enter CTC/Billing/Margin fields.
+                    Select Hire type to enter Billing / Margin fields.
                   </div>
                 )}
               </div>
@@ -690,10 +776,20 @@ function TeamRevenueModal({ form, saving, editing, bdeOptions, onChange, onClose
 
         <div style={styles.modalFooter}>
           <div style={styles.footerActions}>
-            <button type="button" onClick={onClose} style={styles.secondaryBtn} disabled={saving}>
+            <button
+              type="button"
+              onClick={onClose}
+              style={styles.secondaryBtn}
+              disabled={saving}
+            >
               Cancel
             </button>
-            <button type="submit" form={formId} style={styles.primaryBtn} disabled={saving}>
+            <button
+              type="submit"
+              form={formId}
+              style={styles.primaryBtn}
+              disabled={saving}
+            >
               {saving ? "Saving..." : editing ? "Update" : "Save"}
             </button>
           </div>
@@ -702,7 +798,6 @@ function TeamRevenueModal({ form, saving, editing, bdeOptions, onChange, onClose
     </div>
   );
 }
-
 
 const styles = {
   page: {
@@ -797,29 +892,29 @@ const styles = {
     cursor: "pointer",
   },
   modal: {
-  position: "fixed",
-  top: 0,
-  left: 0,
-  right: 0,
-  bottom: 0,
-  background: "rgba(0,0,0,0.5)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  zIndex: 999,
-},
-modalBox: {
-  background: "#fff",
-  padding: "20px",
-  borderRadius: "8px",
-  width: "400px",
-},
-button: {
-  padding: "6px 10px",
-  border: "1px solid #cbd5e1",
-  borderRadius: "6px",
-  cursor: "pointer",
-},
+    position: "fixed",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: "rgba(0,0,0,0.5)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 999,
+  },
+  modalBox: {
+    background: "#fff",
+    padding: "20px",
+    borderRadius: "8px",
+    width: "400px",
+  },
+  button: {
+    padding: "6px 10px",
+    border: "1px solid #cbd5e1",
+    borderRadius: "6px",
+    cursor: "pointer",
+  },
   overlay: {
     position: "fixed",
     inset: 0,
@@ -968,4 +1063,3 @@ button: {
     fontSize: "14px",
   },
 };
-

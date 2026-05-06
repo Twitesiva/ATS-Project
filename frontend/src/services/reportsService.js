@@ -1,5 +1,5 @@
 import { supabase } from "./supabaseClient";
-import { sanitizeMarginValue, normalizeRecruiter } from "../utils/reportHelpers";
+import { sanitizeMarginValue, normalizeRecruiter, normalizeStatus } from "../utils/reportHelpers";
 
 const isValidDate = (value) => {
   const date = new Date(value);
@@ -57,6 +57,15 @@ const applyRevenueFilters = (query, filters = {}) => {
 };
 
 // ✅ Reusable pagination helper — fetches ALL rows beyond Supabase's 1000 row cap
+const normalizeComparableStatus = (value) =>
+  String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+
+const statusMatches = (status, expectedStatuses) =>
+  expectedStatuses.has(normalizeComparableStatus(status));
+
 const fetchAllPages = async (buildQuery) => {
   const pageSize = 1000;
   let allData = [];
@@ -224,7 +233,8 @@ export const getStatusDistribution = async (filters = {}) => {
 
   const map = new Map();
   allData.forEach((row) => {
-    const status = String(row.status || "Unknown").trim() || "Unknown";
+    const raw = String(row.status || "Unknown").trim() || "Unknown";
+    const status = normalizeStatus(raw);
     map.set(status, (map.get(status) || 0) + 1);
   });
 
@@ -232,19 +242,46 @@ export const getStatusDistribution = async (filters = {}) => {
 };
 
 export const getHiringFunnel = async (filters = {}) => {
-  const rows = await fetchAllPages((from, to) =>
-    applyCandidateFilters(
-      supabase.from("candidate_records").select("status").range(from, to),
-      filters
-    )
-  );
+  const [candidateRows, revenueRows] = await Promise.all([
+    fetchAllPages((from, to) =>
+      applyCandidateFilters(
+        supabase.from("candidate_records").select("status").range(from, to),
+        filters
+      )
+    ),
+    fetchAllPages((from, to) =>
+      applyRevenueFilters(
+        supabase.from("revenue_tracker").select("id").range(from, to),
+        filters
+      )
+    ),
+  ]);
+
+  const screeningStatuses = new Set(["screen select", "screen reject", "screen rejected"]);
+  const interviewStatuses = new Set([
+    "l1 scheduled",
+    "l2 scheduled",
+    "ai interview",
+    "hr round",
+    "assessment round",
+    "assesment round",
+  ]);
+  const rejectedStatuses = new Set(["l1 reject", "l2 reject", "final round reject"]);
+  const dropoutStatuses = new Set([
+    "drop out",
+    "back out",
+    "backout",
+    "drop out by candidate",
+    "drop out by client",
+  ]);
+  const closureIds = new Set(revenueRows.map((row) => row.id).filter(Boolean));
 
   return [
-    { stage: "Screening", value: rows.filter((r) => ["Screen Select","Screen Reject","Screen rejected"].includes(r.status)).length },
-    { stage: "Interview", value: rows.filter((r) => ["L1 Scheduled","L2 Scheduled"].includes(r.status)).length },
-    { stage: "Rejected", value: rows.filter((r) => ["L1 Reject","L2 Reject","Final Round Reject"].includes(r.status)).length },
-    { stage: "Dropout", value: rows.filter((r) => ["Drop Out","Back Out","Backout"].includes(r.status)).length },
-    { stage: "Closure", value: rows.filter((r) => r.status === "Closure").length },
+    { stage: "Screening", value: candidateRows.filter((r) => statusMatches(r.status, screeningStatuses)).length },
+    { stage: "Interview", value: candidateRows.filter((r) => statusMatches(r.status, interviewStatuses)).length },
+    { stage: "Rejected", value: candidateRows.filter((r) => statusMatches(r.status, rejectedStatuses)).length },
+    { stage: "Dropout", value: candidateRows.filter((r) => statusMatches(r.status, dropoutStatuses)).length },
+    { stage: "Closure", value: closureIds.size },
   ];
 };
 
@@ -327,19 +364,28 @@ export const getFilterOptions = async (filters = {}) => {
   ]);
 
   const clients = [...new Set(clientsData.map((r) => String(r.client_name || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+
   const recruiters = [
-  ...new Set(
-    recruitersData
-      .map((r) =>
-        String(r.recruiter || "")
-          .trim()
-          .toLowerCase() // 🔥 normalize
-      )
-      .filter(Boolean)
-  ),
-];
-console.log("recruitersData:", recruitersData);
-  const statuses = [...new Set(statusesData.map((r) => String(r.status || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    ...new Set(
+      recruitersData
+        .map((r) =>
+          String(r.recruiter || "")
+            .trim()
+            .toLowerCase() // 🔥 normalize
+        )
+        .filter(Boolean)
+    ),
+  ];
+  console.log("recruitersData:", recruitersData);
+
+  // ✅ Normalize statuses before deduplicating — collapses "Backout"/"Back Out"/"Dropout" etc.
+  const statuses = [
+    ...new Set(
+      statusesData
+        .map((r) => normalizeStatus(String(r.status || "").trim()))
+        .filter(Boolean)
+    ),
+  ].sort((a, b) => a.localeCompare(b));
 
   return { clients, recruiters, statuses };
 };

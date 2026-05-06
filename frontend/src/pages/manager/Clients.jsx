@@ -6,8 +6,8 @@ import Loader from "../../components/common/Loader";
 
 import { formatDate } from "../../utils/dateFormat";
 
+// ✅ s_no removed — column deleted from DB
 const columnConfig = [
-  { key: "s_no", label: "S.No", type: "number" },
   { key: "source", label: "Source" },
   { key: "client_name", label: "Client Name" },
   { key: "number_of_openings", label: "Number of Openings", type: "number" },
@@ -32,12 +32,8 @@ const columnConfig = [
   { key: "remarks", label: "Remarks", type: "textarea" },
 ];
 
+// ✅ s_no / s no / serial no / sl no mappings removed
 const headerMap = {
-  "s no": "s_no",
-  "s.no": "s_no",
-  "S.No":"s_no",
-  "serial no": "s_no",
-  "sl no": "s_no",
   "source": "source",
   "client name": "client_name",
   "number of openings": "number_of_openings",
@@ -89,6 +85,7 @@ const toNullableNumber = (value) => {
   return Number.isFinite(num) ? num : null;
 };
 
+// ✅ toPayload no longer includes s_no
 const toPayload = (row) => {
   const payload = {};
 
@@ -145,12 +142,12 @@ export default function Clients() {
   const [kpiFilter, setKpiFilter] = useState(null);
 
   const fetchRows = async () => {
-  setLoading(true);
-  let query = supabase
-    .from("client_records")
-    .select("*")
-    .order("id", { ascending: false })
-    .limit(100);
+    setLoading(true);
+    let query = supabase
+      .from("client_records")
+      .select("*")
+      .order("id", { ascending: false })
+      .limit(100);
 
     if (clientSearch.trim()) {
       query = query.ilike("client_name", `%${clientSearch.trim()}%`);
@@ -173,14 +170,14 @@ export default function Clients() {
 
   const orderedRows = useMemo(() => {
     let filtered = rows;
-    
+
     if (hireModeFilter && hireModeFilter !== "all") {
       filtered = filtered.filter((row) => {
         const mode = String(row.hire_mode || "").trim().toLowerCase();
         return mode === hireModeFilter;
       });
     }
-    
+
     if (kpiFilter === "permanent") {
       filtered = filtered.filter((row) => {
         const mode = String(row.hire_mode || "").trim().toLowerCase();
@@ -200,7 +197,7 @@ export default function Clients() {
         return Number(row.backout) > 0;
       });
     }
-    
+
     return filtered;
   }, [rows, hireModeFilter, kpiFilter]);
 
@@ -211,12 +208,12 @@ export default function Clients() {
     let backout = 0;
 
     rows.forEach((row) => {
-  const mode = String(row.hire_mode || "").trim().toLowerCase();
-  if (mode === "permanent") permanent += 1;
-  if (mode === "contract") contract += 1;
-  closure += Number(row.closure) || 0;
-  backout += Number(row.backout) || 0;
-});
+      const mode = String(row.hire_mode || "").trim().toLowerCase();
+      if (mode === "permanent") permanent += 1;
+      if (mode === "contract") contract += 1;
+      closure += Number(row.closure) || 0;
+      backout += Number(row.backout) || 0;
+    });
     return { permanent, contract, closure, backout };
   }, [rows]);
 
@@ -247,74 +244,73 @@ export default function Clients() {
     setForm((prev) => ({ ...prev, [name]: value }));
   };
 
-const handleSave = async (e) => {
-  e.preventDefault();
-  setSaving(true);
+  const handleSave = async (e) => {
+    e.preventDefault();
+    setSaving(true);
 
-  const payload = toPayload(form);
+    // ✅ toPayload now excludes s_no automatically
+    const payload = toPayload(form);
 
-  if (editingRow?.id) {
-    const { error } = await supabase
-      .from("client_records")
-      .update(payload)
-      .eq("id", editingRow.id);
+    if (editingRow?.id) {
+      const { error } = await supabase
+        .from("client_records")
+        .update(payload)
+        .eq("id", editingRow.id);
 
-    if (error) {
-      alert(error.message);
-      console.error("[client_records] update failed", error);
-      setSaving(false);
-      return;
-    }
+      if (error) {
+        alert(error.message);
+        console.error("[client_records] update failed", error);
+        setSaving(false);
+        return;
+      }
 
-  } else {
-    // ✅ INSERT into client_records (THIS WAS MISSING)
-    const { error } = await supabase
-      .from("client_records")
-      .insert([payload]);
+    } else {
+      const { error } = await supabase
+        .from("client_records")
+        .insert([payload]);
 
-    if (error) {
-      alert(error.message);
-      console.error("[client_records] insert failed", error);
-      setSaving(false);
-      return;
-    }
+      if (error) {
+        alert(error.message);
+        console.error("[client_records] insert failed", error);
+        setSaving(false);
+        return;
+      }
 
-    // ✅ Mirror to requirements table
-    if (form.req_name) {
-      const { data: matchedCompany } = await supabase
-        .from("companies")
-        .select("id")
-        .ilike("company_name", `%${form.client_name || ""}%`)
-        .limit(1)
-        .single();
+      // Mirror to requirements table
+      if (form.req_name) {
+        const { data: matchedCompany } = await supabase
+          .from("companies")
+          .select("id")
+          .ilike("company_name", `%${form.client_name || ""}%`)
+          .limit(1)
+          .single();
 
-      const { error: reqError } = await supabase
-        .from("requirements")
-        .insert([{
-          job_title: form.req_name || "N/A",
-          hire: form.hire_mode || null,
-          hire_mode: form.hire_mode || null,
-          status: "Open",
-          created_at: form.req_shared_date
-            ? new Date(form.req_shared_date).toISOString()
-            : new Date().toISOString(),
-          mode: form.source || null,
-          number_of_openings: toNullableNumber(form.number_of_openings),
-          company_id: matchedCompany?.id || null,
-        }]);
+        const { error: reqError } = await supabase
+          .from("requirements")
+          .insert([{
+            job_title: form.req_name || "N/A",
+            hire: form.hire_mode || null,
+            hire_mode: form.hire_mode || null,
+            status: "Open",
+            created_at: form.req_shared_date
+              ? new Date(form.req_shared_date).toISOString()
+              : new Date().toISOString(),
+            mode: form.source || null,
+            number_of_openings: toNullableNumber(form.number_of_openings),
+            company_id: matchedCompany?.id || null,
+          }]);
 
-      if (reqError) {
-        console.error("[requirements] mirror insert failed", reqError);
+        if (reqError) {
+          console.error("[requirements] mirror insert failed", reqError);
+        }
       }
     }
-  }
 
-  // ✅ Common cleanup
-  setSaving(false);
-  setShowModal(false);
-  setEditingRow(null);
-  fetchRows();
-};
+    setSaving(false);
+    setShowModal(false);
+    setEditingRow(null);
+    fetchRows();
+  };
 
   const handleDelete = async (id) => {
     if (!id || deletingId) return;
@@ -361,6 +357,7 @@ const handleSave = async (e) => {
             delimiter,
             transformHeader: (header) => {
               const key = normalize(header);
+              // ✅ s_no headers from CSV are silently ignored — not mapped
               return normalizedHeaderMap[key] || key;
             },
             transform: (value) =>
@@ -384,6 +381,8 @@ const handleSave = async (e) => {
       const normalizedRow = {};
       Object.entries(row || {}).forEach(([k, v]) => {
         const key = normalizedHeaderMap[normalize(k)] || normalize(k);
+        // ✅ Drop s_no entirely if it comes from an old CSV/XLSX
+        if (key === "s_no") return;
         normalizedRow[key] = typeof v === "string" ? v.trim() : v;
       });
       return toPayload(normalizedRow);
@@ -399,36 +398,36 @@ const handleSave = async (e) => {
       return;
     }
 
- const { error } = await supabase.from("client_records").insert(validRows);
-if (error) {
-  alert(error.message);
-  console.error("[client_records] upload insert failed", error);
-  e.target.value = "";
-  return;
-}
+    const { error } = await supabase.from("client_records").insert(validRows);
+    if (error) {
+      alert(error.message);
+      console.error("[client_records] upload insert failed", error);
+      e.target.value = "";
+      return;
+    }
 
-// Mirror uploaded rows to requirements table
-const reqRows = validRows
-  .filter(row => row.req_name)
-  .map(row => ({
-    job_title:          row.req_name         || "N/A",
-    hire:               row.hire_mode        || null,
-    hire_mode:          row.hire_mode        || null,
-    status:             "Open",
-    created_at:         row.req_shared_date
-                          ? new Date(row.req_shared_date).toISOString()
-                          : new Date().toISOString(),
-    mode:               row.source           || null,
-    number_of_openings: toNullableNumber(row.number_of_openings),
-    company_id:         null,
-  }));
+    // Mirror uploaded rows to requirements table
+    const reqRows = validRows
+      .filter(row => row.req_name)
+      .map(row => ({
+        job_title:          row.req_name         || "N/A",
+        hire:               row.hire_mode        || null,
+        hire_mode:          row.hire_mode        || null,
+        status:             "Open",
+        created_at:         row.req_shared_date
+                              ? new Date(row.req_shared_date).toISOString()
+                              : new Date().toISOString(),
+        mode:               row.source           || null,
+        number_of_openings: toNullableNumber(row.number_of_openings),
+        company_id:         null,
+      }));
 
-const { error: reqError } = await supabase.from("requirements").insert(reqRows);
-if (reqError) {
-  console.error("[requirements] bulk mirror failed", reqError);
-}
+    const { error: reqError } = await supabase.from("requirements").insert(reqRows);
+    if (reqError) {
+      console.error("[requirements] bulk mirror failed", reqError);
+    }
 
-alert("Upload successful.");
+    alert("Upload successful.");
     fetchRows();
     e.target.value = "";
   };
@@ -467,33 +466,33 @@ alert("Upload successful.");
 
       <div style={styles.kpiGrid}>
         <div style={styles.kpiRow}>
-          <button 
+          <button
             type="button"
-            style={{...styles.kpiCardSmall, ...(kpiFilter === "permanent" ? styles.kpiCardSmallActive : {})}} 
+            style={{...styles.kpiCardSmall, ...(kpiFilter === "permanent" ? styles.kpiCardSmallActive : {})}}
             onClick={() => setKpiFilter(kpiFilter === "permanent" ? null : "permanent")}
           >
             <div style={styles.kpiLabel}>Permanent</div>
             <div style={styles.kpiValueSmall}>{kpiStats.permanent.toLocaleString("en-IN")}</div>
           </button>
-          <button 
+          <button
             type="button"
-            style={{...styles.kpiCardSmall, ...(kpiFilter === "contract" ? styles.kpiCardSmallActive : {})}} 
+            style={{...styles.kpiCardSmall, ...(kpiFilter === "contract" ? styles.kpiCardSmallActive : {})}}
             onClick={() => setKpiFilter(kpiFilter === "contract" ? null : "contract")}
           >
             <div style={styles.kpiLabel}>Contract</div>
             <div style={styles.kpiValueSmall}>{kpiStats.contract.toLocaleString("en-IN")}</div>
           </button>
-          <button 
+          <button
             type="button"
-            style={{...styles.kpiCardSmall, ...(kpiFilter === "closure" ? styles.kpiCardSmallActive : {})}} 
+            style={{...styles.kpiCardSmall, ...(kpiFilter === "closure" ? styles.kpiCardSmallActive : {})}}
             onClick={() => setKpiFilter(kpiFilter === "closure" ? null : "closure")}
           >
             <div style={styles.kpiLabel}>Closure</div>
             <div style={styles.kpiValueSmall}>{kpiStats.closure.toLocaleString("en-IN")}</div>
           </button>
-          <button 
+          <button
             type="button"
-            style={{...styles.kpiCardSmall, ...(kpiFilter === "backout" ? styles.kpiCardSmallActive : {})}} 
+            style={{...styles.kpiCardSmall, ...(kpiFilter === "backout" ? styles.kpiCardSmallActive : {})}}
             onClick={() => setKpiFilter(kpiFilter === "backout" ? null : "backout")}
           >
             <div style={styles.kpiLabel}>Backout</div>
@@ -609,6 +608,7 @@ function ClientRecordModal({ form, editingRow, saving, onChange, onClose, onSave
               <div style={styles.sectionHead}>
                 <h4 style={styles.sectionTitle}>Client Information</h4>
               </div>
+              {/* ✅ s_no field no longer rendered — columnConfig excludes it */}
               <div style={styles.sectionGrid}>
                 {columnConfig.map((col) => (
                   <label key={col.key} style={styles.fieldLabel}>
@@ -978,20 +978,3 @@ const styles = {
     fontFamily: "inherit",
   },
 };
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

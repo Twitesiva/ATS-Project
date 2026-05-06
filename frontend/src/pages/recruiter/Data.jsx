@@ -6,11 +6,6 @@ import * as XLSX from "xlsx";
 import Loader from "../../components/common/Loader";
 import { formatDate } from "../../utils/dateFormat";
 
-const toHistoryCandidateId = (value) => {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : 0;
-};
-
 const buildHistoryRow = ({
   candidateId,
   recruiterName,
@@ -20,7 +15,7 @@ const buildHistoryRow = ({
   oldStatus,
   newStatus,
 }) => ({
-  candidate_id: toHistoryCandidateId(candidateId),
+  candidate_id: candidateId || null,
   recruiter_name: recruiterName || "-",
   candidate_name: candidateName || "-",
   client_name: clientName || null,
@@ -57,9 +52,6 @@ const touchUserLastSeen = async (userId, source) => {
 
 // headerMap (normalized aliases -> DB columns)
 const headerMap = {
-  "sl no": "sl_no",
-  "slno": "sl_no",
-
   "record date": "record_date",
   "date": "record_date",
 
@@ -100,8 +92,6 @@ const headerMap = {
   "interview date": "interview_date",
   "interview time": "interview_time",
 };
-
-
 
 export default function RecruiterData({ scopeRole }) {
   const { user } = useAuth();
@@ -157,16 +147,13 @@ export default function RecruiterData({ scopeRole }) {
       query = query.eq("recruiter", user?.name);
     }
 
-    // search filter
     if (searchText) {
       query = query.ilike(searchBy, `%${searchText}%`);
     }
 
-    // record date filters
     if (fromDate) query = query.gte("record_date", fromDate);
     if (toDate) query = query.lte("record_date", toDate);
 
-    // interview date filters
     if (interviewFromDate) query = query.gte("interview_date", interviewFromDate);
     if (interviewToDate) query = query.lte("interview_date", interviewToDate);
 
@@ -214,8 +201,6 @@ export default function RecruiterData({ scopeRole }) {
     };
   }, [user?.id]);
 
-
-  // normalize()
   const normalize = (value) =>
     String(value ?? "")
       .replace(/^\uFEFF/, "")
@@ -285,57 +270,7 @@ export default function RecruiterData({ scopeRole }) {
       });
     });
 
-  const toHistoryCandidateId = (value) => {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : 0;
-  };
-
-  const buildHistoryRow = ({
-    candidateId,
-    recruiterName,
-    candidateName,
-    clientName,
-    requirement,
-    oldStatus,
-    newStatus,
-  }) => ({
-    candidate_id: toHistoryCandidateId(candidateId),
-    recruiter_name: recruiterName || "-",
-    candidate_name: candidateName || "-",
-    client_name: clientName || null,
-    requirement: requirement || null,
-    old_status: oldStatus ?? null,
-    new_status: newStatus || "Profile Submitted",
-    updated_at: new Date().toISOString(),
-  });
-
-  const insertStatusHistoryRows = async (rows, source) => {
-    const payload = Array.isArray(rows) ? rows : [rows];
-    const { data, error } = await supabase.from("status_history").insert(payload).select("*");
-
-    if (error) {
-      console.error(`[status_history][${source}] insert failed`, { error, payload });
-      return { ok: false, error };
-    }
-
-    console.log(`[status_history][${source}] insert success`, data || []);
-    return { ok: true, data: data || [] };
-  };
-
-  const touchUserLastSeen = async (userId, source) => {
-    if (!userId) return;
-    const { error } = await supabase
-      .from("users")
-      .update({ last_seen_at: new Date().toISOString() })
-      .eq("id", userId);
-
-    if (error) {
-      console.error(`[last_seen_at][${source}] update failed`, error);
-    }
-  };
-
-  // transformCSVRow()
-  const transformCSVRow = (row, index, hasSlNoHeader) => {
+  const transformCSVRow = (row, index) => {
     const clean = {};
     for (const [k, v] of Object.entries(row)) {
       const value =
@@ -350,19 +285,12 @@ export default function RecruiterData({ scopeRole }) {
 
     const isBlank = (v) => v == null || (typeof v === "string" && normalize(v) === "");
 
-    // Fallback to row index ONLY when SL.No header is missing
-    if (!hasSlNoHeader && isBlank(clean.sl_no)) {
-      clean.sl_no = index + 1;
-    }
-
-    if (isBlank(clean.sl_no)) throw new Error("SL.No missing in CSV row");
     if (isBlank(clean.recruiter)) throw new Error("Recruiter missing in CSV row");
     if (isBlank(clean.client_name)) throw new Error("Client Name missing in CSV row");
 
     return {
-      sl_no: Number(clean.sl_no),
       record_date: clean.record_date || new Date().toISOString().split("T")[0],
-      recruiter: clean.recruiter, // CSV only (no user autofill)
+      recruiter: clean.recruiter,
       client_name: clean.client_name,
       requirement: clean.requirement || "",
       location: clean.location || "",
@@ -378,7 +306,6 @@ export default function RecruiterData({ scopeRole }) {
       interview_time: clean.interview_time || null,
     };
   };
-
 
   const handleCSVUpload = async (e) => {
     const file = e.target.files[0];
@@ -409,15 +336,14 @@ export default function RecruiterData({ scopeRole }) {
 
     const validRows = [];
     const errors = [];
-    const hasSlNoHeader = hasCanonicalHeader(parsedRows, "sl_no");
 
     parsedRows.forEach((row, index) => {
       try {
-        const transformed = transformCSVRow(row, index, hasSlNoHeader);
+        const transformed = transformCSVRow(row, index);
         validRows.push(transformed);
       } catch (err) {
         errors.push(
-          `Row ${index + 2}: ${err.message} (SL.No / Recruiter / Client Name mandatory)`
+          `Row ${index + 2}: ${err.message} (Recruiter / Client Name mandatory)`
         );
       }
     });
@@ -431,13 +357,6 @@ export default function RecruiterData({ scopeRole }) {
       console.error(errors);
       return;
     }
-    const slNos = validRows.map(r => r.sl_no);
-    const uniqueSlNos = new Set(slNos);
-
-    if (slNos.length !== uniqueSlNos.size) {
-      alert("Duplicate SL.No found in CSV ");
-      return;
-    }
 
     const payloadRows =
       isManagerView
@@ -449,7 +368,6 @@ export default function RecruiterData({ scopeRole }) {
       const p = String(phone || "").trim();
       const c = String(client || "").trim().toLowerCase();
       const r = String(role || "").trim().toLowerCase();
-
       return `${e}__${p}__${c}__${r}`;
     };
 
@@ -460,14 +378,11 @@ export default function RecruiterData({ scopeRole }) {
       const phone = String(row.phone_number || "").trim();
       const client = String(row.client_name || "").trim().toLowerCase();
       const role = String(row.requirement || "").trim().toLowerCase();
-
       const isMatchable = email && phone && client && role;
 
       return {
         ...row,
-        _matchKey: isMatchable
-          ? makeMatchKey(email, phone, client, role)
-          : null,
+        _matchKey: isMatchable ? makeMatchKey(email, phone, client, role) : null,
         _isMatchable: Boolean(isMatchable),
       };
     });
@@ -476,12 +391,9 @@ export default function RecruiterData({ scopeRole }) {
     const existingByMatchKey = new Map();
 
     if (matchableRows.length) {
-      const emailKeys = [...new Set(matchableRows.map((r) => r._emailKey))];
-      const phoneKeys = [...new Set(matchableRows.map((r) => r._phoneKey))];
-
       const { data: existingRows, error: existingError } = await supabase
         .from("candidate_records")
-        .select("id, sl_no, email, phone_number, client_name, requirement, status, recruiter")
+        .select("id, email, phone_number, client_name, requirement, status, recruiter")
         .eq("recruiter", scopedRecruiter);
 
       if (existingError) {
@@ -491,12 +403,7 @@ export default function RecruiterData({ scopeRole }) {
       }
 
       (existingRows || []).forEach((row) => {
-        const key = makeMatchKey(
-          row.email,
-          row.phone_number,
-          row.client_name,
-          row.requirement
-        );
+        const key = makeMatchKey(row.email, row.phone_number, row.client_name, row.requirement);
         existingByMatchKey.set(key, row);
       });
     }
@@ -506,7 +413,6 @@ export default function RecruiterData({ scopeRole }) {
 
     decoratedRows.forEach((row) => {
       const cleanRow = {
-        sl_no: row.sl_no,
         record_date: row.record_date,
         recruiter: row.recruiter,
         client_name: row.client_name,
@@ -542,7 +448,7 @@ export default function RecruiterData({ scopeRole }) {
           onConflict: "email,phone_number,client_name,requirement",
           ignoreDuplicates: true,
         })
-        .select("id,sl_no,recruiter,candidate_name,client_name,requirement,status");
+        .select("id,recruiter,candidate_name,client_name,requirement,status");
 
       if (error) {
         alert(error.message);
@@ -559,7 +465,7 @@ export default function RecruiterData({ scopeRole }) {
         .from("candidate_records")
         .update(payload)
         .eq("id", existing.id)
-        .select("id,sl_no,recruiter,candidate_name,client_name,requirement,status")
+        .select("id,recruiter,candidate_name,client_name,requirement,status")
         .single();
 
       if (error) {
@@ -573,7 +479,7 @@ export default function RecruiterData({ scopeRole }) {
     const historyRows = [
       ...insertedRows.map((r) =>
         buildHistoryRow({
-          candidateId: r.sl_no,
+          candidateId: r.id,
           recruiterName: r.recruiter || user?.name,
           candidateName: r.candidate_name,
           clientName: r.client_name,
@@ -584,7 +490,7 @@ export default function RecruiterData({ scopeRole }) {
       ),
       ...updatedRows.map((r) =>
         buildHistoryRow({
-          candidateId: r.sl_no,
+          candidateId: r.id,
           recruiterName: r.recruiter || user?.name,
           candidateName: r.candidate_name,
           clientName: r.client_name,
@@ -602,9 +508,6 @@ export default function RecruiterData({ scopeRole }) {
     alert("CSV uploaded successfully ✅");
     fetchRecords();
   };
-
-
-
 
   const handleSave = async (form) => {
     const payload = {
@@ -627,41 +530,37 @@ export default function RecruiterData({ scopeRole }) {
 
     const { data: insertedRow, error } = await supabase
       .from("candidate_records")
-      .insert({
-        ...payload,
-      })
-      .select("sl_no,recruiter,candidate_name,client_name,requirement,status")
+      .insert({ ...payload })
+      .select("id,recruiter,candidate_name,client_name,requirement,status")
       .single();
 
     if (error) {
-  console.log("code:", error.code);
-  console.log("message:", error.message);
-  console.log("details:", error.details);
-  console.log("hint:", error.hint);
-  alert(JSON.stringify(error)); // 👈 this will popup with full error object
-  return;
-}
-      
-      if (insertedRow) {
-        await insertStatusHistoryRows(
-          buildHistoryRow({
-            candidateId: insertedRow.sl_no,
-            recruiterName: insertedRow.recruiter || user?.name,
-            candidateName: insertedRow.candidate_name,
-            clientName: insertedRow.client_name,
-            requirement: insertedRow.requirement,
-            oldStatus: null,
-            newStatus: insertedRow.status || "Profile Submitted",
-          }),
-          "single_save"
-        );
-      }
-      await touchUserLastSeen(user?.id, "single_save");
-      setShowModal(false);
-      fetchRecords(); // 🔥 refresh UI 
+      console.log("code:", error.code);
+      console.log("message:", error.message);
+      console.log("details:", error.details);
+      console.log("hint:", error.hint);
+      alert(JSON.stringify(error));
+      return;
+    }
+
+    if (insertedRow) {
+      await insertStatusHistoryRows(
+        buildHistoryRow({
+          candidateId: insertedRow.id,
+          recruiterName: insertedRow.recruiter || user?.name,
+          candidateName: insertedRow.candidate_name,
+          clientName: insertedRow.client_name,
+          requirement: insertedRow.requirement,
+          oldStatus: null,
+          newStatus: insertedRow.status || "Profile Submitted",
+        }),
+        "single_save"
+      );
+    }
+    await touchUserLastSeen(user?.id, "single_save");
+    setShowModal(false);
+    fetchRecords();
   };
-
-
 
   const handleDelete = async (id) => {
     if (!id || deletingId) return;
@@ -683,20 +582,17 @@ export default function RecruiterData({ scopeRole }) {
       return;
     }
 
-      setRecords((prev) => prev.filter((r) => r.id !== id));
-      setDeletingId(null);
-    };
+    setRecords((prev) => prev.filter((r) => r.id !== id));
+    setDeletingId(null);
+  };
 
-  /* ----------------------------- UI ----------------------------- */
-const displayedRecords = statusFilter
-  ? records.filter(r =>{
-      const s = String(r.status || "").trim().toLowerCase();
-      return statusFilter === "drop out"
-        ? s.includes("drop out")
-        : s === statusFilter;
-        console.log("statuses", records.map(r => r.status));
- } )
-  : records;
+  const displayedRecords = statusFilter
+    ? records.filter((r) => {
+        const s = String(r.status || "").trim().toLowerCase();
+        return statusFilter === "drop out" ? s.includes("drop out") : s === statusFilter;
+      })
+    : records;
+
   return (
     <div style={styles.page}>
       <h2>{isManagerView ? "Monthly Report" : "Recruiter Data"}</h2>
@@ -704,15 +600,16 @@ const displayedRecords = statusFilter
       {isManagerView && (
         <div style={styles.cardGrid4}>
           {[
- { label: "Closures",  value: metrics.closures,  subtitle: "Closure count",  filter: "closure" },
- { label: "Offered",   value: metrics.offered,   subtitle: "Offer stage count", filter: "offered" },
-  { label: "Profile Submitted", value: metrics.profileSubmitted, subtitle: "Submitted candidates", filter: "profile submitted" },
-    { label: "Drop Out",  value: metrics.dropOut,   subtitle: "Dropout count",     filter: "drop out" },
+            { label: "Closures", value: metrics.closures, subtitle: "Closure count", filter: "closure" },
+            { label: "Offered", value: metrics.offered, subtitle: "Offer stage count", filter: "offered" },
+            { label: "Profile Submitted", value: metrics.profileSubmitted, subtitle: "Submitted candidates", filter: "profile submitted" },
+            { label: "Drop Out", value: metrics.dropOut, subtitle: "Dropout count", filter: "drop out" },
           ].map((card) => (
-           <div key={card.label}
-      onClick={() => setStatusFilter(f => f === card.filter ? null : card.filter)}
-      style={{ ...styles.metricCard, cursor: "pointer",
-        outline: statusFilter === card.filter ? "2px solid #6c5ce7" : "none" }}>
+            <div
+              key={card.label}
+              onClick={() => setStatusFilter((f) => (f === card.filter ? null : card.filter))}
+              style={{ ...styles.metricCard, cursor: "pointer", outline: statusFilter === card.filter ? "2px solid #6c5ce7" : "none" }}
+            >
               <p style={styles.metricLabel}>{card.label}</p>
               <p style={styles.metricValue}>{card.value}</p>
               <p style={styles.metricSubtitle}>{card.subtitle}</p>
@@ -727,42 +624,25 @@ const displayedRecords = statusFilter
           + Add Candidate
         </button>
 
-
         <label style={styles.uploadBtn}>
           Upload CSV/XLSX
-          <input
-            type="file"
-            accept=".csv,.xlsx,.xls"
-            onChange={handleCSVUpload}
-            style={styles.hiddenInput}
-          />
+          <input type="file" accept=".csv,.xlsx,.xls" onChange={handleCSVUpload} style={styles.hiddenInput} />
         </label>
 
-        <select
-          value={searchBy}
-          onChange={(e) => setSearchBy(e.target.value)}
-          style={styles.select}
-        >
+        <select value={searchBy} onChange={(e) => setSearchBy(e.target.value)} style={styles.select}>
           <option value="candidate_name">Candidate Name</option>
           <option value="client_name">Client Name</option>
         </select>
 
-        <input
-          placeholder="Search..."
-          value={searchText}
-          onChange={(e) => setSearchText(e.target.value)}
-          style={styles.input}
-        />
+        <input placeholder="Search..." value={searchText} onChange={(e) => setSearchText(e.target.value)} style={styles.input} />
 
         <span style={styles.filterLabel}>Record Date</span>
-        <input type="date" placeholder="Record From Date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} style={styles.dateInput} />
-        <input type="date" placeholder="Record To Date" value={toDate} onChange={(e) => setToDate(e.target.value)} style={styles.dateInput} />
+        <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} style={styles.dateInput} />
+        <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} style={styles.dateInput} />
 
         <span style={styles.filterLabel}>Interview Date</span>
-        <input type="date" placeholder="Interview From Date" value={interviewFromDate} onChange={(e) => setInterviewFromDate(e.target.value)} style={styles.dateInput} />
-        <input type="date" placeholder="Interview To Date" value={interviewToDate} onChange={(e) => setInterviewToDate(e.target.value)} style={styles.dateInput} />
-
-
+        <input type="date" value={interviewFromDate} onChange={(e) => setInterviewFromDate(e.target.value)} style={styles.dateInput} />
+        <input type="date" value={interviewToDate} onChange={(e) => setInterviewToDate(e.target.value)} style={styles.dateInput} />
 
         <button onClick={handleClearFilters} style={styles.secondaryBtnSolid}>
           Clear Filters
@@ -779,7 +659,6 @@ const displayedRecords = statusFilter
           <table style={styles.table}>
             <thead>
               <tr>
-                <th style={styles.th}>SL</th>
                 <th style={styles.th}>Date</th>
                 <th style={styles.th}>Recruiter</th>
                 <th style={styles.th}>Client</th>
@@ -793,16 +672,14 @@ const displayedRecords = statusFilter
                 <th style={styles.th}>Hire Mode</th>
                 <th style={styles.th}>Status</th>
                 <th style={styles.th}>Remarks</th>
-                <th style={styles.th}>Interview date</th>
+                <th style={styles.th}>Interview Date</th>
                 <th style={styles.th}>Interview Time</th>
                 <th style={styles.th}>Actions</th>
               </tr>
             </thead>
-
             <tbody>
               {displayedRecords.map((r) => (
                 <tr key={r.id}>
-                  <td style={styles.td}>{r.sl_no}</td>
                   <td style={styles.td}>{formatDate(r.record_date)}</td>
                   <td style={styles.td}>{r.recruiter}</td>
                   <td style={styles.td}>{r.client_name}</td>
@@ -818,8 +695,7 @@ const displayedRecords = statusFilter
                   <td style={styles.td} title={r.remarks || "-"}>{r.remarks || "-"}</td>
                   <td style={styles.td}>{formatDate(r.interview_date)}</td>
                   <td style={styles.td}>{r.interview_time || "-"}</td>
-                  <td style={styles.td}
-                  >
+                  <td style={styles.td}>
                     <div style={styles.actionBtns}>
                       <button style={styles.editBtn} onClick={() => setEditRecord(r)}>Edit</button>
                       <button
@@ -838,20 +714,11 @@ const displayedRecords = statusFilter
         </div>
       )}
 
-      {/* ADD CANDIDATE MODAL */}
       {showModal && (
-        <AddCandidateModal
-          user={user}
-          onClose={() => setShowModal(false)}
-          onSaved={fetchRecords}
-        />
+        <AddCandidateModal user={user} onClose={() => setShowModal(false)} onSaved={fetchRecords} />
       )}
       {editRecord && (
-        <EditCandidateModal
-          record={editRecord}
-          onClose={() => setEditRecord(null)}
-          onUpdated={fetchRecords}
-        />
+        <EditCandidateModal record={editRecord} onClose={() => setEditRecord(null)} onUpdated={fetchRecords} />
       )}
     </div>
   );
@@ -863,13 +730,10 @@ function AddCandidateModal({ user, onClose, onSaved }) {
   useEffect(() => {
     const originalOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = originalOverflow;
-    };
+    return () => { document.body.style.overflow = originalOverflow; };
   }, []);
 
   const [form, setForm] = useState({
-    sl_no: "",
     record_date: "",
     client_name: "",
     requirement: "",
@@ -886,9 +750,7 @@ function AddCandidateModal({ user, onClose, onSaved }) {
     interview_time: "",
   });
 
-  const handleChange = (e) =>
-    setForm({ ...form, [e.target.name]: e.target.value });
-
+  const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -899,25 +761,19 @@ function AddCandidateModal({ user, onClose, onSaved }) {
     }
 
     const payload = {
-      sl_no: Number(form.sl_no),
       record_date: form.record_date,
       recruiter: user?.role === "manager" ? "manager" : user?.name,
-
       client_name: form.client_name,
       requirement: form.requirement,
       location: form.location,
-
       candidate_name: form.candidate_name,
       phone_number: form.phone_number,
       email: form.email,
-
       ctc: form.ctc || null,
       ectc: form.ectc || null,
-
       hire_mode: form.hire_mode,
       status: form.status || "Profile Submitted",
       remarks: form.remarks || null,
-
       interview_date: form.interview_date || null,
       interview_time: form.interview_time || null,
     };
@@ -932,15 +788,14 @@ function AddCandidateModal({ user, onClose, onSaved }) {
     if (emailKey && phoneKey) {
       const { data: existingRows, error: existingError } = await supabase
         .from("candidate_records")
-        .select("id,sl_no,recruiter,candidate_name,client_name,requirement,status")
+        .select("id,recruiter,candidate_name,client_name,requirement,status")
         .eq("recruiter", recruiterScope)
         .eq("email", emailKey)
         .eq("phone_number", phoneKey)
-        .eq("client_name", payload.client_name)   // ✅ ADD THIS LINE
+        .eq("client_name", payload.client_name)
         .limit(1);
 
       if (existingError) {
-        console.log("EXISTING LOOKUP ERROR ", existingError);
         alert(existingError.message);
         return;
       }
@@ -952,17 +807,15 @@ function AddCandidateModal({ user, onClose, onSaved }) {
           .from("candidate_records")
           .update(payload)
           .eq("id", existingRow.id)
-          .select("sl_no,recruiter,candidate_name,client_name,requirement,status")
+          .select("id,recruiter,candidate_name,client_name,requirement,status")
           .single();
-
         upsertedRow = updatedRow;
         error = updateError;
       } else {
         const { data: insertedRows, error: insertError } = await supabase
           .from("candidate_records")
           .insert([payload])
-          .select("sl_no,recruiter,candidate_name,client_name,requirement,status");
-
+          .select("id,recruiter,candidate_name,client_name,requirement,status");
         upsertedRow = insertedRows?.[0] || null;
         error = insertError;
       }
@@ -970,16 +823,10 @@ function AddCandidateModal({ user, onClose, onSaved }) {
       const { data: insertedRows, error: insertError } = await supabase
         .from("candidate_records")
         .insert([payload])
-        .select("sl_no,recruiter,candidate_name,client_name,requirement,status");
-
+        .select("id,recruiter,candidate_name,client_name,requirement,status");
       upsertedRow = insertedRows?.[0] || null;
       error = insertError;
     }
-
-    console.log("UPSERT DATA ", upsertedRow);
-    console.log("UPSERT ERROR ", error);
-    console.log("Auth user", user);
-
 
     if (error) {
       alert(error.message);
@@ -987,22 +834,20 @@ function AddCandidateModal({ user, onClose, onSaved }) {
     }
 
     if (upsertedRow) {
-      const created = upsertedRow;
       await insertStatusHistoryRows(
         buildHistoryRow({
-          candidateId: created.sl_no,
-          recruiterName: created.recruiter || user?.name,
-          candidateName: created.candidate_name,
-          clientName: created.client_name,
-          requirement: created.requirement,
+          candidateId: upsertedRow.id,
+          recruiterName: upsertedRow.recruiter || user?.name,
+          candidateName: upsertedRow.candidate_name,
+          clientName: upsertedRow.client_name,
+          requirement: upsertedRow.requirement,
           oldStatus: null,
-          newStatus: created.status || "Profile Submitted",
+          newStatus: upsertedRow.status || "Profile Submitted",
         }),
         "manual_add"
       );
     }
     await touchUserLastSeen(user?.id, "manual_add");
-
     onSaved();
     onClose();
   };
@@ -1027,16 +872,8 @@ function AddCandidateModal({ user, onClose, onSaved }) {
               </div>
               <div style={styles.sectionGrid}>
                 <label style={styles.fieldLabel}>
-                  SL.No
-                  <input style={styles.modalInput} type="number" name="sl_no" onChange={handleChange} required />
-                </label>
-                <label style={styles.fieldLabel}>
                   Record Date
                   <input style={styles.modalInput} type="date" name="record_date" onChange={handleChange} required />
-                </label>
-                <label style={styles.fieldLabel}>
-                  Recruiter
-                  <input style={styles.modalInput} type="text" name="recruiter" onChange={handleChange} required />
                 </label>
                 <label style={styles.fieldLabel}>
                   Candidate Name
@@ -1046,20 +883,20 @@ function AddCandidateModal({ user, onClose, onSaved }) {
                   Email
                   <input style={styles.modalInput} name="email" onChange={handleChange} />
                 </label>
-              <label style={styles.fieldLabel}>
-  Phone
-  <input
-    style={styles.modalInput}
-    name="phone_number"
-    type="tel"
-    maxLength={10}
-    inputMode="numeric"
-    onChange={(e) => {
-      e.target.value = e.target.value.replace(/\D/g, "").slice(0, 10);
-      handleChange(e);
-    }}
-  />
-</label>
+                <label style={styles.fieldLabel}>
+                  Phone
+                  <input
+                    style={styles.modalInput}
+                    name="phone_number"
+                    type="tel"
+                    maxLength={10}
+                    inputMode="numeric"
+                    onChange={(e) => {
+                      e.target.value = e.target.value.replace(/\D/g, "").slice(0, 10);
+                      handleChange(e);
+                    }}
+                  />
+                </label>
               </div>
             </div>
 
@@ -1080,39 +917,39 @@ function AddCandidateModal({ user, onClose, onSaved }) {
                   Location
                   <input style={styles.modalInput} name="location" onChange={handleChange} />
                 </label>
-               <label style={styles.fieldLabel}>
-  Hire Mode
-  <select style={styles.modalInput} name="hire_mode" onChange={handleChange}>
-    <option value="">Select</option>
-    <option value="Permanent">Permanent</option>
-    <option value="Contract">Contract</option>
-  </select>
-</label>
-<label style={styles.fieldLabel}>
-  Status
-  <select style={styles.modalInput} name="status" onChange={handleChange}>
-    <option value="Profile Submitted">Profile Submitted</option>
-    <option value="Feedback Pending">Feedback Pending</option>
-    <option value="Duplicate">Duplicate</option>
-    <option value="Drop Out By Client">Drop Out By Client</option>
-    <option value="Drop Out By Candidate">Drop Out By Candidate</option>
-    <option value="Assessment Round">Assessment Round</option>
-    <option value="HR Round">HR Round</option>
-    <option value="L1 Scheduled">L1 Scheduled</option>
-    <option value="L2 Scheduled">L2 Scheduled</option>
-    <option value="AI Interview">AI Interview</option>
-    <option value="Offered">Offered</option>
-    <option value="Closure">Closure</option>
-    <option value="Backout">Backout</option>
-    <option value="L1 Reject">L1 Reject</option>
-    <option value="L2 Reject">L2 Reject</option>
-    <option value="Final Round Rejected">Final Round Rejected</option>
-    <option value="Shortlisted">Shortlisted</option>
-    <option value="Position Hold">Position Hold</option>
-    <option value="Position Closed">Position Closed</option>
-    <option value="Interview Scheduled">Interview Scheduled</option>
-  </select>
-</label>
+                <label style={styles.fieldLabel}>
+                  Hire Mode
+                  <select style={styles.modalInput} name="hire_mode" onChange={handleChange}>
+                    <option value="">Select</option>
+                    <option value="Permanent">Permanent</option>
+                    <option value="Contract">Contract</option>
+                  </select>
+                </label>
+                <label style={styles.fieldLabel}>
+                  Status
+                  <select style={styles.modalInput} name="status" onChange={handleChange}>
+                    <option value="Profile Submitted">Profile Submitted</option>
+                    <option value="Feedback Pending">Feedback Pending</option>
+                    <option value="Duplicate">Duplicate</option>
+                    <option value="Drop Out By Client">Drop Out By Client</option>
+                    <option value="Drop Out By Candidate">Drop Out By Candidate</option>
+                    <option value="Assessment Round">Assessment Round</option>
+                    <option value="HR Round">HR Round</option>
+                    <option value="L1 Scheduled">L1 Scheduled</option>
+                    <option value="L2 Scheduled">L2 Scheduled</option>
+                    <option value="AI Interview">AI Interview</option>
+                    <option value="Offered">Offered</option>
+                    <option value="Closure">Closure</option>
+                    <option value="Backout">Backout</option>
+                    <option value="L1 Reject">L1 Reject</option>
+                    <option value="L2 Reject">L2 Reject</option>
+                    <option value="Final Round Rejected">Final Round Rejected</option>
+                    <option value="Shortlisted">Shortlisted</option>
+                    <option value="Position Hold">Position Hold</option>
+                    <option value="Position Closed">Position Closed</option>
+                    <option value="Interview Scheduled">Interview Scheduled</option>
+                  </select>
+                </label>
                 <label style={styles.fieldLabel}>
                   Remarks
                   <textarea style={styles.modalTextarea} name="remarks" value={form.remarks} onChange={handleChange} />
@@ -1165,15 +1002,14 @@ function AddCandidateModal({ user, onClose, onSaved }) {
   );
 }
 
+/* ------------------------- EDIT CANDIDATE MODAL ------------------------- */
 
 function EditCandidateModal({ record, onClose, onUpdated }) {
   const { user } = useAuth();
   useEffect(() => {
     const originalOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = originalOverflow;
-    };
+    return () => { document.body.style.overflow = originalOverflow; };
   }, []);
 
   const [form, setForm] = useState({
@@ -1226,12 +1062,8 @@ function EditCandidateModal({ record, onClose, onUpdated }) {
       onClose();
       return;
     }
-    if (!statusChanged && !nonStatusChanged) {
-      onClose();
-      return;
-    }
 
-    // AUTO CLOSURE: Move to revenue_tracker 
+    // AUTO CLOSURE: Move to revenue_tracker
     if ((form.status || "").trim().toLowerCase() === "closure") {
       const revenuePayload = {
         doj: new Date().toISOString().split("T")[0],
@@ -1247,7 +1079,7 @@ function EditCandidateModal({ record, onClose, onUpdated }) {
         margin_value: null,
         margin_percent: null,
       };
-      // Check if already exists in revenue_tracker
+
       const { data: existing } = await supabase
         .from("revenue_tracker")
         .select("id")
@@ -1272,7 +1104,7 @@ function EditCandidateModal({ record, onClose, onUpdated }) {
         alert("Failed to add to Revenue Tracker: " + revenueError.message);
         return;
       }
-      // Update status to Closure in candidate_records (monthly report)
+
       const { error: updateError } = await supabase
         .from("candidate_records")
         .update({ status: "Closure" })
@@ -1280,7 +1112,7 @@ function EditCandidateModal({ record, onClose, onUpdated }) {
 
       if (updateError) {
         console.error("[closure] candidate_records update failed", updateError);
-        alert("Added to Revenue Tracker but failed to update Monthly Report status: " + updateError.message);
+        alert("Added to Revenue Tracker but failed to update status: " + updateError.message);
         return;
       }
 
@@ -1289,6 +1121,7 @@ function EditCandidateModal({ record, onClose, onUpdated }) {
       onClose();
       return;
     }
+
     if (nonStatusChanged) {
       const nonStatusPayload = {
         candidate_name: form.candidate_name,
@@ -1322,7 +1155,6 @@ function EditCandidateModal({ record, onClose, onUpdated }) {
       }
     }
 
-    // Keep existing status update + status_history behavior intact.
     if (statusChanged) {
       let query = supabase
         .from("candidate_records")
@@ -1343,20 +1175,13 @@ function EditCandidateModal({ record, onClose, onUpdated }) {
       }
 
       if (!updatedRows?.length) {
-        const noRowError = {
-          message: "No rows updated. Check recruiter filter / record id.",
-          recordId: record.id,
-          recruiter: user?.name,
-        };
-        console.error("[status_update] no rows updated", noRowError);
         alert("Unable to update status for this record.");
         return;
       }
 
       const updated = updatedRows[0];
-      const candidateHistoryId = Number(updated.sl_no) || 0;
       const historyPayload = {
-        candidate_id: candidateHistoryId,
+        candidate_id: updated.id,
         recruiter_name: updated.recruiter || user?.name || "-",
         candidate_name: updated.candidate_name || "-",
         new_status: updated.status || form.status,
@@ -1366,14 +1191,11 @@ function EditCandidateModal({ record, onClose, onUpdated }) {
       const { data: existingHistoryRows, error: historyLookupError } = await supabase
         .from("status_history")
         .select("id")
-        .eq("candidate_id", candidateHistoryId)
+        .eq("candidate_id", updated.id)
         .order("updated_at", { ascending: false });
 
       if (historyLookupError) {
-        console.error("[status_update] status_history lookup failed", {
-          historyLookupError,
-          candidateHistoryId,
-        });
+        console.error("[status_update] status_history lookup failed", historyLookupError);
       } else if ((existingHistoryRows || []).length > 0) {
         const latestHistoryRowId = existingHistoryRows[0].id;
         const { error: historyUpdateError } = await supabase
@@ -1382,16 +1204,7 @@ function EditCandidateModal({ record, onClose, onUpdated }) {
           .eq("id", latestHistoryRowId);
 
         if (historyUpdateError) {
-          console.error("[status_update] status_history update failed", {
-            historyUpdateError,
-            historyPayload,
-            latestHistoryRowId,
-          });
-        } else {
-          console.log("[status_update] status_history update success", {
-            id: latestHistoryRowId,
-            ...historyPayload,
-          });
+          console.error("[status_update] status_history update failed", historyUpdateError);
         }
       } else {
         const { error: historyInsertError } = await supabase
@@ -1399,12 +1212,7 @@ function EditCandidateModal({ record, onClose, onUpdated }) {
           .insert([historyPayload]);
 
         if (historyInsertError) {
-          console.error("[status_update] status_history insert failed", {
-            historyInsertError,
-            historyPayload,
-          });
-        } else {
-          console.log("[status_update] status_history insert success", historyPayload);
+          console.error("[status_update] status_history insert failed", historyInsertError);
         }
       }
 
@@ -1444,21 +1252,21 @@ function EditCandidateModal({ record, onClose, onUpdated }) {
                   Email
                   <input style={styles.modalInput} name="email" value={form.email} onChange={handleChange} />
                 </label>
-             <label style={styles.fieldLabel}>
-  Phone
-  <input
-    style={styles.modalInput}
-    name="phone_number"
-    type="tel"
-    maxLength={10}
-    inputMode="numeric"
-    value={form.phone_number}
-    onChange={(e) => {
-      e.target.value = e.target.value.replace(/\D/g, "").slice(0, 10);
-      handleChange(e);
-    }}
-  />
-</label>
+                <label style={styles.fieldLabel}>
+                  Phone
+                  <input
+                    style={styles.modalInput}
+                    name="phone_number"
+                    type="tel"
+                    maxLength={10}
+                    inputMode="numeric"
+                    value={form.phone_number}
+                    onChange={(e) => {
+                      e.target.value = e.target.value.replace(/\D/g, "").slice(0, 10);
+                      handleChange(e);
+                    }}
+                  />
+                </label>
                 <label style={styles.fieldLabel}>
                   Location
                   <input style={styles.modalInput} name="location" value={form.location} onChange={handleChange} />
@@ -1555,12 +1363,8 @@ function EditCandidateModal({ record, onClose, onUpdated }) {
 
         <div style={styles.modalFooter}>
           <div style={styles.footerActions}>
-            <button type="button" onClick={onClose} style={styles.secondaryBtn}>
-              Cancel
-            </button>
-            <button type="submit" form={formId} style={styles.primaryBtn}>
-              Save Changes
-            </button>
+            <button type="button" onClick={onClose} style={styles.secondaryBtn}>Cancel</button>
+            <button type="submit" form={formId} style={styles.primaryBtn}>Save Changes</button>
           </div>
         </div>
       </div>
@@ -1571,323 +1375,45 @@ function EditCandidateModal({ record, onClose, onUpdated }) {
 /* ----------------------------- STYLES ----------------------------- */
 
 const styles = {
-  actionBar: {
-    display: "flex",
-    gap: "10px",
-    marginBottom: "14px",
-    flexWrap: "wrap",
-  },
-  page: {
-    width: "100%",
-    minWidth: 0,
-    overflowX: "hidden",
-  },
-  primaryBtn: {
-    padding: "10px 18px",
-    background: "linear-gradient(90deg, #6c5ce7, #5a4fcf)",
-    color: "#fff",
-    border: "none",
-    borderRadius: "10px",
-    cursor: "pointer",
-    fontWeight: 600,
-  },
-  secondaryBtnSolid: {
-    padding: "10px 18px",
-    background: "#64748b",
-    color: "#fff",
-    border: "none",
-    borderRadius: "10px",
-    cursor: "pointer",
-    fontWeight: 600,
-  },
-  filterLabel: {
-    fontWeight: 600,
-    color: "#475569",
-    fontSize: "13px",
-    alignSelf: "center",
-    marginRight: "4px",
-  },
-  dateInput: {
-    padding: "6px",
-    borderRadius: "6px",
-    border: "1px solid #cbd5e1",
-  },
-  uploadBtn: {
-    padding: "10px 18px",
-    background: "#0f172a",
-    color: "#fff",
-    border: "none",
-    borderRadius: "10px",
-    cursor: "pointer",
-    fontWeight: 600,
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  hiddenInput: {
-    display: "none",
-  },
-  select: {
-    padding: "6px",
-  },
-  editBtn: {
-    padding: "6px 10px",
-    border: "1px solid #cbd5e1",
-    borderRadius: "8px",
-    background: "#fff",
-    color: "#0f172a",
-    cursor: "pointer",
-  },
-  deleteBtn: {
-    padding: "6px 10px",
-    border: "1px solid #fecaca",
-    borderRadius: "8px",
-    background: "#fff1f2",
-    color: "#b91c1c",
-    cursor: "pointer",
-  },
-  actionBtns: {
-    display: "flex",
-    gap: "8px",
-  },
-  input: {
-    padding: "6px",
-    width: "200px",
-  },
-  table: {
-    width: "max-content",
-    minWidth: "100%",
-    borderCollapse: "collapse",
-    tableLayout: "auto",
-  },
-  tableContainer: {
-    width: "100%",
-    maxWidth: "100%",
-    minWidth: 0,
-    overflowX: "auto",
-    overflowY: "auto",
-    maxHeight: "70vh",
-    border: "1px solid #cbd5e1",
-    borderRadius: "6px",
-    background: "#fff",
-  },
-  loaderWrap: {
-    width: "100%",
-    minHeight: "280px",
-    border: "1px solid #cbd5e1",
-    borderRadius: "6px",
-    background: "#fff",
-  },
-  th: {
-    border: "1px solid #cbd5e1",
-    padding: "8px 10px",
-    whiteSpace: "nowrap",
-    background: "#f8fafc",
-    position: "sticky",
-    top: 0,
-    zIndex: 2,
-    fontWeight: 600,
-    textAlign: "left",
-  },
-  td: {
-    border: "1px solid #cbd5e1",
-    padding: "8px 10px",
-    whiteSpace: "nowrap",
-    background: "#fff",
-  },
-  overlay: {
-    position: "fixed",
-    inset: 0,
-    background: "rgba(0,0,0,0.4)",
-    zIndex: 1000,
-  },
-  modalShell: {
-    position: "fixed",
-    top: "50%",
-    left: "50%",
-    transform: "translate(-50%, -50%)",
-    background: "#fff",
-     width: "520px",
-  maxWidth: "95%",
-    minWidth: "320px",
-    maxHeight: "88vh",
-    borderRadius: "14px",
-    boxShadow: "0 20px 50px rgba(2, 6, 23, 0.25)",
-    display: "flex",
-    flexDirection: "column",
-    overflow: "hidden",
-  },
-  modalHeader: {
-    padding: "16px 20px",
-    borderBottom: "1px solid #e2e8f0",
-    background: "#fff",
-    flexShrink: 0,
-  },
-  modalHeaderRow: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: "12px",
-  },
-  modalTitle: {
-    margin: 0,
-    fontSize: "22px",
-    fontWeight: 800,
-    color: "#0f172a",
-  },
-  closeBtn: {
-    width: "38px",
-    height: "38px",
-    borderRadius: "10px",
-    border: "1px solid #d1d5db",
-    background: "#fff",
-    color: "#111827",
-    cursor: "pointer",
-    fontSize: "22px",
-    lineHeight: 1,
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  modalBody: {
-    padding: "18px 20px",
-    overflowY: "auto",
-    overflowX: "hidden",
-    flex: 1,
-    background: "#ffffff",
-  },
-  modalFooter: {
-    padding: "14px 20px",
-    borderTop: "1px solid #e2e8f0",
-    background: "#fff",
-    flexShrink: 0,
-  },
-  footerActions: {
-    display: "flex",
-    justifyContent: "space-between",
-    width: "100%",
-    alignItems: "center",
-    gap: "10px",
-  },
-  secondaryBtn: {
-    padding: "10px 18px",
-    borderRadius: "10px",
-    border: "1px solid #d1d5db",
-    background: "#fff",
-    color: "#111827",
-    cursor: "pointer",
-  },
-  cardGrid4: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-    gap: "14px",
-    marginBottom: "18px",
-  },
-  metricCard: {
-    background: "#fff",
-    border: "1px solid #e2e8f0",
-    borderRadius: "14px",
-    padding: "18px 16px",
-    boxShadow: "0 8px 20px rgba(15, 23, 42, 0.05)",
-    minHeight: "120px",
-    display: "flex",
-    flexDirection: "column",
-    justifyContent: "space-between",
-  },
-  metricLabel: {
-    margin: 0,
-    fontSize: "13px",
-    fontWeight: 700,
-    color: "#475569",
-    textTransform: "uppercase",
-    letterSpacing: "0.03em",
-  },
-  metricValue: {
-    margin: "10px 0 0",
-    fontSize: "34px",
-    fontWeight: 800,
-    color: "#0f172a",
-    lineHeight: 1,
-  },
-  metricSubtitle: {
-    margin: "10px 0 0",
-    fontSize: "13px",
-    color: "#64748b",
-  },
-  form: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "16px",
-  },
-  sectionCard: {
-    background: "#ffffff",
-    border: "none",
-    borderRadius: "14px",
-    padding: "10px 0",
-  },
-  sectionHead: {
-    marginBottom: "10px",
-    paddingBottom: "8px",
-    borderBottom: "1px solid #e5e7eb",
-  },
-  sectionTitle: {
-    margin: 0,
-    fontSize: "16px",
-    fontWeight: 600,
-    color: "#0f172a",
-  },
-  sectionGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-    gap: "12px 16px",
-  },
-  fieldLabel: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "6px",
-    fontSize: "12px",
-    fontWeight: 600,
-    color: "#64748b",
-    textTransform: "uppercase",
-    letterSpacing: "0.02em",
-  },
-  modalInput: {
-    height: "44px",
-    borderRadius: "10px",
-    border: "1px solid #e5e7eb",
-    background: "#f3f4f6",
-    padding: "0 12px",
-    fontSize: "15px",
-    color: "#0f172a",
-    outline: "none",
-  },
-  modalTextarea: {
-    minHeight: "88px",
-    borderRadius: "12px",
-    border: "1px solid #e5e7eb",
-    background: "#f3f4f6",
-    padding: "10px 12px",
-    fontSize: "15px",
-    color: "#0f172a",
-    outline: "none",
-    resize: "vertical",
-    fontFamily: "inherit",
-  },
+  actionBar: { display: "flex", gap: "10px", marginBottom: "14px", flexWrap: "wrap" },
+  page: { width: "100%", minWidth: 0, overflowX: "hidden" },
+  primaryBtn: { padding: "10px 18px", background: "linear-gradient(90deg, #6c5ce7, #5a4fcf)", color: "#fff", border: "none", borderRadius: "10px", cursor: "pointer", fontWeight: 600 },
+  secondaryBtnSolid: { padding: "10px 18px", background: "#64748b", color: "#fff", border: "none", borderRadius: "10px", cursor: "pointer", fontWeight: 600 },
+  filterLabel: { fontWeight: 600, color: "#475569", fontSize: "13px", alignSelf: "center", marginRight: "4px" },
+  dateInput: { padding: "6px", borderRadius: "6px", border: "1px solid #cbd5e1" },
+  uploadBtn: { padding: "10px 18px", background: "#0f172a", color: "#fff", border: "none", borderRadius: "10px", cursor: "pointer", fontWeight: 600, display: "inline-flex", alignItems: "center", justifyContent: "center" },
+  hiddenInput: { display: "none" },
+  select: { padding: "6px" },
+  editBtn: { padding: "6px 10px", border: "1px solid #cbd5e1", borderRadius: "8px", background: "#fff", color: "#0f172a", cursor: "pointer" },
+  deleteBtn: { padding: "6px 10px", border: "1px solid #fecaca", borderRadius: "8px", background: "#fff1f2", color: "#b91c1c", cursor: "pointer" },
+  actionBtns: { display: "flex", gap: "8px" },
+  input: { padding: "6px", width: "200px" },
+  table: { width: "max-content", minWidth: "100%", borderCollapse: "collapse", tableLayout: "auto" },
+  tableContainer: { width: "100%", maxWidth: "100%", minWidth: 0, overflowX: "auto", overflowY: "auto", maxHeight: "70vh", border: "1px solid #cbd5e1", borderRadius: "6px", background: "#fff" },
+  loaderWrap: { width: "100%", minHeight: "280px", border: "1px solid #cbd5e1", borderRadius: "6px", background: "#fff" },
+  th: { border: "1px solid #cbd5e1", padding: "8px 10px", whiteSpace: "nowrap", background: "#f8fafc", position: "sticky", top: 0, zIndex: 2, fontWeight: 600, textAlign: "left" },
+  td: { border: "1px solid #cbd5e1", padding: "8px 10px", whiteSpace: "nowrap", background: "#fff" },
+  overlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 1000 },
+  modalShell: { position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", background: "#fff", width: "520px", maxWidth: "95%", minWidth: "320px", maxHeight: "88vh", borderRadius: "14px", boxShadow: "0 20px 50px rgba(2, 6, 23, 0.25)", display: "flex", flexDirection: "column", overflow: "hidden" },
+  modalHeader: { padding: "16px 20px", borderBottom: "1px solid #e2e8f0", background: "#fff", flexShrink: 0 },
+  modalHeaderRow: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" },
+  modalTitle: { margin: 0, fontSize: "22px", fontWeight: 800, color: "#0f172a" },
+  closeBtn: { width: "38px", height: "38px", borderRadius: "10px", border: "1px solid #d1d5db", background: "#fff", color: "#111827", cursor: "pointer", fontSize: "22px", lineHeight: 1, display: "inline-flex", alignItems: "center", justifyContent: "center" },
+  modalBody: { padding: "18px 20px", overflowY: "auto", overflowX: "hidden", flex: 1, background: "#ffffff" },
+  modalFooter: { padding: "14px 20px", borderTop: "1px solid #e2e8f0", background: "#fff", flexShrink: 0 },
+  footerActions: { display: "flex", justifyContent: "space-between", width: "100%", alignItems: "center", gap: "10px" },
+  secondaryBtn: { padding: "10px 18px", borderRadius: "10px", border: "1px solid #d1d5db", background: "#fff", color: "#111827", cursor: "pointer" },
+  cardGrid4: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "14px", marginBottom: "18px" },
+  metricCard: { background: "#fff", border: "1px solid #e2e8f0", borderRadius: "14px", padding: "18px 16px", boxShadow: "0 8px 20px rgba(15, 23, 42, 0.05)", minHeight: "120px", display: "flex", flexDirection: "column", justifyContent: "space-between" },
+  metricLabel: { margin: 0, fontSize: "13px", fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.03em" },
+  metricValue: { margin: "10px 0 0", fontSize: "34px", fontWeight: 800, color: "#0f172a", lineHeight: 1 },
+  metricSubtitle: { margin: "10px 0 0", fontSize: "13px", color: "#64748b" },
+  form: { display: "flex", flexDirection: "column", gap: "16px" },
+  sectionCard: { background: "#ffffff", border: "none", borderRadius: "14px", padding: "10px 0" },
+  sectionHead: { marginBottom: "10px", paddingBottom: "8px", borderBottom: "1px solid #e5e7eb" },
+  sectionTitle: { margin: 0, fontSize: "16px", fontWeight: 600, color: "#0f172a" },
+  sectionGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "12px 16px" },
+  fieldLabel: { display: "flex", flexDirection: "column", gap: "6px", fontSize: "12px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.02em" },
+  modalInput: { height: "44px", borderRadius: "10px", border: "1px solid #e5e7eb", background: "#f3f4f6", padding: "0 12px", fontSize: "15px", color: "#0f172a", outline: "none" },
+  modalTextarea: { minHeight: "88px", borderRadius: "12px", border: "1px solid #e5e7eb", background: "#f3f4f6", padding: "10px 12px", fontSize: "15px", color: "#0f172a", outline: "none", resize: "vertical", fontFamily: "inherit" },
 };
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

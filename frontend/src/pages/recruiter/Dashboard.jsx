@@ -17,7 +17,7 @@ import {
 import Loader from "../../components/common/Loader";
 import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../services/supabaseClient";
-import { formatCurrency, sanitizeMarginValue } from "../../utils/reportHelpers";
+import { formatCurrency, normalizeStatus, sanitizeMarginValue } from "../../utils/reportHelpers";
 
 const STATUS_COLORS = [
   "#0f766e",
@@ -155,7 +155,7 @@ const buildDashboardData = (candidateRows, revenueRows) => {
   const revenue = revenueRows || [];
 
   const interviewsScheduled = candidates.filter((row) => isInterviewStatus(row.status)).length;
-  const offers = revenue.filter((row) => String(row.offer_status || "").trim().toUpperCase() === "YES").length;
+  const closure = revenue.length;
   const activeClients = new Set(
     candidates.map((row) => String(row.client_name || "").trim().toLowerCase()).filter(Boolean)
   ).size;
@@ -244,7 +244,7 @@ const buildDashboardData = (candidateRows, revenueRows) => {
 
   const statusMap = new Map();
   candidates.forEach((row) => {
-    const status = String(row.status || "Unknown").trim() || "Unknown";
+    const status = normalizeStatus(String(row.status || "Unknown").trim() || "Unknown");
     statusMap.set(status, (statusMap.get(status) || 0) + 1);
   });
 
@@ -273,7 +273,7 @@ const buildDashboardData = (candidateRows, revenueRows) => {
       {
         label: "Candidates Added",
         value: candidates.length.toLocaleString("en-IN"),
-        note: "Count of Monthly Report rows",
+        note: "Total candidates"
       },
       {
         label: "Interviews Scheduled",
@@ -281,9 +281,9 @@ const buildDashboardData = (candidateRows, revenueRows) => {
         note: "Monthly Report interview-stage statuses",
       },
       {
-        label: "Offers",
-        value: offers.toLocaleString("en-IN"),
-        note: "Offered candidates from Revenue Report",
+        label: "Closure",
+        value: closure.toLocaleString("en-IN"),
+        note: "Closures candidates from Revenue Report",
       },
       {
         label: "Active Clients",

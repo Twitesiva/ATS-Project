@@ -28,7 +28,15 @@ const INTERVIEW_STATUSES = new Set([
   "HR Round",
   "Interview Scheduled",
 ]);
-
+const EXCLUDED_STATUSES = [
+  "Closure",
+  "Drop Out",
+  "Drop Out By Client",
+  "Drop Out By Candidate",
+  "Backout",
+  "Back Out",
+ 
+];
 const getMonthBounds = () => {
   const now = new Date();
   const start = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -398,7 +406,7 @@ export default function Dashboard() {
                   )}
                 </div>
               </div>
-              <ResponsiveContainer width="100%" height={300}>
+              <ResponsiveContainer width="100%" height={430}>
                 <BarChart
                   data={selectedRecruiter === "all" ? recruiterAnalytics : recruiterAnalytics.filter(r => r.recruiter === selectedRecruiter)}
                   margin={{ top: 30, right: 30, left: 0, bottom: 60 }}
@@ -411,7 +419,7 @@ export default function Dashboard() {
                     height={100}
                     tick={{ fontSize: 12 }}
                   />
-                  <YAxis tick={{ fontSize: 12 }} />
+                  <YAxis tick={{ fontSize: 12 }} allowDecimals={false} />
                   <Tooltip
                     contentStyle={{
                       background: "#fff",

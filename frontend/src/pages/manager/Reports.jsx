@@ -3,7 +3,6 @@ import Loader from "../../components/common/Loader";
 import FiltersBar from "../../components/reports/FiltersBar";
 import KpiCards from "../../components/reports/KpiCards";
 import RevenueTrendChart from "../../components/reports/RevenueTrendChart";
-import RecruiterPerformanceChart from "../../components/reports/RecruiterPerformanceChart";
 import StatusPieChart from "../../components/reports/StatusPieChart";
 import HiringFunnelChart from "../../components/reports/HiringFunnelChart";
 import ClientPerformanceChart from "../../components/reports/ClientPerformanceChart";
@@ -11,13 +10,12 @@ import ReportsTable from "../../components/reports/ReportsTable";
 
 import {
   getCandidateStats,
-  getRecruiterPerformance,
   getReportsTableData,
   getFilterOptions,
   getRevenueTrend,
   getStatusDistribution,
+  getHiringFunnel,
 } from "../../services/reportsService";
-import { normalizeRecruiter } from "../../utils/reportHelpers";
 
 const defaultFilters = {
   fromDate: "",
@@ -38,6 +36,7 @@ export default function Reports() {
   const [quickFilter, setQuickFilter] = useState("");
   const [revenueTrend, setRevenueTrend] = useState([]); // correct usage
   const [statusDistribution, setStatusDistribution] = useState([]);
+  const [hiringFunnel, setHiringFunnel] = useState([]);
 
   const [options, setOptions] = useState({
     clients: [],
@@ -47,7 +46,6 @@ export default function Reports() {
 
   const [stats, setStats] = useState({});
   const [tableRows, setTableRows] = useState([]);
-  const [recruiterPerformance, setRecruiterPerformance] = useState([]);
 
   const handleQuickFilter = (value) => {
     setQuickFilter(value);
@@ -64,27 +62,6 @@ export default function Reports() {
       setAppliedFilters(defaultFilters);
     }
   };
-
-  // Status Distribution now uses API data for all statuses (or filtered)
-
-  // Hiring Funnel
-  const hiringFunnel = useMemo(() => {
-    let screening = 0;
-    let interview = 0;
-    let closure = 0;
-
-    tableRows.forEach((row) => {
-      screening += row.candidates || 0;
-      interview += row.interviews || 0;
-      closure += row.closures || 0;
-    });
-
-    return [
-      { stage: "Screening", value: screening },
-      { stage: "Interview", value: interview },
-      { stage: "Closure", value: closure },
-    ];
-  }, [tableRows]);
 
   // Client Performance
   const clientPerformance = useMemo(() => {
@@ -135,18 +112,18 @@ export default function Reports() {
       const apiFilters = getApiFilters(appliedFilters);
       console.log("Manager Reports apiFilters:", apiFilters);
 
-      const [statsRes, recruiterPerfRes, tableRes, optionsRes, trendRes, statusDistRes] = await Promise.all([
+      const [statsRes, tableRes, optionsRes, trendRes, statusDistRes, funnelRes] = await Promise.all([
         getCandidateStats(apiFilters),
-        getRecruiterPerformance(apiFilters),
         getReportsTableData(apiFilters),
         getFilterOptions(apiFilters),
         getRevenueTrend(apiFilters),
         getStatusDistribution(apiFilters),
+        getHiringFunnel(apiFilters),
       ]);
 
       setStatusDistribution(statusDistRes);
+      setHiringFunnel(funnelRes);
 
-      console.log("Manager Reports recruiterPerfRes (Nandhini/Manager):", recruiterPerfRes.filter(r => r.recruiter.toLowerCase().includes('nand') || r.recruiter.toLowerCase().includes('manag')).map(r => ({recruiter: r.recruiter, cand: r.candidates, int: r.interviews, clos: r.closures})));
       console.log("Manager Reports tableRows sample:", tableRes.slice(0,3));
 
       // FIXED Revenue Trend logic
@@ -174,7 +151,6 @@ export default function Reports() {
       );
 
       setStats(statsRes);
-      setRecruiterPerformance(recruiterPerfRes);
       setTableRows(tableRes);
       setOptions(optionsRes);
     } catch (err) {
@@ -229,7 +205,6 @@ export default function Reports() {
 
           <div style={styles.grid2}>
             <RevenueTrendChart data={revenueTrend} />
-            <RecruiterPerformanceChart data={recruiterPerformance} />
           </div>
 
           <div style={styles.grid2}>

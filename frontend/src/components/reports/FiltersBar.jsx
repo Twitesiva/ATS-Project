@@ -6,8 +6,6 @@ export default function FiltersBar({
   clients = [],
   recruiters = [],
   statuses = [],
-  quickFilter,
-  onQuickFilter,
 }) { 
   return (
     <div style={styles.wrap}>
@@ -25,21 +23,6 @@ export default function FiltersBar({
           onChange={(e) => onChange("toDate", e.target.value)}
           style={styles.input}
         />
-        <div style={{ display: "flex", gap: "10px", marginBottom: "10px" }}>
-          <button
-            onClick={() => onQuickFilter("")}
-            style={quickFilter === "" ? activeBtn : btn}
-          >
-            All
-          </button>
-
-          <button
-            onClick={() => onQuickFilter("manager")}
-            style={quickFilter === "manager" ? activeBtn : btn}
-          >
-            Manager
-          </button>
-        </div>
 
         {/* Client / Recruiter */}
         <div style={styles.combinedFilterContainer}>
@@ -90,7 +73,6 @@ export default function FiltersBar({
         </select>
       </div>
 
-      {/* CLEAN BUTTONS */}
       <div style={styles.actions}>
         <button style={styles.primaryBtn} onClick={onApply}>
           Apply
@@ -103,20 +85,7 @@ export default function FiltersBar({
     </div>
   );
 }
-const btn = {
-  padding: "8px 12px",
-  borderRadius: "8px",
-  border: "1px solid #ccc",
-  background: "#fff",
-  cursor: "pointer",
-};
 
-const activeBtn = {
-  ...btn,
-  background: "#2563eb",
-  color: "#fff",
-  fontWeight: "bold",
-};
 const styles = {
   wrap: {
     border: "1px solid #e2e8f0",
@@ -132,7 +101,6 @@ const styles = {
     gap: "10px",
     gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
   },
-  
   input: {
     border: "1px solid #cbd5e1",
     borderRadius: "8px",
