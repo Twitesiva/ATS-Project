@@ -108,7 +108,7 @@ export const groupByMonth = (rows, dateKey, valueKey) => {
 };
 export const parseRevenueValue = (value) => {
   const cleanValue = String(value ?? "")
-    .replace(/[\u20B9,LPA\s]/gi, "")
+    .replace(/[\u20B9,LPA,\s]/gi, "")
     .trim();
   const numericValue = parseFloat(cleanValue);
   return Number.isFinite(numericValue) ? numericValue : 0;

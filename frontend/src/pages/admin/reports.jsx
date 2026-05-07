@@ -8,7 +8,7 @@ import HiringFunnelChart from "../../components/reports/HiringFunnelChart";
 import ClientPerformanceChart from "../../components/reports/ClientPerformanceChart";
 import {
   getRevenueTrend,
-  getRecruiterPerformance,
+  getRecruiterPerformanceAnalytics,
   getClientPerformance,
   getStatusDistribution,
   getHiringFunnel,
@@ -19,6 +19,16 @@ import { supabase } from "../../services/supabaseClient";
 import { getRoleQueryValues } from "../../utils/roles";
 
 const TABS = ["daily", "weekly", "monthly", "yearly"];
+const MANAGER_RELATION_FIELDS = [
+  "manager",
+  "manager_name",
+  "managerName",
+  "reporting_manager",
+  "reportingManager",
+  "reports_to",
+  "reportsTo",
+  "created_by",
+];
 
 const defaultFilters = {
   fromDate: "",
@@ -27,6 +37,8 @@ const defaultFilters = {
   recruiter: "",
   client: "",
   status: "",
+  filterType: "client",
+  filterValue: "",
 };
 
 const getTabRange = (tab) => {
@@ -74,13 +86,38 @@ const formatDate = (value) => {
   return date.toLocaleDateString("en-GB");
 };
 
+const toDateInputValue = (value) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const getResolvedDateFilters = (activeTab, filters) => {
+  if (activeTab) {
+    const { start, end } = getTabRange(activeTab);
+    return {
+      fromDate: toDateInputValue(start),
+      toDate: toDateInputValue(end),
+    };
+  }
+
+  return {
+    fromDate: filters.fromDate,
+    toDate: filters.toDate,
+  };
+};
+
 export default function AdminReports() {
-  const [activeTab, setActiveTab] = useState("daily");
+  const [activeTab, setActiveTab] = useState("");
   const [filters, setFilters] = useState(defaultFilters);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const [managerOptions, setManagerOptions] = useState([]);
+  const [recruiterUsers, setRecruiterUsers] = useState([]);
   const [options, setOptions] = useState({ clients: [], recruiters: [], statuses: [] });
 
   const [revenueTrend, setRevenueTrend] = useState([]);
@@ -104,45 +141,89 @@ export default function AdminReports() {
   const [teamSummary, setTeamSummary] = useState([]);
 
   const serviceFilters = useMemo(() => {
-    const actor = filters.recruiter || filters.manager || "";
+    const selectedClient = filters.filterType === "client" ? filters.filterValue : filters.client;
+    const selectedRecruiter = filters.filterType === "recruiter" ? filters.filterValue : filters.recruiter;
+    const actor = selectedRecruiter || "";
+    const dateFilters = getResolvedDateFilters(activeTab, filters);
+
     return {
-      fromDate: filters.fromDate,
-      toDate: filters.toDate,
-      client: filters.client,
+      ...dateFilters,
+      client: selectedClient || "",
       recruiter: actor,
       status: filters.status,
+      candidateDateField: "record_date",
     };
-  }, [filters]);
+  }, [activeTab, filters]);
 
   const loadManagers = useCallback(async () => {
-    const { data, error: managersError } = await supabase
-      .from("users")
-      .select("name,email")
-      .in("role", getRoleQueryValues("manager"))
-      .order("name", { ascending: true });
+    const [managersRes, recruitersRes] = await Promise.all([
+      supabase
+        .from("users")
+        .select("name,email")
+        .in("role", getRoleQueryValues("manager"))
+        .order("name", { ascending: true }),
+      supabase
+        .from("users")
+        .select("*")
+        .in("role", [...getRoleQueryValues("recruiter"), ...getRoleQueryValues("tl")])
+        .order("name", { ascending: true }),
+    ]);
 
-    if (managersError) {
-      console.error("[hr-reports] manager options failed", managersError);
+    if (managersRes.error || recruitersRes.error) {
+      console.error("[hr-reports] user options failed", managersRes.error || recruitersRes.error);
       return;
     }
 
     setManagerOptions(
-      (data || []).map((r) => r.name || r.email?.split("@")[0]).filter(Boolean)
+      (managersRes.data || []).map((r) => r.name || r.email?.split("@")[0]).filter(Boolean)
     );
+    setRecruiterUsers(recruitersRes.data || []);
   }, []);
+
+  const recruiterOptions = useMemo(() => {
+    const allRecruiters = options.recruiters || [];
+    const selectedManager = String(filters.manager || "").trim().toLowerCase();
+    if (!selectedManager) return allRecruiters;
+
+    const teamNames = recruiterUsers
+      .filter((row) =>
+        MANAGER_RELATION_FIELDS.some((field) => {
+          const value = row?.[field];
+          if (value == null) return false;
+          return String(value).trim().toLowerCase() === selectedManager;
+        })
+      )
+      .map((row) => row.name || row.email?.split("@")?.[0])
+      .filter(Boolean);
+
+    if (!teamNames.length) return allRecruiters;
+
+    const allowed = new Set(teamNames.map((name) => String(name).trim().toLowerCase()));
+    const filteredRecruiters = allRecruiters.filter((name) =>
+      allowed.has(String(name).trim().toLowerCase())
+    );
+
+    return filteredRecruiters.length ? filteredRecruiters : teamNames.sort((a, b) => a.localeCompare(b));
+  }, [filters.manager, options.recruiters, recruiterUsers]);
 
   const loadReports = useCallback(async () => {
     setLoading(true);
     setError("");
 
     try {
+      const optionFilters = {
+        ...serviceFilters,
+        client: filters.filterType === "client" ? "" : serviceFilters.client,
+        recruiter: filters.filterType === "recruiter" ? "" : serviceFilters.recruiter,
+      };
+
       const [trendRes, recruiterRes, statusRes, funnelRes, clientRes, optionsRes] = await Promise.all([
         getRevenueTrend(serviceFilters),
-        getRecruiterPerformance(serviceFilters),
+        getRecruiterPerformanceAnalytics(serviceFilters),
         getStatusDistribution(serviceFilters),
         getHiringFunnel(serviceFilters),
         getClientPerformance(serviceFilters),
-        getFilterOptions(),
+        getFilterOptions(optionFilters),
       ]);
 
       setRevenueTrend(groupByMonth(trendRes, "doj", "margin_value"));
@@ -152,20 +233,15 @@ export default function AdminReports() {
       setClientPerformance(clientRes);
       setOptions(optionsRes);
 
-      const baseRange = getTabRange(activeTab);
-      const fromDate = filters.fromDate ? new Date(filters.fromDate) : baseRange.start;
-      fromDate.setHours(0, 0, 0, 0);
-      const toDate = filters.toDate ? new Date(filters.toDate) : baseRange.end;
-      toDate.setHours(23, 59, 59, 999);
-
       let query = supabase
         .from("candidate_records")
-        .select("created_at,client_name,requirement,recruiter,status")
-        .gte("created_at", fromDate.toISOString())
-        .lte("created_at", toDate.toISOString());
+        .select("record_date,client_name,requirement,recruiter,status");
+
+      if (serviceFilters.fromDate) query = query.gte("record_date", serviceFilters.fromDate);
+      if (serviceFilters.toDate) query = query.lte("record_date", serviceFilters.toDate);
 
       const actor = serviceFilters.recruiter;
-      if (actor) query = query.eq("recruiter", actor);
+      if (actor) query = query.ilike("recruiter", actor);
       if (serviceFilters.client) query = query.eq("client_name", serviceFilters.client);
       if (serviceFilters.status) query = query.eq("status", serviceFilters.status);
 
@@ -176,7 +252,7 @@ export default function AdminReports() {
 
       const dailyMap = new Map();
       rows.forEach((row) => {
-        const dateKey = formatDate(row.created_at);
+        const dateKey = formatDate(row.record_date);
         const client = String(row.client_name || "Unknown").trim() || "Unknown";
         const key = `${dateKey}__${client}`;
 
@@ -220,30 +296,64 @@ setOptions({
         }))
       );
 
-      const statuses = rows.map((r) => String(r.status || "").toLowerCase());
+      const statuses = rows.map((r) =>
+        String(r.status || "")
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, " ")
+      );
       const contains = (needle) => statuses.filter((s) => s.includes(needle)).length;
+      const stats = {
+        profileSubmitted: rows.length,
+        interviews: statuses.filter((status) =>
+          status.includes("interview") ||
+          [
+            "l1 scheduled",
+            "l2 scheduled",
+            "ai interview",
+            "hr round",
+            "interview scheduled",
+          ].includes(status)
+        ).length,
+      };
+      const pipelineExcludedStatuses = new Set([
+        "joined",
+        "closure",
+        "closed",
+        "l1 reject",
+        "l2 reject",
+        "final round rejected",
+        "drop out by candidate",
+        "drop out by client",
+        "backout",
+      ]);
 
       setPeriodMetrics({
-        profilesSubmitted: rows.length,
+        profilesSubmitted: stats.profileSubmitted,
         feedbackPending: contains("feedback pending"),
         duplicateProfiles: contains("duplicate"),
         shortlisted: contains("shortlisted"),
         rejected: statuses.filter((s) => s.includes("reject")).length,
         positionHold: statuses.filter((s) => s.includes("position hold") || s.includes("hold")).length,
-        interviews: contains("interview"),
-        pipeline: rows.filter((r) => !["joined", "closure", "closed"].includes(String(r.status || "").toLowerCase())).length,
-        closure: statuses.filter((s) => s.includes("joined") || s.includes("closure")).length,
+        interviews: stats.interviews,
+        pipeline: statuses.filter((status) => !pipelineExcludedStatuses.has(status)).length,
+        closure: trendRes.length,
       });
 
       const teamMap = new Map();
       rows.forEach((row) => {
-        const recruiter = String(row.recruiter || "Unknown").trim() || "Unknown";
-        teamMap.set(recruiter, (teamMap.get(recruiter) || 0) + 1);
+        const recruiterRaw = String(row.recruiter || "Unknown").trim() || "Unknown";
+        const recruiterKey = recruiterRaw.toLowerCase().replace(/\s+/g, " ");
+        const current = teamMap.get(recruiterKey) || {
+          recruiter: formatClientName(recruiterRaw),
+          profilesSubmitted: 0,
+        };
+        current.profilesSubmitted += 1;
+        teamMap.set(recruiterKey, current);
       });
 
       setTeamSummary(
-        Array.from(teamMap.entries())
-          .map(([recruiter, profilesSubmitted]) => ({ recruiter, profilesSubmitted }))
+        Array.from(teamMap.values())
           .sort((a, b) => b.profilesSubmitted - a.profilesSubmitted)
       );
     } catch (err) {
@@ -266,17 +376,35 @@ setOptions({
   return () => clearTimeout(delay);
 }, [filters, activeTab]);
 const handleFilterChange = (key, value) => {
+  if (key === "fromDate" || key === "toDate") {
+    setActiveTab("");
+  }
+
   setFilters((prev) => {
     let updated = { ...prev, [key]: value };
 
     // 👉 Reset logic
+    if (key === "filterType") {
+      updated.filterValue = "";
+      updated.client = "";
+      updated.recruiter = "";
+    }
+
+    if (key === "filterValue") {
+      updated.client = updated.filterType === "client" ? value : "";
+      updated.recruiter = updated.filterType === "recruiter" ? value : "";
+    }
+
     if (key === "recruiter") {
-      updated.client = ""; // reset client when recruiter changes
+      updated.client = "";
+      updated.filterType = "recruiter";
+      updated.filterValue = value;
     }
 
     if (key === "manager") {
       updated.recruiter = "";
       updated.client = "";
+      updated.filterValue = "";
     }
 
     return updated;
@@ -285,7 +413,7 @@ const handleFilterChange = (key, value) => {
 
   const handleReset = () => {
     setFilters(defaultFilters);
-    setAppliedFilters(defaultFilters);
+    setActiveTab("");
   };
 
   const metricCards = [
@@ -310,7 +438,7 @@ const handleFilterChange = (key, value) => {
             key={tab}
             type="button"
             style={{ ...styles.tabBtn, ...(activeTab === tab ? styles.activeTab : {}) }}
-            onClick={() => setActiveTab(tab)}
+            onClick={() => setActiveTab((current) => (current === tab ? "" : tab))}
           >
             {tab[0].toUpperCase() + tab.slice(1)} Report
           </button>
@@ -335,9 +463,10 @@ const handleFilterChange = (key, value) => {
       <FiltersBar
         filters={filters}
         onChange={handleFilterChange}
+        onApply={loadReports}
         onReset={handleReset}
         clients={options.clients}
-        recruiters={options.recruiters}
+        recruiters={recruiterOptions}
         statuses={options.statuses}
         showRecruiterFilter
       />
@@ -395,7 +524,9 @@ const handleFilterChange = (key, value) => {
           ) : (
             <>
               <section style={styles.panel}>
-                <h3 style={styles.panelTitle}>{activeTab[0].toUpperCase() + activeTab.slice(1)} Metrics</h3>
+                <h3 style={styles.panelTitle}>
+                  {activeTab ? `${activeTab[0].toUpperCase() + activeTab.slice(1)} Metrics` : "All Reports Metrics"}
+                </h3>
                 <div style={styles.metricsGrid}>
                   {metricCards.map((card) => (
                     <div key={card.label} style={styles.metricCard}>

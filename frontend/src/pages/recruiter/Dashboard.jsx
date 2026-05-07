@@ -48,6 +48,36 @@ const REJECTED_STATUSES = new Set([
   "Backout",
 ]);
 
+const HIRING_FUNNEL_STATUS_GROUPS = {
+  Screening: new Set([
+    "profile submitted",
+    "feedback pending",
+    "duplicate",
+    "assessment round",
+    "shortlisted",
+    "position hold",
+  ]),
+  Interview: new Set([
+    "l1 scheduled",
+    "l2 scheduled",
+    "ai interview",
+    "hr round",
+    "interview scheduled",
+  ]),
+  Rejected: new Set([
+    "l1 reject",
+    "l2 reject",
+    "final round rejected",
+  ]),
+  Dropout: new Set([
+    "drop out by candidate",
+    "drop out by client",
+    "backout",
+  ]),
+};
+
+const HIRING_FUNNEL_STAGES = ["Screening", "Interview", "Rejected", "Dropout", "Closure"];
+
 const emptyDashboard = {
   kpis: [],
   hiringFunnel: [],
@@ -58,7 +88,11 @@ const emptyDashboard = {
   efficiencyMetrics: [],
 };
 
-const normalizeText = (value) => String(value || "").trim().toLowerCase();
+const normalizeText = (value) =>
+  String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
 
 const toDate = (value) => {
   const date = new Date(value);
@@ -160,63 +194,47 @@ const buildDashboardData = (candidateRows, revenueRows) => {
     candidates.map((row) => String(row.client_name || "").trim().toLowerCase()).filter(Boolean)
   ).size;
 
-  const funnelStages = [
-    "Profile Submitted",
-    "Shortlisted",
-    "Interview Stage",
-    "Offered",
-    "Rejected",
-  ];
-  const funnelMap = new Map([
-    ["Profile Submitted", 0],
-    ["Shortlisted", 0],
-    ["Interview Stage", 0],
-    ["Offered", 0],
-    ["Rejected", 0],
+  const CANDIDATE_FINAL_INACTIVE_STATUSES = new Set([
+    // Exact canonical statuses (per requirement)
+    "Closure",
+    "Joined",
+    "Drop Out By Candidate",
+    "Drop Out By Client",
+    "Drop Out",
+    "Backout",
+    "Back Out",
+    "Final Round Rejected",
+    "L1 Reject",
+    "L2 Reject",
+    "Duplicate",
+    "Position Closed"
   ]);
+
+  const isInactiveFinalStatus = (status) => {
+    const normalized = normalizeText(status);
+    return Array.from(CANDIDATE_FINAL_INACTIVE_STATUSES).some(
+      (s) => normalizeText(s) === normalized
+    );
+  };
+
+  // "Candidates Added" should be dynamic: include only currently-active pipeline candidates.
+  const activeCandidates = candidates.filter((row) => !isInactiveFinalStatus(row.status));
+
+
+  const funnelMap = new Map(HIRING_FUNNEL_STAGES.map((stage) => [stage, 0]));
+  funnelMap.set("Closure", revenue.length);
+
   candidates.forEach((row) => {
     const normalizedStatus = normalizeText(row.status);
 
-    // Profile Submitted
-    if (["profile submitted", "profile submission", "feedback pending"].includes(normalizedStatus)) {
-      funnelMap.set("Profile Submitted", (funnelMap.get("Profile Submitted") || 0) + 1);
-    }
-
-    // Shortlisted
-    if (normalizedStatus === "shortlisted") {
-      funnelMap.set("Shortlisted", (funnelMap.get("Shortlisted") || 0) + 1);
-    }
-
-    // Interview Stage
-    if ([
-      "l1 scheduled",
-      "l2 scheduled",
-      "ai interview",
-      "assessment round",
-      "hr round",
-      "interview scheduled"
-    ].includes(normalizedStatus)) {
-      funnelMap.set("Interview Stage", (funnelMap.get("Interview Stage") || 0) + 1);
-    }
-
-    // Offered - counted separately from revenue
-
-    // Rejected
-    if ([
-      "drop out by client",
-      "backout",
-      "l1 reject",
-      "l1 rejected",
-      "l2 reject",
-      "l2 rejected",
-      "final round rejected",
-      "drop out by candidate"
-    ].includes(normalizedStatus)) {
-      funnelMap.set("Rejected", (funnelMap.get("Rejected") || 0) + 1);
+    for (const [stage, statuses] of Object.entries(HIRING_FUNNEL_STATUS_GROUPS)) {
+      if (statuses.has(normalizedStatus)) {
+        funnelMap.set(stage, (funnelMap.get(stage) || 0) + 1);
+        break;
+      }
     }
   });
-  // Offered comes from revenue tracker offer_status = YES
-  funnelMap.set("Offered", revenue.filter((row) => String(row.offer_status || "").trim().toUpperCase() === "YES").length);
+
   const activityMap = new Map(
     getLastSevenDays().map((day) => [
       day.key,
@@ -248,6 +266,9 @@ const buildDashboardData = (candidateRows, revenueRows) => {
     statusMap.set(status, (statusMap.get(status) || 0) + 1);
   });
 
+  // KPIs
+  const candidatesAdded = activeCandidates.length;
+
   const totalRevenue = revenue.reduce(
     (sum, row) => sum + sanitizeMarginValue(row.margin_value),
     0
@@ -272,8 +293,8 @@ const buildDashboardData = (candidateRows, revenueRows) => {
     kpis: [
       {
         label: "Candidates Added",
-        value: candidates.length.toLocaleString("en-IN"),
-        note: "Total candidates"
+        value: candidatesAdded.toLocaleString("en-IN"),
+        note: "Active (non-final-inactive) candidates"
       },
       {
         label: "Interviews Scheduled",
@@ -291,7 +312,7 @@ const buildDashboardData = (candidateRows, revenueRows) => {
         note: "Distinct clients in Monthly Report",
       },
     ],
-    hiringFunnel: funnelStages.map((stage) => ({
+    hiringFunnel: HIRING_FUNNEL_STAGES.map((stage) => ({
       stage,
       value: funnelMap.get(stage) || 0,
     })),

@@ -93,6 +93,26 @@ const headerMap = {
   "interview time": "interview_time",
 };
 
+const INTERVIEW_STATUSES = new Set([
+  "ai interview",
+  "assessment round",
+  "hr round",
+  "interview scheduled",
+  "l1 scheduled",
+  "l2 scheduled",
+]);
+
+const REJECTED_STATUSES = new Set([
+  "final round rejected",
+  "l1 reject",
+  "l1 rejected",
+  "l2 reject",
+  "l2 rejected",
+  "profile reject",
+  "profile rejected",
+  "rejected",
+]);
+
 export default function RecruiterData({ scopeRole }) {
   const { user } = useAuth();
   const effectiveRole = scopeRole || user?.role;
@@ -104,16 +124,6 @@ export default function RecruiterData({ scopeRole }) {
   const [editRecord, setEditRecord] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
 
-  const metrics = useMemo(() => {
-    const normalizedStatus = (value) => String(value || "").trim().toLowerCase();
-    const closures = records.filter((r) => normalizedStatus(r.status) === "closure").length;
-    const offered = records.filter((r) => normalizedStatus(r.status) === "offered").length;
-    const profileSubmitted = records.filter((r) => normalizedStatus(r.status) === "profile submitted").length;
-    const dropOut = records.filter((r) => normalizedStatus(r.status).includes("drop out")).length;
-
-    return { closures, offered, profileSubmitted, dropOut };
-  }, [records]);
-
   // filters
   const [searchBy, setSearchBy] = useState("candidate_name");
   const [searchText, setSearchText] = useState("");
@@ -121,6 +131,7 @@ export default function RecruiterData({ scopeRole }) {
   const [toDate, setToDate] = useState("");
   const [interviewFromDate, setInterviewFromDate] = useState("");
   const [statusFilter, setStatusFilter] = useState(null);
+  const [kpiFilter, setKpiFilter] = useState(null);
   const [interviewToDate, setInterviewToDate] = useState("");
 
   const handleClearFilters = () => {
@@ -131,6 +142,7 @@ export default function RecruiterData({ scopeRole }) {
     setInterviewFromDate("");
     setInterviewToDate("");
     setStatusFilter(null);
+    setKpiFilter(null);
   };
 
   const fetchRecords = useCallback(async () => {
@@ -586,37 +598,67 @@ export default function RecruiterData({ scopeRole }) {
     setDeletingId(null);
   };
 
-  const displayedRecords = statusFilter
-    ? records.filter((r) => {
+  const recruiterKpiStats = useMemo(() => {
+    const stats = {
+      permanent: 0,
+      contract: 0,
+      backout: 0,
+      interview: 0,
+      rejected: 0,
+    };
+
+    records.forEach((record) => {
+      const hireMode = String(record.hire_mode || "").trim().toLowerCase();
+      const status = String(record.status || "").trim().toLowerCase();
+
+      if (hireMode === "permanent") stats.permanent += 1;
+      if (hireMode === "contract") stats.contract += 1;
+      if (status === "backout") stats.backout += 1;
+      if (INTERVIEW_STATUSES.has(status)) stats.interview += 1;
+      if (REJECTED_STATUSES.has(status) || status.includes("rejected")) stats.rejected += 1;
+    });
+
+    return stats;
+  }, [records]);
+
+  const kpiCards = [
+    { key: "permanent", label: "Permanent", value: recruiterKpiStats.permanent },
+    { key: "contract", label: "Contract", value: recruiterKpiStats.contract },
+    { key: "backout", label: "Backout", value: recruiterKpiStats.backout },
+    { key: "interview", label: "Interview", value: recruiterKpiStats.interview },
+    { key: "rejected", label: "Rejected", value: recruiterKpiStats.rejected },
+  ];
+
+  const displayedRecords = useMemo(() => {
+    let filtered = records;
+
+    if (statusFilter) {
+      filtered = filtered.filter((r) => {
         const s = String(r.status || "").trim().toLowerCase();
         return statusFilter === "drop out" ? s.includes("drop out") : s === statusFilter;
-      })
-    : records;
+      });
+    }
+
+    if (kpiFilter) {
+      filtered = filtered.filter((r) => {
+        const hireMode = String(r.hire_mode || "").trim().toLowerCase();
+        const status = String(r.status || "").trim().toLowerCase();
+
+        if (kpiFilter === "permanent") return hireMode === "permanent";
+        if (kpiFilter === "contract") return hireMode === "contract";
+        if (kpiFilter === "backout") return status === "backout";
+        if (kpiFilter === "interview") return INTERVIEW_STATUSES.has(status);
+        if (kpiFilter === "rejected") return REJECTED_STATUSES.has(status) || status.includes("rejected");
+        return true;
+      });
+    }
+
+    return filtered;
+  }, [kpiFilter, records, statusFilter]);
 
   return (
     <div style={styles.page}>
       <h2>{isManagerView ? "Monthly Report" : "Recruiter Data"}</h2>
-
-      {isManagerView && (
-        <div style={styles.cardGrid4}>
-          {[
-            { label: "Closures", value: metrics.closures, subtitle: "Closure count", filter: "closure" },
-            { label: "Offered", value: metrics.offered, subtitle: "Offer stage count", filter: "offered" },
-            { label: "Profile Submitted", value: metrics.profileSubmitted, subtitle: "Submitted candidates", filter: "profile submitted" },
-            { label: "Drop Out", value: metrics.dropOut, subtitle: "Dropout count", filter: "drop out" },
-          ].map((card) => (
-            <div
-              key={card.label}
-              onClick={() => setStatusFilter((f) => (f === card.filter ? null : card.filter))}
-              style={{ ...styles.metricCard, cursor: "pointer", outline: statusFilter === card.filter ? "2px solid #6c5ce7" : "none" }}
-            >
-              <p style={styles.metricLabel}>{card.label}</p>
-              <p style={styles.metricValue}>{card.value}</p>
-              <p style={styles.metricSubtitle}>{card.subtitle}</p>
-            </div>
-          ))}
-        </div>
-      )}
 
       {/* ACTION BAR */}
       <div style={styles.actionBar}>
@@ -686,6 +728,25 @@ export default function RecruiterData({ scopeRole }) {
         <button onClick={handleClearFilters} style={styles.secondaryBtnSolid}>
           Clear Filters
         </button>
+      </div>
+
+      <div style={styles.kpiGrid}>
+        <div style={styles.kpiRow}>
+          {kpiCards.map((card) => (
+            <button
+              key={card.key}
+              type="button"
+              style={{
+                ...styles.kpiCardSmall,
+                ...(kpiFilter === card.key ? styles.kpiCardSmallActive : {}),
+              }}
+              onClick={() => setKpiFilter((current) => (current === card.key ? null : card.key))}
+            >
+              <div style={styles.kpiLabel}>{card.label}</div>
+              <div style={styles.kpiValueSmall}>{card.value.toLocaleString("en-IN")}</div>
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* TABLE */}
@@ -1442,11 +1503,12 @@ const styles = {
   modalFooter: { padding: "14px 20px", borderTop: "1px solid #e2e8f0", background: "#fff", flexShrink: 0 },
   footerActions: { display: "flex", justifyContent: "space-between", width: "100%", alignItems: "center", gap: "10px" },
   secondaryBtn: { padding: "10px 18px", borderRadius: "10px", border: "1px solid #d1d5db", background: "#fff", color: "#111827", cursor: "pointer" },
-  cardGrid4: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "14px", marginBottom: "18px" },
-  metricCard: { background: "#fff", border: "1px solid #e2e8f0", borderRadius: "14px", padding: "18px 16px", boxShadow: "0 8px 20px rgba(15, 23, 42, 0.05)", minHeight: "120px", display: "flex", flexDirection: "column", justifyContent: "space-between" },
-  metricLabel: { margin: 0, fontSize: "13px", fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.03em" },
-  metricValue: { margin: "10px 0 0", fontSize: "34px", fontWeight: 800, color: "#0f172a", lineHeight: 1 },
-  metricSubtitle: { margin: "10px 0 0", fontSize: "13px", color: "#64748b" },
+  kpiGrid: { margin: "0 0 18px" },
+  kpiRow: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "12px" },
+  kpiCardSmall: { background: "#f0fdf4", borderWidth: "1px", borderStyle: "solid", borderColor: "#bbf7d0", borderRadius: "10px", padding: "12px 16px", minHeight: "72px", display: "flex", flexDirection: "column", justifyContent: "space-between", cursor: "pointer", textAlign: "left", boxShadow: "0 6px 16px rgba(15, 23, 42, 0.04)" },
+  kpiCardSmallActive: { background: "#eef2ff", borderWidth: "2px", borderColor: "#6366f1", boxShadow: "0 8px 22px rgba(79, 70, 229, 0.18)" },
+  kpiLabel: { color: "#4338ca", fontSize: "13px", fontWeight: 700 },
+  kpiValueSmall: { color: "#0f172a", fontSize: "24px", fontWeight: 800, lineHeight: 1 },
   form: { display: "flex", flexDirection: "column", gap: "16px" },
   sectionCard: { background: "#ffffff", border: "none", borderRadius: "14px", padding: "10px 0" },
   sectionHead: { marginBottom: "10px", paddingBottom: "8px", borderBottom: "1px solid #e5e7eb" },

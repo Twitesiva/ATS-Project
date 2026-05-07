@@ -105,9 +105,7 @@ export default function Dashboard() {
         .lte("doj", end),
       supabase
         .from("revenue_tracker")
-        .select("margin_value,doj")
-        .gte("doj", start)
-        .lte("doj", end),
+        .select("margin_value,doj"),
       supabase.from("revenue_tracker").select("margin_value,billing_rate"),
     ]);
 
@@ -131,7 +129,7 @@ export default function Dashboard() {
       0
     );
 
-    const revenueThisMonth = (revenueRes.data || []).reduce(
+    const totalRevenue = (revenueRes.data || []).reduce(
       (sum, row) => sum + parseRevenueValue(row.margin_value),
       0
     );
@@ -155,7 +153,7 @@ export default function Dashboard() {
       totalOpenPositions,
       totalInterviewsScheduled: interviewHistoryRes.count || 0,
       totalClosuresThisMonth: closureHistoryRes.count || 0,
-      revenueThisMonth,
+      revenueThisMonth: totalRevenue,
       overallMarginPercent,
     });
 
@@ -297,9 +295,9 @@ export default function Dashboard() {
       subtitle: "Joined this month",
     },
     {
-      title: "Revenue This Month",
+      title: "Total Revenue",
       value: `INR ${kpis.revenueThisMonth.toLocaleString("en-IN")}`,
-      subtitle: "Sum of margin value this month",
+      subtitle: "Sum of all margin values",
     },
   ];
 

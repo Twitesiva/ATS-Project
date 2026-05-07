@@ -1,22 +1,39 @@
 import { supabase } from "./supabaseClient";
-import { sanitizeMarginValue, normalizeRecruiter, normalizeStatus } from "../utils/reportHelpers";
+import { sanitizeMarginValue, normalizeRecruiter, normalizeStatus, parseRevenueValue } from "../utils/reportHelpers";
 
 const isValidDate = (value) => {
   const date = new Date(value);
   return !Number.isNaN(date.getTime());
 };
 
+const toDateInputValue = (value) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
 const applyCandidateFilters = (query, filters = {}) => {
   let q = query;
+  const dateField = filters.candidateDateField || "created_at";
+  const isTimestampField = dateField === "created_at";
 
   if (filters.fromDate && isValidDate(filters.fromDate)) {
-    q = q.gte("created_at", new Date(filters.fromDate).toISOString());
+    q = q.gte(
+      dateField,
+      isTimestampField ? new Date(filters.fromDate).toISOString() : toDateInputValue(filters.fromDate)
+    );
   }
 
   if (filters.toDate && isValidDate(filters.toDate)) {
     const end = new Date(filters.toDate);
     end.setHours(23, 59, 59, 999);
-    q = q.lte("created_at", end.toISOString());
+    q = q.lte(
+      dateField,
+      isTimestampField ? end.toISOString() : toDateInputValue(end)
+    );
   }
 
   if (filters.client) {
@@ -65,6 +82,37 @@ const normalizeComparableStatus = (value) =>
 
 const statusMatches = (status, expectedStatuses) =>
   expectedStatuses.has(normalizeComparableStatus(status));
+
+const HIRING_FUNNEL_STATUS_GROUPS = {
+  Screening: new Set([
+    "profile submitted",
+    "feedback pending",
+    "duplicate",
+    "assessment round",
+    "shortlisted",
+    "position hold",
+  ]),
+  Interview: new Set([
+    "l1 scheduled",
+    "l2 scheduled",
+    "ai interview",
+    "hr round",
+    "interview scheduled",
+  ]),
+  Rejected: new Set([
+    "l1 reject",
+    "l2 reject",
+    "final round rejected",
+  ]),
+  Dropout: new Set([
+    "drop out by candidate",
+    "drop out by client",
+    "backout",
+    "drop out",
+  ]),
+};
+
+const HIRING_FUNNEL_STAGES = ["Screening", "Interview", "Rejected", "Dropout", "Closure"];
 
 const fetchAllPages = async (buildQuery) => {
   const pageSize = 1000;
@@ -182,6 +230,58 @@ export const getRecruiterPerformance = async (filters = {}) => {
   return result;
 };
 
+export const getRecruiterPerformanceAnalytics = async (filters = {}) => {
+  const [recruiterPerf, revenueRows] = await Promise.all([
+    getRecruiterPerformance(filters),
+    fetchAllPages((from, to) =>
+      applyRevenueFilters(
+        supabase.from("revenue_tracker").select("recruiter_name,margin_value,doj,client_name").range(from, to),
+        filters
+      )
+    ),
+  ]);
+
+  const revenueMap = {};
+  const closuresMap = {};
+
+  (revenueRows || []).forEach((row) => {
+    const name = normalizeRecruiter(row.recruiter_name);
+    if (!revenueMap[name]) revenueMap[name] = 0;
+    if (!closuresMap[name]) closuresMap[name] = 0;
+    revenueMap[name] += parseRevenueValue(row.margin_value);
+    closuresMap[name] += 1;
+  });
+
+  const transformed = (recruiterPerf || []).map((row) => {
+    const name = normalizeRecruiter(row.recruiter);
+    return {
+      ...row,
+      recruiter: row.recruiter,
+      candidates: row.candidates ?? row.candidatesAdded ?? 0,
+      candidatesAdded: row.candidates ?? row.candidatesAdded ?? 0,
+      interviews: row.interviews ?? 0,
+      closures: closuresMap[name] ?? 0,
+      revenue: revenueMap[name] ?? 0,
+    };
+  });
+
+  const existingNames = new Set(transformed.map((row) => normalizeRecruiter(row.recruiter)));
+  Object.keys(revenueMap).forEach((name) => {
+    if (!existingNames.has(name)) {
+      transformed.push({
+        recruiter: name,
+        candidates: 0,
+        candidatesAdded: 0,
+        interviews: 0,
+        closures: closuresMap[name] ?? 0,
+        revenue: revenueMap[name] ?? 0,
+      });
+    }
+  });
+
+  return transformed.sort((a, b) => a.recruiter.localeCompare(b.recruiter));
+};
+
 export const getClientPerformance = async (filters = {}) => {
   const [candidateData, revenueData] = await Promise.all([
     fetchAllPages((from, to) =>
@@ -257,32 +357,24 @@ export const getHiringFunnel = async (filters = {}) => {
     ),
   ]);
 
-  const screeningStatuses = new Set(["screen select", "screen reject", "screen rejected"]);
-  const interviewStatuses = new Set([
-    "l1 scheduled",
-    "l2 scheduled",
-    "ai interview",
-    "hr round",
-    "assessment round",
-    "assesment round",
-  ]);
-  const rejectedStatuses = new Set(["l1 reject", "l2 reject", "final round reject"]);
-  const dropoutStatuses = new Set([
-    "drop out",
-    "back out",
-    "backout",
-    "drop out by candidate",
-    "drop out by client",
-  ]);
-  const closureIds = new Set(revenueRows.map((row) => row.id).filter(Boolean));
+  const counts = {
+    Screening: 0,
+    Interview: 0,
+    Rejected: 0,
+    Dropout: 0,
+    Closure: revenueRows.length,
+  };
 
-  return [
-    { stage: "Screening", value: candidateRows.filter((r) => statusMatches(r.status, screeningStatuses)).length },
-    { stage: "Interview", value: candidateRows.filter((r) => statusMatches(r.status, interviewStatuses)).length },
-    { stage: "Rejected", value: candidateRows.filter((r) => statusMatches(r.status, rejectedStatuses)).length },
-    { stage: "Dropout", value: candidateRows.filter((r) => statusMatches(r.status, dropoutStatuses)).length },
-    { stage: "Closure", value: closureIds.size },
-  ];
+  candidateRows.forEach((row) => {
+    for (const [stage, statuses] of Object.entries(HIRING_FUNNEL_STATUS_GROUPS)) {
+      if (statusMatches(row.status, statuses)) {
+        counts[stage] += 1;
+        break;
+      }
+    }
+  });
+
+  return HIRING_FUNNEL_STAGES.map((stage) => ({ stage, value: counts[stage] }));
 };
 
 export const getReportsTableData = async (filters = {}) => {

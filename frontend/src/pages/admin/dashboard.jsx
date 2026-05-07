@@ -5,7 +5,7 @@ import RecruiterPerformanceChart from "../../components/reports/RecruiterPerform
 import ClientPerformanceChart from "../../components/reports/ClientPerformanceChart";
 import StatusPieChart from "../../components/reports/StatusPieChart";
 import {
-  getRecruiterPerformance,
+  getRecruiterPerformanceAnalytics,
   getClientPerformance,
   getStatusDistribution,
 } from "../../services/reportsService";
@@ -51,7 +51,7 @@ export default function AdminDashboard() {
       supabase.from("candidate_records").select("client_name"),
       supabase.from("revenue_tracker").select("margin_value"),
       supabase.from("candidate_records").select("created_at").order("created_at", { ascending: true }),
-      getRecruiterPerformance({}),
+      getRecruiterPerformanceAnalytics({}),
       getClientPerformance({}),
       getStatusDistribution({}),
     ]);
@@ -116,25 +116,42 @@ export default function AdminDashboard() {
   if (loading) return <Loader text="Loading HR dashboard..." />;
 
   const cards = [
-    { title: "Total Managers", value: kpis.totalManagers },
-    { title: "Total Recruiters", value: kpis.totalRecruiters },
-    { title: "Total TLs", value: kpis.totalTls },
-    { title: "Total Candidates", value: kpis.totalCandidates },
-    { title: "Total Clients", value: kpis.totalClients },
-    { title: "Total Revenue", value: formatCurrency(kpis.totalRevenue) },
+    { title: "Total Managers", value: kpis.totalManagers, rawValue: kpis.totalManagers },
+    { title: "Total Recruiters", value: kpis.totalRecruiters, rawValue: kpis.totalRecruiters },
+    { title: "Total TLs", value: kpis.totalTls, rawValue: kpis.totalTls },
+    { title: "Total Candidates", value: kpis.totalCandidates, rawValue: kpis.totalCandidates },
+    { title: "Total Clients", value: kpis.totalClients, rawValue: kpis.totalClients },
+    { title: "Total Revenue", value: formatCurrency(kpis.totalRevenue), rawValue: kpis.totalRevenue },
   ];
+  const maxKpiValue = Math.max(...cards.map((card) => Number(card.rawValue) || 0), 1);
 
   return (
     <div style={styles.page}>
       <h2 style={styles.title}>HR Dashboard</h2>
 
       <div style={styles.kpiGrid}>
-        {cards.map((card) => (
-          <div key={card.title} style={styles.kpiCard}>
-            <p style={styles.kpiLabel}>{card.title}</p>
-            <p style={styles.kpiValue}>{card.value}</p>
+        {cards.map((card) => {
+          const isRevenueCard = card.title === "Total Revenue";
+          const fillWidth = `${Math.min(100, ((Number(card.rawValue) || 0) / maxKpiValue) * 100)}%`;
+
+          return (
+          <div
+            key={card.title}
+            style={{
+              ...styles.kpiCard,
+              ...(isRevenueCard ? styles.revenueKpiCard : {}),
+            }}
+          >
+            <div style={{ ...styles.kpiFill, width: fillWidth }} />
+            <div style={styles.kpiContent}>
+              <p style={styles.kpiLabel}>{card.title}</p>
+              <p style={{ ...styles.kpiValue, ...(isRevenueCard ? styles.revenueKpiValue : {}) }}>
+                {card.value}
+              </p>
+            </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       <div style={styles.chartGrid}>
@@ -163,9 +180,34 @@ const styles = {
     border: "1px solid #e2e8f0",
     borderRadius: "12px",
     padding: "14px",
+    minHeight: "92px",
+    overflow: "hidden",
+    position: "relative",
+  },
+  revenueKpiCard: {
+    gridColumn: "span 2",
+    minHeight: "124px",
+  },
+  kpiFill: {
+    background: "linear-gradient(90deg, rgba(37, 99, 235, 0.16), rgba(16, 185, 129, 0.12))",
+    bottom: 0,
+    left: 0,
+    position: "absolute",
+    top: 0,
+    transition: "width 0.25s ease",
+    zIndex: 0,
+  },
+  kpiContent: {
+    position: "relative",
+    zIndex: 1,
   },
   kpiLabel: { margin: 0, color: "#64748b", fontWeight: 600, fontSize: "13px" },
   kpiValue: { margin: "8px 0 0", color: "#0f172a", fontSize: "28px", fontWeight: 700 },
+  revenueKpiValue: {
+    fontSize: "32px",
+    lineHeight: 1.15,
+    overflowWrap: "anywhere",
+  },
   chartGrid: {
     display: "grid",
     gap: "12px",
