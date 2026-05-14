@@ -5,10 +5,12 @@ import sys
 os.environ["TRANSFORMERS_OFFLINE"] = "1"
 os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+backend_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(backend_dir)
+sys.path.insert(0, project_root)
 os.environ.setdefault("FLASK_APP", "backend.app")
 
-from app import app
+from backend.app import app
 
 # Standard hosting port configuration
 port = int(os.environ.get("PORT", 5000))

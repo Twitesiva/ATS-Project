@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../services/supabaseClient"; 
 import { useAuth } from "../../context/AuthContext";
+import { createCompany, listCompanies, updateCompany } from "../../services/bdeCompanies";
+import { normalizePhone10 } from "../../utils/phone";
 const inputStyle = {
   width: "100%", background: "#0d1525", border: "1px solid #2a3550",
   color: "#fff", padding: "9px 12px", borderRadius: 8, fontSize: 13, boxSizing: "border-box",
@@ -53,46 +55,44 @@ const { user } = useAuth();
   const fetchClients = async () => {
     setLoading(true);
     setError(null);
-    const { data, error } = await supabase
-      .from("companies")
-      .select("*")
-      .eq("status", "Client")
-      .eq("created_by", user?.name)
-      .order("created_at", { ascending: false });
-
-    if (error) setError(error.message);
-    else setClients(data || []);
+    try {
+      const data = await listCompanies({ status: "Client" });
+      setClients(data || []);
+    } catch (e) {
+      setError(e?.message || "Failed to load clients");
+      setClients([]);
+    }
     setLoading(false);
   };
 
   useEffect(() => {
-  if (user?.name) fetchClients();
-}, [user?.name]);
+    if (user?.email || user?.name) fetchClients();
+  }, [user?.email, user?.name]);
 
   const handleSubmit = async () => {
     if (!form.company_name.trim()) return alert("Company name is required.");
+    if (form.phone && normalizePhone10(form.phone).length !== 10) return alert("Phone number must be exactly 10 digits.");
     setSaving(true);
-    const { error } = await supabase.from("companies").insert({
-      company_name: form.company_name.trim(),
-      contact_person: form.contact_person.trim() || null,
-      email: form.email.trim() || null,
-      phone: form.phone.trim() || null,
-      stage: form.stage,
-      status: "Client", // always Client on this page
-      created_by: user?.name || null,
-    });
-
-    if (error) {
-      alert(error.message);
-    } else {
+    try {
+      await createCompany({
+        company_name: form.company_name.trim(),
+        contact_person: form.contact_person.trim() || null,
+        email: form.email.trim() || null,
+        phone: normalizePhone10(form.phone).trim() || null,
+        stage: form.stage,
+        status: "Client",
+      });
       setShowModal(false);
       setForm({ company_name: "", contact_person: "", email: "", phone: "", stage: "New", status: "Client" });
       await fetchClients();
+    } catch (e) {
+      alert(e?.message || "Failed to create client");
     }
     setSaving(false);
   };
 
-  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+  const set = (key) => (e) =>
+    setForm((f) => ({ ...f, [key]: key === "phone" ? normalizePhone10(e.target.value) : e.target.value }));
 
   return (
     <div style={{ padding: "28px 32px", background: "#0d1525", minHeight: "100vh" }}>
@@ -204,8 +204,15 @@ const { user } = useAuth();
       </Field>
 
       <Field label="Phone">
-        <input style={inputStyle} value={selectedClient.phone || ""}
-          onChange={e => setSelectedClient(c => ({ ...c, phone: e.target.value }))} />
+        <input
+          style={inputStyle}
+          type="tel"
+          inputMode="numeric"
+          maxLength={10}
+          pattern="\\d{10}"
+          value={selectedClient.phone || ""}
+          onChange={e => setSelectedClient(c => ({ ...c, phone: normalizePhone10(e.target.value) }))}
+        />
       </Field>
 
       <Field label="Status">
@@ -272,9 +279,8 @@ const { user } = useAuth();
       </button>
       <button
         onClick={async () => {
-          const { error } = await supabase
-            .from("companies")
-            .update({
+          try {
+            await updateCompany(selectedClient.id, {
               company_name:    selectedClient.company_name,
               contact_person:  selectedClient.contact_person,
               email:           selectedClient.email,
@@ -289,15 +295,12 @@ const { user } = useAuth();
               website:         selectedClient.website,
               notes:           selectedClient.notes,
               remarks:         selectedClient.remarks,
-            })
-            .eq("id", selectedClient.id);
-
-          if (error) {
-            alert("Failed to save: " + error.message);
-          } else {
+            });
             setShowProfileModal(false);
             setSelectedClient(null);
             await fetchClients();
+          } catch (e) {
+            alert("Failed to save: " + (e?.message || "Unknown error"));
           }
         }}
         style={{ background: "#4ef7a4", color: "#0d1525", border: "none", borderRadius: 8, padding: "9px 20px", fontWeight: 700, cursor: "pointer" }}

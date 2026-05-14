@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { addRecruiter } from "../../services/authService";
 import { supabase } from "../../services/supabaseClient";
 import { canonicalizeRole, getRoleLabel, getRoleQueryValues } from "../../utils/roles";
-
+import { isValidPhone10, normalizePhone10 } from "../../utils/phone";
+import { apiFetch } from "../../services/api";
 const MANAGED_ROLES = ["recruiter", "tl"];
 
 const formatDate = (value) => {
@@ -10,7 +11,6 @@ const formatDate = (value) => {
   if (Number.isNaN(dt.getTime())) return "-";
   return dt.toLocaleDateString("en-GB");
 };
-
 const formatLastActivity = (value) => {
   if (!value) return "Last activity: No activity";
   const dt = new Date(value);
@@ -54,7 +54,7 @@ export default function Recruiters() {
         MANAGED_ROLES.map((role) =>
           supabase
             .from("users")
-            .select("id,name,email,phone_number,role,created_at,is_online")
+            .select("id,auth_id,name,email,phone_number,role,created_at,is_online")
             .in("role", getRoleQueryValues(role))
             .order("created_at", { ascending: false })
         )
@@ -87,6 +87,7 @@ export default function Recruiters() {
         const name = row?.name?.trim() || row?.email?.split("@")?.[0] || getRoleLabel(role);
         return {
           id: row.id,
+          auth_id: row.auth_id || null,
           name,
           email: row.email || "-",
           phone_number: row.phone_number || "-",
@@ -137,6 +138,11 @@ export default function Recruiters() {
       return;
     }
 
+    if (form.phone && !isValidPhone10(form.phone)) {
+      setError("Phone number must be exactly 10 digits");
+      return;
+    }
+
     const result = await addRecruiter({
       name: form.name.trim(),
       email: form.email.trim(),
@@ -154,34 +160,47 @@ export default function Recruiters() {
     setForm({ name: "", email: "", password: "", phone: "", role: "recruiter" });
     await loadUsers();
   };
+const handleUpdatePassword = async (e) => {
+  e.preventDefault();
+  if (!passwordTarget?.id) return;
 
-  const handleUpdatePassword = async (e) => {
-    e.preventDefault();
-    if (!passwordTarget?.id) return;
+  if (!newPassword.trim()) {
+    setError("New password is required");
+    return;
+  }
 
-    if (!newPassword.trim()) {
-      setError("New password is required");
-      return;
-    }
+  if (!passwordTarget?.auth_id) {
+    setError("This user has no auth account linked.");
+    return;
+  }
 
-    setActionBusyId(passwordTarget.id);
-    const { error: updateError } = await supabase
+  setActionBusyId(passwordTarget.id);
+
+  try {
+    // ✅ Call Python backend to update auth.users
+    await apiFetch("/admin/users/password", {
+      method: "PATCH",
+      body: JSON.stringify({
+        auth_id: passwordTarget.auth_id,
+        new_password: newPassword.trim(),
+      }),
+    });
+
+    // ✅ Also update public.users
+    await supabase
       .from("users")
       .update({ password: newPassword.trim() })
       .eq("id", passwordTarget.id);
-    setActionBusyId(null);
 
-    if (updateError) {
-      setError(updateError.message || "Failed to update password");
-      return;
-    }
-
-    setMessage("Password updated successfully");
+    setMessage(`Password updated for ${passwordTarget.name}`);
     setPasswordTarget(null);
     setNewPassword("");
-    await loadUsers();
-  };
-
+  } catch (err) {
+    setError(err.message || "Failed to update password");
+  } finally {
+    setActionBusyId(null);
+  }
+};
   const handleDeleteUser = async (user, role) => {
     const ok = window.confirm(`Are you sure you want to delete this ${getRoleLabel(role)}?`);
     if (!ok) return;
@@ -205,6 +224,11 @@ export default function Recruiters() {
 
     if (!editForm.name.trim() || !editForm.email.trim()) {
       setError("Name and email are required");
+      return;
+    }
+
+    if (editForm.phone && !isValidPhone10(editForm.phone)) {
+      setError("Phone number must be exactly 10 digits");
       return;
     }
 
@@ -283,8 +307,12 @@ export default function Recruiters() {
           <input
             placeholder="Phone Number"
             value={form.phone}
-            onChange={(e) => setForm((prev) => ({ ...prev, phone: e.target.value }))}
+            onChange={(e) => setForm((prev) => ({ ...prev, phone: normalizePhone10(e.target.value) }))}
             style={styles.input}
+            type="tel"
+            inputMode="numeric"
+            maxLength={10}
+            pattern="\\d{10}"
           />
           <input value={getRoleLabel(form.role)} readOnly style={styles.input} />
 
@@ -468,8 +496,12 @@ export default function Recruiters() {
               <input
                 placeholder="Phone Number"
                 value={editForm.phone}
-                onChange={(e) => setEditForm((prev) => ({ ...prev, phone: e.target.value }))}
+                onChange={(e) => setEditForm((prev) => ({ ...prev, phone: normalizePhone10(e.target.value) }))}
                 style={styles.input}
+                type="tel"
+                inputMode="numeric"
+                maxLength={10}
+                pattern="\\d{10}"
               />
               <select
                 value={editForm.role}

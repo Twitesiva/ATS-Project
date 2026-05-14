@@ -1,17 +1,14 @@
-/**
- * Drop-in replacement for fetch() that automatically attaches
- * the logged-in user's name as X-User-Name header.
- * The backend reads this via get_current_user() — never trust frontend body for auth.
- */
-export function apiFetch(url, options = {}) {
-  const saved = localStorage.getItem("ats_user");
-  const user = saved ? JSON.parse(saved) : null;
+import { API_BASE_URL } from "../services/api";
 
-  return fetch(url, {
+// Return the raw Response (some pages handle .ok / .json themselves)
+export async function apiFetch(path, options = {}) {
+  const token = localStorage.getItem("ats_access_token");
+
+  return fetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
-      ...(user?.name ? { "X-User-Name": user.name } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(options.headers || {}),
     },
   });

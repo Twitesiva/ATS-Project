@@ -3,6 +3,8 @@ import { supabase } from "../../services/supabaseClient";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import { useAuth } from "../../context/AuthContext";
+import { listCompanies } from "../../services/bdeCompanies";
+import { createActivity, listFollowUps, updateActivity } from "../../services/bdeData";
 const inputStyle = {
   width: "100%", background: "#ffffff", border: "1px solid #d1d5db",
   color: "#0f172a", padding: "9px 12px", borderRadius: 8, fontSize: 13, boxSizing: "border-box",
@@ -82,26 +84,21 @@ export default function FollowUps() {
 
   const fetchAll = async () => {
     setLoading(true);
-    const [{ data: acts }, { data: comps }] = await Promise.all([
-      supabase
-        .from("activities")
-        .select("*, companies(company_name, contact_person)")
-        .eq("created_by", user?.name)     
-        .order("activity_datetime", { ascending: true }),
-      supabase
-        .from("companies")
-        .select("id, company_name, contact_person")
-        .eq("created_by", user?.name)
-        .order("company_name"),
-    ]);
-    setFollowups(acts || []);
-    setCompanies(comps || []);
+    try {
+      const [acts, comps] = await Promise.all([listFollowUps(), listCompanies()]);
+      setFollowups(acts || []);
+      setCompanies(comps || []);
+    } catch (e) {
+      console.error(e);
+      setFollowups([]);
+      setCompanies([]);
+    }
     setLoading(false);
   };
 
   useEffect(() => {
-  if (user?.name) fetchAll();
-}, [user?.name]);
+    if (user?.email || user?.name) fetchAll();
+  }, [user?.email, user?.name]);
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -125,14 +122,13 @@ const handleSubmit = async () => {
     activity_datetime: form.activity_datetime,
     notes: form.notes || null,
     status: form.status,
-    created_by: user?.name || null,
   };
 
-  const { error } = await supabase.from("activities").insert([payload]);
-
-  if (error) {
-    alert(error.message);
-    console.error("[activities] insert failed", error);
+  try {
+    await createActivity(payload);
+  } catch (e) {
+    alert(e?.message || "Failed to schedule follow-up");
+    console.error("[activities] insert failed", e);
     return;
   }
 
@@ -143,8 +139,11 @@ const handleSubmit = async () => {
 };
 
   const markDone = async (id) => {
-    const { error } = await supabase.from("activities").update({ status: "Completed" }).eq("id", id);
-    if (error) return alert(error.message);
+    try {
+      await updateActivity(id, { status: "Completed" });
+    } catch (e) {
+      return alert(e?.message || "Failed to update");
+    }
     fetchAll();
   };
 

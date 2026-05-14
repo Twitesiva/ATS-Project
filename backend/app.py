@@ -1,9 +1,13 @@
 """Flask app: CORS, route registration, init DB."""
 # -*- coding: utf-8 -*-
+from flask import Blueprint, request, jsonify
+from supabase import create_client
+from config import SUPABASE_URL, SUPABASE_SERVICE_KEY
 import os
 import sys
 import warnings
-
+from dotenv import load_dotenv
+load_dotenv()
 # Suppress non-critical warnings for clean executive demos
 # TT warning comes from transformers/tokenizers internals and is harmless
 warnings.filterwarnings("ignore", message=".*TT: undefined function.*")
@@ -47,7 +51,7 @@ CORS(
     resources={
         r"/api/*": {
             "origins": "*",
-            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],  # ✅ added PATCH
             "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"],
         }
     },
@@ -59,20 +63,29 @@ init_db()
 from backend.utils.model_loader import preload_models
 
 print("Preloading ML models (SentenceTransformer, SpaCy)...")
-preload_models()
-print("[OK] ML models preloaded successfully")
+try:
+    preload_models()
+    print("[OK] ML models preloaded successfully")
+except Exception as e:
+    # Keep core CRUD APIs alive even if NLP models fail to load (offline/dev environments)
+    logger.exception("Model preload failed: %s", e)
+    print("[WARN] ML models failed to preload; continuing without preloading")
 
 # PERFORMANCE ARCHITECTURE - CRITICAL: Initialize ANN index
 from backend.services.ann_index import init_ann_index, load_index_from_db
 
 print("Initializing ANN index...")
-if init_ann_index():
-    print("[OK] FAISS skeleton ready")
-    print("Loading existing embeddings from database...")
-    load_index_from_db()
-    print("[OK] ANN index populated and ready")
-else:
-    print("[WARN] ANN index failed to initialize. System will use exact matching.")
+try:
+    if init_ann_index():
+        print("[OK] FAISS skeleton ready")
+        print("Loading existing embeddings from database...")
+        load_index_from_db()
+        print("[OK] ANN index populated and ready")
+    else:
+        print("[WARN] ANN index failed to initialize. System will use exact matching.")
+except Exception as e:
+    logger.exception("ANN init/load failed: %s", e)
+    print("[WARN] ANN init/load failed; continuing without ANN")
 
 # Register API routes
 from backend.api.upload import bp as upload_bp
@@ -80,6 +93,7 @@ from backend.api.match import bp as match_bp
 from backend.api.store import bp as store_bp
 from backend.api.resumes import bp as resumes_bp
 from backend.api.bde import bp as bde_bp
+from backend.api.admin_users import bp as admin_users_bp
 
 # Canonical API routes used by frontend and local direct tests
 app.register_blueprint(upload_bp, url_prefix="/api")
@@ -87,6 +101,7 @@ app.register_blueprint(match_bp, url_prefix="/api")
 app.register_blueprint(store_bp, url_prefix="/api")
 app.register_blueprint(resumes_bp, url_prefix="/api")
 app.register_blueprint(bde_bp, url_prefix="/api")
+app.register_blueprint(admin_users_bp, url_prefix="/api")
 
 # Compatibility registration for deployments where Nginx rewrites /api/* -> /*
 # This keeps both forms working:
@@ -97,6 +112,7 @@ app.register_blueprint(match_bp, url_prefix="", name="match_plain")
 app.register_blueprint(store_bp, url_prefix="", name="store_plain")
 app.register_blueprint(resumes_bp, url_prefix="", name="resumes_plain")
 app.register_blueprint(bde_bp, url_prefix="", name="bde_plain")
+app.register_blueprint(admin_users_bp, url_prefix="", name="admin_users_plain")
 
 
 @app.route("/health")

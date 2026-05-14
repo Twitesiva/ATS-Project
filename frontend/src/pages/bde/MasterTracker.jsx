@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../../services/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
+import { normalizePhone10 } from "../../utils/phone";
 const STATUS_COLORS = {
   "In Progress": "#4e8ef7",
   "Drop out": "#f74e4e",
@@ -45,8 +46,8 @@ const { user } = useAuth();
 const userEmail = user?.email?.trim().toLowerCase() || "";
 const userName  = user?.name?.trim().toLowerCase()  || "";
   useEffect(() => {
-    if (user?.name) fetchAll();
-  }, [user?.name]);  // ← waits until user is loaded
+    if (user?.name || user?.email) fetchAll();
+  }, [user?.name, user?.email]);  // waits until user is loaded
 
 const fetchAll = async () => {
   setLoading(true);
@@ -56,7 +57,7 @@ const fetchAll = async () => {
     .from("requirements")
     .select("*, companies(company_name, contact_person, phone, email, poc)")
     .in("status", ["In Progress", "Drop out"])
-    .ilike("created_by", `%${user?.name || ""}%`)
+    .ilike("created_by", `%${(user?.email || user?.name || "").trim()}%`)
     .order("created_at", { ascending: false });
 
   if (reqError) console.error("[requirements] fetch failed", reqError);
@@ -410,7 +411,15 @@ const fetchAll = async () => {
                    <input style={inputStyle} value={editForm.spoc_name || ""} onChange={(e) => setEditForm({ ...editForm, spoc_name: e.target.value })} />
                  </Field>
                  <Field label="Mobile">
-                   <input style={inputStyle} value={editForm.mobile || ""} onChange={(e) => setEditForm({ ...editForm, mobile: e.target.value })} />
+                   <input
+                     style={inputStyle}
+                     type="tel"
+                     inputMode="numeric"
+                     maxLength={10}
+                     pattern="\\d{10}"
+                     value={editForm.mobile || ""}
+                     onChange={(e) => setEditForm({ ...editForm, mobile: normalizePhone10(e.target.value) })}
+                   />
                  </Field>
                  <Field label="Mail">
                    <input style={inputStyle} value={editForm.mail || ""} onChange={(e) => setEditForm({ ...editForm, mail: e.target.value })} />

@@ -1,3 +1,5 @@
+import { normalizePhone10 } from "../../utils/phone";
+
 export default function SearchFilters({ filters, onChange, loading, onClear }) {
   const update = (key, value) => onChange({ ...filters, [key]: value });
 
@@ -88,10 +90,13 @@ export default function SearchFilters({ filters, onChange, loading, onClear }) {
           <label htmlFor="filter-phone">Phone Number</label>
           <input
             id="filter-phone"
-            type="text"
-            placeholder="e.g. 98765 or +91..."
+            type="tel"
+            inputMode="numeric"
+            maxLength={10}
+            pattern="\\d{10}"
+            placeholder="10-digit phone"
             value={filters.phoneNumber}
-            onChange={(e) => update("phoneNumber", e.target.value)}
+            onChange={(e) => update("phoneNumber", normalizePhone10(e.target.value))}
           />
         </div>
         <div className="form-group">

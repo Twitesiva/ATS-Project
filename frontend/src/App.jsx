@@ -1,4 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { supabase } from "./services/supabaseClient";
+import { getRoleHomePath } from "./utils/roles";
 
 import ProtectedRoute from "./components/common/ProtectedRoute";
 import { AuthProvider } from "./context/AuthContext";
@@ -9,6 +12,7 @@ import AdminLayout from "./components/layout/AdminLayout";
 import BDELayout from "./components/layout/BDELayout";
 
 import Login from "./pages/auth/Login";
+import HRSignup from "./pages/auth/HRSignup";
 
 /* Manager */
 import ManagerDashboard from "./pages/manager/Dashboard";
@@ -30,7 +34,7 @@ import RecruiterData from "./pages/recruiter/Data";
 import RecruiterReports from "./pages/recruiter/Reports";
 import RRevenueTracker from "./pages/recruiter/RevenueTracker";
 
-/* Admin */
+/* Admin/HR */
 import AdminDashboard from "./pages/admin/dashboard";
 import AdminManagers from "./pages/admin/managers";
 import AdminActivity from "./pages/admin/activity";
@@ -49,15 +53,72 @@ import DailyTracker from "./pages/bde/DailyTracker";
 import WeeklyTracker from "./pages/bde/WeeklyTracker";
 import MasterTracker from "./pages/bde/MasterTracker";
 
+// ─── Root redirect: checks if HR exists ──────────────────────────────────────
+// No HR → /signup (first-time setup)
+// HR exists → /login (normal flow)
+function RootRedirect() {
+  const [destination, setDestination] = useState(null);
+
+  useEffect(() => {
+    const checkAll = async () => {
+      try {
+        // If already logged in → go to their dashboard
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          const { data: profile } = await supabase
+            .from("users")
+            .select("role")
+            .eq("auth_id", session.user.id)
+            .maybeSingle();
+
+          if (profile?.role) {
+            const { getRoleHomePath } = await import("./utils/roles");
+            setDestination(getRoleHomePath(profile.role));
+            return;
+          }
+        }
+
+        // No session → check if HR exists
+        const { data: hrExists } = await supabase.rpc("check_hr_exists");
+        setDestination(hrExists ? "/login" : "/signup");
+      } catch (err) {
+        console.error("[RootRedirect]", err);
+        setDestination("/login");
+      }
+    };
+    checkAll();
+  }, []);
+
+  if (!destination) {
+    return (
+      <div style={loaderStyle}>
+        <p style={{ color: "#6b7280", fontSize: "14px" }}>Loading...</p>
+      </div>
+    );
+  }
+
+  return <Navigate to={destination} replace />;
+}
+
+const loaderStyle = {
+  height: "100vh",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  background: "#f3f4f6",
+};
+// ─────────────────────────────────────────────────────────────────────────────
+
 export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
         <Routes>
 
-          {/* Root */}
-          <Route path="/" element={<Navigate to="/login" />} />
+          {/* Root — smart redirect based on HR existence */}
+          <Route path="/" element={<RootRedirect />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/signup" element={<HRSignup />} />
 
           {/* ---------------- HR (Admin Layout) ---------------- */}
           <Route element={<ProtectedRoute roles={["hr", "admin"]} />}>
@@ -106,7 +167,6 @@ export default function App() {
           <Route element={<ProtectedRoute role="bde" />}>
             <Route path="/bde" element={<BDELayout />}>
               <Route index element={<Navigate to="dashboard" />} />
-
               <Route path="dashboard" element={<BDEDashboard />} />
               <Route path="leads" element={<LeadsManagement />} />
               <Route path="leads/new" element={<LeadsManagement />} />
@@ -117,15 +177,14 @@ export default function App() {
               <Route path="weekly-tracker" element={<WeeklyTracker />} />
               <Route path="master-tracker" element={<MasterTracker />} />
               <Route path="closures" element={<PageClosure />} />
-               <Route path="followups" element={<FollowUps />} />
-               <Route path="communications" element={<CommunicationLog />} />
-
+              <Route path="followups" element={<FollowUps />} />
+              <Route path="communications" element={<CommunicationLog />} />
               <Route path="*" element={<Navigate to="dashboard" replace />} />
             </Route>
           </Route>
 
-          {/* fallback */}
-          <Route path="*" element={<Navigate to="/login" />} />
+          {/* Fallback */}
+          <Route path="*" element={<Navigate to="/" />} />
 
         </Routes>
       </BrowserRouter>

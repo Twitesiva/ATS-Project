@@ -3,6 +3,8 @@ import { supabase } from "../../services/supabaseClient";
 import Loader from "../../components/common/Loader";
 import { addRecruiter, normalizeAllUserRoles } from "../../services/authService";
 import { canonicalizeRole, getRoleLabel, getRoleQueryValues } from "../../utils/roles";
+import { isValidPhone10, normalizePhone10 } from "../../utils/phone";
+import { apiFetch } from "../../utils/apiFetch";
 
 const MANAGED_ROLES = ["manager", "recruiter", "tl","bde"];
 
@@ -124,7 +126,7 @@ export default function AdminManagers() {
       MANAGED_ROLES.map((role) =>
         supabase
           .from("users")
-          .select("id,name,email,phone_number,created_at,role")
+          .select("id,auth_id,name,email,phone_number,created_at,role")
           .in("role", getRoleQueryValues(role))
           .order("created_at", { ascending: false })
       )
@@ -151,7 +153,7 @@ export default function AdminManagers() {
   }, [loadUsers]);
 
   const handleFormChange = (key, value) => {
-    setForm((prev) => ({ ...prev, [key]: value }));
+    setForm((prev) => ({ ...prev, [key]: key === "phone" ? normalizePhone10(value) : value }));
   };
 
   const handleAddUser = async (e) => {
@@ -162,6 +164,11 @@ export default function AdminManagers() {
     const normalizedRole = canonicalizeRole(form.role);
     if (!form.name.trim() || !form.email.trim() || !form.password.trim()) {
       setError("Name, email, and password are required");
+      return;
+    }
+
+    if (form.phone && !isValidPhone10(form.phone)) {
+      setError("Phone number must be exactly 10 digits");
       return;
     }
 
@@ -210,6 +217,10 @@ export default function AdminManagers() {
   const handleUpdatePassword = async (e) => {
     e.preventDefault();
     if (!passwordTarget?.id) return;
+    if (!passwordTarget?.auth_id) {
+      setError("Missing auth_id for this user. Please ensure users.auth_id is populated.");
+      return;
+    }
 
     if (!newPassword.trim()) {
       setError("New password is required");
@@ -217,14 +228,18 @@ export default function AdminManagers() {
     }
 
     setActionBusyId(passwordTarget.id);
-    const { error: updateError } = await supabase
-      .from("users")
-      .update({ password: newPassword.trim() })
-      .eq("id", passwordTarget.id);
+    const res = await apiFetch("/admin/users/password", {
+      method: "PATCH",
+      body: JSON.stringify({
+        auth_id: passwordTarget.auth_id,
+        new_password: newPassword.trim(),
+      }),
+    });
     setActionBusyId(null);
 
-    if (updateError) {
-      setError(updateError.message || "Failed to update password");
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      setError(body?.error || "Failed to update password");
       return;
     }
 
@@ -251,6 +266,11 @@ export default function AdminManagers() {
 
     if (!editForm.name.trim() || !editForm.email.trim()) {
       setError("Name and email are required");
+      return;
+    }
+
+    if (editForm.phone && !isValidPhone10(editForm.phone)) {
+      setError("Phone number must be exactly 10 digits");
       return;
     }
 
@@ -362,6 +382,10 @@ export default function AdminManagers() {
           <input
             style={styles.input}
             placeholder="Phone Number"
+            type="tel"
+            inputMode="numeric"
+            maxLength={10}
+            pattern="\\d{10}"
             value={form.phone}
             onChange={(e) => handleFormChange("phone", e.target.value)}
           />
@@ -458,7 +482,11 @@ export default function AdminManagers() {
                 style={styles.input}
                 placeholder="Phone Number"
                 value={editForm.phone}
-                onChange={(e) => setEditForm((prev) => ({ ...prev, phone: e.target.value }))}
+                type="tel"
+                inputMode="numeric"
+                maxLength={10}
+                pattern="\\d{10}"
+                onChange={(e) => setEditForm((prev) => ({ ...prev, phone: normalizePhone10(e.target.value) }))}
               />
               <select
                 style={styles.input}
@@ -536,7 +564,9 @@ const styles = {
     cursor: "pointer",
   },
   secondaryBtn: {
-    border: "1px solid #cbd5e1",
+    borderWidth: "1px",
+    borderStyle: "solid",
+    borderColor: "#cbd5e1",
     background: "#fff",
     color: "#0f172a",
     borderRadius: "8px",

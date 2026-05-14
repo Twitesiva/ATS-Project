@@ -438,9 +438,9 @@ def fetch_resumes(
             # De-duplicate while preserving order
             seen = set()
             role_skills_list = [s for s in role_skills_list if not (s in seen or seen.add(s))]
-            print(f"[DEBUG] ✓ Parsed role_skills_list({len(role_skills_list)}): {role_skills_list}")
+            print(f"[DEBUG] Parsed role_skills_list({len(role_skills_list)}): {role_skills_list}")
         else:
-            print(f"[DEBUG] ✗ No role_skills provided")
+            print("[DEBUG] No role_skills provided")
 
         # Parse manual skills filter (separate from role)
         skills_list = []
@@ -453,9 +453,9 @@ def fetch_resumes(
             # De-duplicate while preserving order
             seen = set()
             skills_list = [s for s in skills_list if not (s in seen or seen.add(s))]
-            print(f"[DEBUG] ✓ Parsed manual skills_list({len(skills_list)}): {skills_list}")
+            print(f"[DEBUG] Parsed manual skills_list({len(skills_list)}): {skills_list}")
         else:
-            print(f"[DEBUG] ✗ No manual skills provided")
+            print("[DEBUG] No manual skills provided")
         if skills_mode not in ("any", "all"):
             skills_mode = "any"
         

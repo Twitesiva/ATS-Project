@@ -1,8 +1,9 @@
 import { useEffect, useState, useRef } from "react";
 import { Chart, registerables } from "chart.js";
-import { API_BASE_URL } from "../../services/api";
 import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../services/supabaseClient";
+import { listCompanies } from "../../services/bdeCompanies";
+import { listActivities, listRequirements } from "../../services/bdeData";
 Chart.register(...registerables);
 // ─── Design tokens ────────────────────────────────────────────────────────────
 const C = {
@@ -377,30 +378,17 @@ export default function WeeklyTrackerVisual({ user: userProp }) {
 
   // ── Fetch all four tables in parallel ────────────────────────────────────
 useEffect(() => {
-  if (!user?.name) return;
+  if (!user?.email && !user?.name) return;
 
   (async () => {
     setLoading(true);
     setError(null);
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const headers = {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${session?.access_token}`,
-      };
-
-      // Fetch companies, requirements, activities from API as before
-      const [cRes, rRes, aRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/bde/companies`, { headers }),
-        fetch(`${API_BASE_URL}/bde/requirements`, { headers }),
-        fetch(`${API_BASE_URL}/bde/activities`, { headers }),
-      ]);
-
       const [cData, rData, aData] = await Promise.all([
-        cRes.json(),
-        rRes.json(),
-        aRes.json(),
+        listCompanies(),
+        listRequirements(),
+        listActivities(),
       ]);
 
       // ✅ Fetch revenue directly from Supabase filtered by bd_name
@@ -429,7 +417,7 @@ useEffect(() => {
 
     setLoading(false);
   })();
-}, [user?.name]);
+}, [user?.email, user?.name]);
 
   // ── Scope to this BDE's data ──────────────────────────────────────────────
   const matchedComps = userKeys.length ? companies.filter(c => matchesUser(c.created_by, userKeys)) : companies;

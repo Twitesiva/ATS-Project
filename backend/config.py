@@ -12,7 +12,7 @@ os.makedirs(MODELS_DIR, exist_ok=True)
 SUPABASE_URL = os.getenv("SUPABASE_URL", "https://vnojbpuphsvzrvmjxoei.supabase.co")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZub2picHVwaHN2enJ2bWp4b2VpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4MTc1NDMsImV4cCI6MjA4NzM5MzU0M30.ah660DfGEpsa6XBcyjVDc7snPk8lqvadUZjgTtizbSQ")
 SUPABASE_RESUME_BUCKET = os.getenv("SUPABASE_RESUME_BUCKET", "resumes")
-
+SUPABASE_SERVICE_KEY=os.getenv("SUPABASE_SERVICE_KEY","eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZub2picHVwaHN2enJ2bWp4b2VpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MTgxNzU0MywiZXhwIjoyMDg3MzkzNTQzfQ.H1_eLz0LbZYlcuJJBcmNf2WkqvREfZeOyacoZ3-JMKw")
 # Storage mode: PRIMARY = Supabase Storage (no local file saving)
 # Set to False only for legacy local-only mode (not recommended for production)
 SUPABASE_STORAGE_PRIMARY = True

@@ -32,7 +32,6 @@ const CHART_COLORS = [
 ];
 
 const columnConfig = [
-  { key: "s_no", label: "S.No", type: "number" },
   { key: "client_name", label: "Client Name" },
   { key: "bd", label: "BD" },
   { key: "hire_mode", label: "Hire Mode" },
@@ -53,10 +52,6 @@ const columnConfig = [
 ];
 
 const headerMap = {
-  "s no": "s_no",
-  "s.no": "s_no",
-  "sl no": "s_no",
-  "serial no": "s_no",
   "client name": "client_name",
   client: "client_name",
   bd: "bd",
@@ -112,14 +107,10 @@ const detectDelimiter = (csvText) => {
     ";": (firstLine.match(/;/g) || []).length,
     "|": (firstLine.match(/\|/g) || []).length,
   };
-
   let best = ",";
   let bestCount = -1;
   for (const [delimiter, count] of Object.entries(counts)) {
-    if (count > bestCount) {
-      best = delimiter;
-      bestCount = count;
-    }
+    if (count > bestCount) { best = delimiter; bestCount = count; }
   }
   return bestCount > 0 ? best : ",";
 };
@@ -136,22 +127,12 @@ const toNumber = (value) => toNullableNumber(value) || 0;
 
 const toPayload = (row) => {
   const payload = {};
-
   columnConfig.forEach((column) => {
     const value = row[column.key];
-    if (numberFields.has(column.key)) {
-      payload[column.key] = toNullableNumber(value);
-      return;
-    }
-
-    if (column.type === "month") {
-      payload[column.key] = value || null;
-      return;
-    }
-
+    if (numberFields.has(column.key)) { payload[column.key] = toNullableNumber(value); return; }
+    if (column.type === "month") { payload[column.key] = value || null; return; }
     payload[column.key] = value === "" ? null : value ?? null;
   });
-
   return payload;
 };
 
@@ -175,23 +156,14 @@ const normalizeHireMode = (value) => {
 const parseMonthValue = (value) => {
   if (!value) return null;
   if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
-
   const raw = String(value).trim();
   if (!raw) return null;
-
   const direct = new Date(raw);
   if (!Number.isNaN(direct.getTime())) return direct;
-
   const monthMatch = raw.match(/^(\d{4})-(\d{2})$/);
-  if (monthMatch) {
-    return new Date(Number(monthMatch[1]), Number(monthMatch[2]) - 1, 1);
-  }
-
+  if (monthMatch) return new Date(Number(monthMatch[1]), Number(monthMatch[2]) - 1, 1);
   const slashMatch = raw.match(/^(\d{1,2})\/(\d{4})$/);
-  if (slashMatch) {
-    return new Date(Number(slashMatch[2]), Number(slashMatch[1]) - 1, 1);
-  }
-
+  if (slashMatch) return new Date(Number(slashMatch[2]), Number(slashMatch[1]) - 1, 1);
   return null;
 };
 
@@ -207,8 +179,6 @@ const toMonthLabel = (value) => {
   return date.toLocaleDateString("en-IN", { month: "short", year: "numeric" });
 };
 
-
-
 const getAnalyticsFromRows = (rows) => {
   const clientMap = new Map();
   const pipelineMap = new Map();
@@ -219,9 +189,8 @@ const getAnalyticsFromRows = (rows) => {
   const totals = rows.reduce(
     (acc, row) => {
       const client = String(row.client_name || "").trim() || "Unknown";
-const status = String(row.status || "").trim() || "Unknown";
-const monthKey = toMonthKey(row.created_at);
-const monthLabel = toMonthLabel(row.created_at);
+      const monthKey = toMonthKey(row.created_at);
+      const monthLabel = toMonthLabel(row.created_at);
       const hireMode = normalizeHireMode(row.hire_mode);
 
       const submitted = toNumber(row.profiles_submitted);
@@ -242,30 +211,19 @@ const monthLabel = toMonthLabel(row.created_at);
 
       clientMap.set(client, (clientMap.get(client) || 0) + submitted);
 
-      const pipeline = pipelineMap.get(client) || {
-        client,
-        submitted: 0,
-        interviews: 0,
-        rejected: 0,
-        closures: 0,
-      };
+      const pipeline = pipelineMap.get(client) || { client, submitted: 0, interviews: 0, rejected: 0, closures: 0 };
       pipeline.submitted += submitted;
       pipeline.interviews += interviews;
       pipeline.rejected += rejected;
       pipeline.closures += closures;
       pipelineMap.set(client, pipeline);
 
-const clientStatus = row.offboarded_month ? "Offboarded" : "Active";
-statusMap.set(clientStatus, (statusMap.get(clientStatus) || 0) + 1);
+      const clientStatus = row.offboarded_month ? "Offboarded" : "Active";
+      statusMap.set(clientStatus, (statusMap.get(clientStatus) || 0) + 1);
       hireModeMap.set(hireMode, (hireModeMap.get(hireMode) || 0) + submitted);
 
       if (monthKey) {
-        const trend = trendMap.get(monthKey) || {
-          key: monthKey,
-          label: monthLabel,
-          submissions: 0,
-          interviews: 0,
-        };
+        const trend = trendMap.get(monthKey) || { key: monthKey, label: monthLabel, submissions: 0, interviews: 0 };
         trend.submissions += submitted;
         trend.interviews += interviews;
         trendMap.set(monthKey, trend);
@@ -273,18 +231,7 @@ statusMap.set(clientStatus, (statusMap.get(clientStatus) || 0) + 1);
 
       return acc;
     },
-    {
-      profilesSubmitted: 0,
-      interviews: 0,
-      rejected: 0,
-      closures: 0,
-      feedbackPending: 0,
-      duplicateProfiles: 0,
-      clientDropouts: 0,
-      candidateDropouts: 0,
-      positionHold: 0,
-      positionClosed: 0,
-    }
+    { profilesSubmitted: 0, interviews: 0, rejected: 0, closures: 0, feedbackPending: 0, duplicateProfiles: 0, clientDropouts: 0, candidateDropouts: 0, positionHold: 0, positionClosed: 0 }
   );
 
   return {
@@ -297,12 +244,8 @@ statusMap.set(clientStatus, (statusMap.get(clientStatus) || 0) + 1);
     clientPerformance: Array.from(clientMap.entries())
       .map(([client, submissions]) => ({ client, submissions }))
       .sort((a, b) => b.submissions - a.submissions || a.client.localeCompare(b.client)),
-    pipeline: Array.from(pipelineMap.values()).sort(
-      (a, b) => b.submitted - a.submitted || a.client.localeCompare(b.client)
-    ),
-    statusDistribution: Array.from(statusMap.entries())
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value),
+    pipeline: Array.from(pipelineMap.values()).sort((a, b) => b.submitted - a.submitted || a.client.localeCompare(b.client)),
+    statusDistribution: Array.from(statusMap.entries()).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value),
     hireModeSplit: Array.from(hireModeMap.entries()).map(([name, value]) => ({ name, value })),
     trend: Array.from(trendMap.values()).sort((a, b) => a.key.localeCompare(b.key)),
     risks: [
@@ -315,28 +258,97 @@ statusMap.set(clientStatus, (statusMap.get(clientStatus) || 0) + 1);
     ],
   };
 };
+
 const mirrorToRequirements = async (row) => {
   const clientName = String(row.client_name || "").trim();
-  if (!clientName) return;
+  if (!clientName) return { ok: true };
 
-  const { data: companies } = await supabase
+  // Requirements RLS expects: requirements.created_by === users.email (for the logged-in BDE).
+  // We store BD in SalesTracker as the BDE email (preferred). If it's not an email, fallback to lookup.
+  let createdBy = String(row.bd || "").trim() || null;
+  if (createdBy && !createdBy.includes("@")) {
+    const escaped = createdBy.replace(/,/g, " ");
+    const { data: matchingUsers, error: userLookupError } = await supabase
+      .from("users")
+      .select("email,name")
+      .or(`email.ilike.%${escaped}%,name.ilike.%${escaped}%`)
+      .limit(1);
+
+    if (userLookupError) {
+      console.error("[requirements] user lookup failed", userLookupError);
+    } else if (matchingUsers?.length) {
+      createdBy = String(matchingUsers[0].email || "").trim() || createdBy;
+    }
+  }
+
+  // Ensure we have a client row in `companies` so the BDE requirements page join works.
+  let company_id = null;
+  const { data: existingCompanies, error: companyLookupError } = await supabase
     .from("companies")
-    .select("id")
+    .select("id,status")
     .ilike("company_name", clientName)
+    .order("id", { ascending: false })
     .limit(1);
 
-  const company_id = companies?.[0]?.id ?? null;
+  if (companyLookupError) {
+    console.error("[requirements] company lookup failed", companyLookupError);
+    return { ok: false, error: companyLookupError };
+  }
 
-  const { error } = await supabase.from("requirements").insert([{
+  if (existingCompanies?.length) {
+    company_id = existingCompanies[0].id;
+  } else {
+    // Do not auto-create companies from Manager SalesTracker because `companies` is RLS-protected.
+    // Instead require the company to exist (usually created by BDE in Leads/Clients flow).
+    return {
+      ok: false,
+      error: new Error(`Client "${clientName}" not found in Companies; cannot mirror to Requirements.`),
+    };
+  }
+
+  if (!company_id) return { ok: false, error: new Error("Missing company_id") };
+
+  const basePayload = {
     company_id,
     job_title: "Client Upload",
     hire: row.hire_mode || null,
-    status: row.status || "Open",
+    // BDE MasterTracker shows only "In Progress" and "Drop out" requirements.
+    // Treat SalesTracker sync as an active/in-progress requirement unless explicitly offboarded.
+    status: String(row.status || "").toLowerCase() === "offboarded" ? "Drop out" : "In Progress",
     description: row.remarks || null,
-    created_by: row.bd || null,
-  }]);
+    created_by: createdBy,
+  };
 
-  if (error) console.error("[requirements] mirror failed", error);
+  // Upsert-ish: update latest matching row, else insert a new one
+  const { data: existingReqs, error: reqLookupError } = await supabase
+    .from("requirements")
+    .select("id")
+    .eq("company_id", company_id)
+    .eq("job_title", "Client Upload")
+    .eq("created_by", createdBy)
+    .order("id", { ascending: false })
+    .limit(1);
+
+  if (reqLookupError) {
+    console.error("[requirements] mirror lookup failed", reqLookupError);
+    return { ok: false, error: reqLookupError };
+  }
+
+  if (existingReqs?.length) {
+    const { error } = await supabase.from("requirements").update(basePayload).eq("id", existingReqs[0].id);
+    if (error) {
+      console.error("[requirements] mirror update failed", error);
+      return { ok: false, error };
+    }
+  } else {
+    const { error } = await supabase.from("requirements").insert([{ ...basePayload, created_at: new Date().toISOString() }]);
+    if (error) {
+      console.error("[requirements] mirror insert failed", error);
+      return { ok: false, error };
+    }
+  }
+
+  return { ok: true };
 };
 
 export default function SalesTracker() {
@@ -348,6 +360,10 @@ export default function SalesTracker() {
   const [editingRow, setEditingRow] = useState(null);
   const [form, setForm] = useState({ ...emptyForm });
 
+  // ── BDE users fetched HERE in the parent so they're passed down as a stable prop ──
+  const [bdeUsers, setBdeUsers] = useState([]);
+  const [bdeUsersError, setBdeUsersError] = useState("");
+
   const [analyticsClient, setAnalyticsClient] = useState("");
   const [analyticsStartMonth, setAnalyticsStartMonth] = useState("");
   const [analyticsEndMonth, setAnalyticsEndMonth] = useState("");
@@ -356,41 +372,70 @@ export default function SalesTracker() {
 
   const fetchRows = async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from("sales_tracker")
-      .select("*")
-      .order("id", { ascending: false });
-
-    if (error) {
-      console.error("[sales_tracker] fetch failed", error);
-      setRows([]);
-    } else {
-      setRows(data || []);
-    }
+    const { data, error } = await supabase.from("sales_tracker").select("*").order("id", { ascending: false });
+    if (error) { console.error("[sales_tracker] fetch failed", error); setRows([]); }
+    else { setRows(data || []); }
     setLoading(false);
   };
 
+  // Fetch BDE users once on mount
   useEffect(() => {
-    fetchRows();
+    const fetchBDEUsers = async () => {
+      try {
+        setBdeUsersError("");
+
+        // Ensure we have a Supabase auth session; otherwise RLS will treat this as anon.
+        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError) {
+          console.error("[bde_users] session lookup failed", sessionError);
+        }
+
+        const session = sessionData?.session || null;
+        if (!session?.access_token) {
+          setBdeUsers([]);
+          setBdeUsersError("Not logged into Supabase (RLS blocks users list)");
+          return;
+        }
+
+        const { data, error } = await supabase
+          .from("users")
+          .select("id,name,role,email")
+          .or("role.ilike.%bde%,role.ilike.%bd%,role.ilike.%business development%")
+          .order("name", { ascending: true });
+
+        if (error) {
+          console.error("[bde_users] fetch failed", error);
+          setBdeUsers([]);
+          setBdeUsersError(error.message || "Failed to load BDE users");
+          return;
+        }
+
+        const next = Array.isArray(data) ? data : [];
+        setBdeUsers(next);
+        if (!next.length) console.warn("[bde_users] empty list returned from users table");
+      } catch (error) {
+        console.error("[bde_users] fetch failed", error);
+        setBdeUsers([]);
+        setBdeUsersError(error?.message || "Failed to load BDE users");
+      }
+    };
+    fetchBDEUsers();
   }, []);
 
+  useEffect(() => { fetchRows(); }, []);
+
   const clientOptions = useMemo(
-    () =>
-      Array.from(new Set(rows.map((row) => String(row.client_name || "").trim()).filter(Boolean))).sort(
-        (a, b) => a.localeCompare(b)
-      ),
+    () => Array.from(new Set(rows.map((row) => String(row.client_name || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
     [rows]
   );
 
   const analyticsRows = useMemo(() => {
     const startKey = analyticsStartMonth || "";
     const endKey = analyticsEndMonth || "";
-
     return rows.filter((row) => {
       const client = String(row.client_name || "").trim();
       const rowHireMode = normalizeHireMode(row.hire_mode);
       const rowMonthKey = toMonthKey(row.onboarded_month);
-
       if (analyticsClient && client !== analyticsClient) return false;
       if (analyticsHireMode && rowHireMode !== analyticsHireMode) return false;
       if (startKey && rowMonthKey && rowMonthKey < startKey) return false;
@@ -405,64 +450,48 @@ export default function SalesTracker() {
   const tableRows = useMemo(() => {
     const query = normalizeText(tableSearch);
     if (!query) return rows;
-
-    return rows.filter((row) =>
-      columnConfig.some((column) => normalizeText(row[column.key]).includes(query))
-    );
+    return rows.filter((row) => columnConfig.some((column) => normalizeText(row[column.key]).includes(query)));
   }, [rows, tableSearch]);
 
-  const handleOpenAdd = () => {
-    setEditingRow(null);
-    setForm({ ...emptyForm });
-    setShowModal(true);
-  };
+  const handleOpenAdd = () => { setEditingRow(null); setForm({ ...emptyForm }); setShowModal(true); };
 
   const handleOpenEdit = (row) => {
     setEditingRow(row);
     const next = { ...emptyForm };
-    columnConfig.forEach((column) => {
-      next[column.key] = row[column.key] ?? "";
-    });
+    columnConfig.forEach((column) => { next[column.key] = row[column.key] ?? ""; });
     setForm(next);
     setShowModal(true);
   };
 
-  const handleCloseModal = () => {
-    if (saving) return;
-    setShowModal(false);
-    setEditingRow(null);
-  };
-
+  const handleCloseModal = () => { if (saving) return; setShowModal(false); setEditingRow(null); };
   const handleChange = (event) => {
     const { name, value } = event.target;
+    if (numberFields.has(name)) {
+      const isNumericOnly = /^\d*$/.test(String(value));
+      if (!isNumericOnly) return;
+    }
     setForm((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleSave = async (event) => {
     event.preventDefault();
     setSaving(true);
-
     const payload = toPayload(form);
-
     if (editingRow?.id) {
       const { error } = await supabase.from("sales_tracker").update(payload).eq("id", editingRow.id);
-      if (error) {
-        alert(error.message);
-        console.error("[sales_tracker] update failed", error);
-        setSaving(false);
-        return;
+      if (error) { alert(error.message); console.error("[sales_tracker] update failed", error); setSaving(false); return; }
+      const mirrorResult = await mirrorToRequirements(form);
+      if (mirrorResult?.ok === false) {
+        alert(`Saved Sales record, but failed to sync to Requirements: ${mirrorResult?.error?.message || "Unknown error"}`);
       }
-} else {
+    } else {
       const { error } = await supabase.from("sales_tracker").insert([payload]);
-      if (error) {
-        alert(error.message);
-        console.error("[sales_tracker] insert failed", error);
-        setSaving(false);
-        return;
+      if (error) { alert(error.message); console.error("[sales_tracker] insert failed", error); setSaving(false); return; }
+      const mirrorResult = await mirrorToRequirements(form);
+      if (mirrorResult?.ok === false) {
+        alert(`Saved Sales record, but failed to sync to Requirements: ${mirrorResult?.error?.message || "Unknown error"}`);
       }
-      await mirrorToRequirements(form);  // ← ADD THIS LINE
     }
-
     setSaving(false);
     setShowModal(false);
     setEditingRow(null);
@@ -471,20 +500,12 @@ export default function SalesTracker() {
 
   const handleDelete = async (id) => {
     if (!id || deletingId) return;
-
     const target = rows.find((row) => row.id === id);
     const ok = window.confirm(`Delete sales record for "${target?.client_name || "-"}"?`);
     if (!ok) return;
-
     setDeletingId(id);
     const { error } = await supabase.from("sales_tracker").delete().eq("id", id);
-    if (error) {
-      alert(error.message);
-      console.error("[sales_tracker] delete failed", error);
-      setDeletingId(null);
-      return;
-    }
-
+    if (error) { alert(error.message); console.error("[sales_tracker] delete failed", error); setDeletingId(null); return; }
     setRows((prev) => prev.filter((row) => row.id !== id));
     setDeletingId(null);
   };
@@ -492,10 +513,8 @@ export default function SalesTracker() {
   const handleUpload = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
-
     const fileName = file.name.toLowerCase();
     let parsedRows = [];
-
     try {
       if (fileName.endsWith(".xlsx") || fileName.endsWith(".xls")) {
         const arrayBuffer = await file.arrayBuffer();
@@ -507,17 +526,9 @@ export default function SalesTracker() {
         const delimiter = detectDelimiter(csvText);
         parsedRows = await new Promise((resolve, reject) => {
           Papa.parse(csvText, {
-            header: true,
-            skipEmptyLines: "greedy",
-            delimiter,
-            transformHeader: (header) => {
-              const key = normalizeText(header);
-              return normalizedHeaderMap[key] || key;
-            },
-            transform: (value) =>
-              typeof value === "string"
-                ? value.replace(/^\uFEFF/, "").replace(/\u00A0/g, " ").trim()
-                : value,
+            header: true, skipEmptyLines: "greedy", delimiter,
+            transformHeader: (header) => { const key = normalizeText(header); return normalizedHeaderMap[key] || key; },
+            transform: (value) => typeof value === "string" ? value.replace(/^\uFEFF/, "").replace(/\u00A0/g, " ").trim() : value,
             complete: (results) => resolve(results.data || []),
             error: reject,
           });
@@ -534,41 +545,26 @@ export default function SalesTracker() {
       .map((row) => mapUploadedRow(row))
       .filter((row) => Object.values(row).some((value) => value !== null && value !== ""));
 
-    if (!validRows.length) {
-      alert("No valid rows found in file.");
-      event.target.value = "";
-      return;
-    }
+    if (!validRows.length) { alert("No valid rows found in file."); event.target.value = ""; return; }
 
     const { error } = await supabase.from("sales_tracker").insert(validRows);
-    if (error) {
-      alert(error.message);
-      console.error("[sales_tracker] upload insert failed", error);
-      event.target.value = "";
-      return;
-    }
-     // ← ADD THESE 3 LINES
-    for (const r of validRows) {
-      await mirrorToRequirements(r);
-    }
+    if (error) { alert(error.message); console.error("[sales_tracker] upload insert failed", error); event.target.value = ""; return; }
+
+    for (const r of validRows) { await mirrorToRequirements(r); }
 
     alert("Upload successful.");
     fetchRows();
     event.target.value = "";
   };
 
-  if (loading) {
-    return <Loader text="Loading client analysis..." />;
-  }
+  if (loading) return <Loader text="Loading client analysis..." />;
 
   return (
     <div style={styles.page}>
       <div style={styles.heroCard}>
         <div>
           <h2 style={styles.title}>Client Analysis</h2>
-          <p style={styles.subtitle}>
-            Visual analytics from sales_tracker, followed by the full manual management table.
-          </p>
+          <p style={styles.subtitle}>Visual analytics from sales_tracker, followed by the full manual management table.</p>
         </div>
       </div>
 
@@ -580,24 +576,22 @@ export default function SalesTracker() {
         <div style={styles.filterGrid}>
           <label style={styles.filterLabel}>
             Client Name
-            <select value={analyticsClient} onChange={(event) => setAnalyticsClient(event.target.value)} style={styles.filterInput}>
+            <select value={analyticsClient} onChange={(e) => setAnalyticsClient(e.target.value)} style={styles.filterInput}>
               <option value="">All Clients</option>
-              {clientOptions.map((client) => (
-                <option key={client} value={client}>{client}</option>
-              ))}
+              {clientOptions.map((client) => <option key={client} value={client}>{client}</option>)}
             </select>
           </label>
           <label style={styles.filterLabel}>
             Start Month
-            <input type="month" value={analyticsStartMonth} onChange={(event) => setAnalyticsStartMonth(event.target.value)} style={styles.filterInput} />
+            <input type="month" value={analyticsStartMonth} onChange={(e) => setAnalyticsStartMonth(e.target.value)} style={styles.filterInput} />
           </label>
           <label style={styles.filterLabel}>
             End Month
-            <input type="month" value={analyticsEndMonth} onChange={(event) => setAnalyticsEndMonth(event.target.value)} style={styles.filterInput} />
+            <input type="month" value={analyticsEndMonth} onChange={(e) => setAnalyticsEndMonth(e.target.value)} style={styles.filterInput} />
           </label>
           <label style={styles.filterLabel}>
             Hire Mode
-            <select value={analyticsHireMode} onChange={(event) => setAnalyticsHireMode(event.target.value)} style={styles.filterInput}>
+            <select value={analyticsHireMode} onChange={(e) => setAnalyticsHireMode(e.target.value)} style={styles.filterInput}>
               <option value="">All Hire Modes</option>
               <option value="Permanent">Permanent</option>
               <option value="Contract">Contract</option>
@@ -612,11 +606,10 @@ export default function SalesTracker() {
           <p style={styles.sectionSubtitle}>Summary based on the current analytics filter set.</p>
         </div>
         <div style={styles.cardGrid4}>
-          {dashboard.kpis.map((card) => (
-            <MetricCard key={card.label} {...card} />
-          ))}
+          {dashboard.kpis.map((card) => <MetricCard key={card.label} {...card} />)}
         </div>
       </section>
+
       <div style={styles.chartGrid}>
         <ChartCard title="Client Submission Volume" subtitle="Profiles submitted by client">
           <div style={styles.chartWrap}>
@@ -639,8 +632,7 @@ export default function SalesTracker() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#dbe4f0" />
                 <XAxis dataKey="client" tick={{ fill: "#4b5563", fontSize: 12 }} />
                 <YAxis tick={{ fill: "#4b5563", fontSize: 12 }} />
-                <Tooltip />
-                <Legend />
+                <Tooltip /><Legend />
                 <Bar dataKey="submitted" stackId="pipeline" fill="#0f766e" />
                 <Bar dataKey="interviews" stackId="pipeline" fill="#2563eb" />
                 <Bar dataKey="rejected" stackId="pipeline" fill="#dc2626" />
@@ -652,7 +644,7 @@ export default function SalesTracker() {
       </div>
 
       <div style={styles.chartGrid}>
-<ChartCard title="Client Status Distribution" subtitle="Active vs Offboarded clients">
+        <ChartCard title="Client Status Distribution" subtitle="Active vs Offboarded clients">
           <div style={styles.chartWrap}>
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -661,8 +653,7 @@ export default function SalesTracker() {
                     <Cell key={`${entry.name}-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
                   ))}
                 </Pie>
-                <Tooltip />
-                <Legend />
+                <Tooltip /><Legend />
               </PieChart>
             </ResponsiveContainer>
           </div>
@@ -691,8 +682,7 @@ export default function SalesTracker() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#dbe4f0" />
                 <XAxis dataKey="label" tick={{ fill: "#4b5563", fontSize: 12 }} />
                 <YAxis tick={{ fill: "#4b5563", fontSize: 12 }} />
-                <Tooltip />
-                <Legend />
+                <Tooltip /><Legend />
                 <Line type="monotone" dataKey="submissions" name="Profiles Submitted" stroke="#0f766e" strokeWidth={2.5} />
                 <Line type="monotone" dataKey="interviews" name="Interviews Scheduled" stroke="#2563eb" strokeWidth={2.5} />
               </LineChart>
@@ -716,49 +706,38 @@ export default function SalesTracker() {
       <section style={styles.tableSection}>
         <div style={styles.sectionHeader}>
           <h3 style={styles.sectionTitle}>Client Analysis Table</h3>
-          <p style={styles.sectionSubtitle}>
-            Manual add, CSV/XLSX upload, edit, delete, and search on sales_tracker.
-          </p>
+          <p style={styles.sectionSubtitle}>Manual add, CSV/XLSX upload, edit, delete, and search on sales_tracker.</p>
         </div>
-
         <div style={styles.actionBar}>
           <button onClick={handleOpenAdd} style={styles.primaryBtn}>+ Add Sales Record</button>
           <label style={styles.uploadBtn}>
             Upload CSV/XLSX
             <input type="file" accept=".csv,.xlsx,.xls" onChange={handleUpload} style={styles.hiddenInput} />
           </label>
-          <input placeholder="Search table..." value={tableSearch} onChange={(event) => setTableSearch(event.target.value)} style={styles.searchInput} />
+          <input placeholder="Search table..." value={tableSearch} onChange={(e) => setTableSearch(e.target.value)} style={styles.searchInput} />
         </div>
 
         <div style={styles.tableContainer}>
           <table style={styles.table}>
             <thead>
               <tr>
-                {columnConfig.map((column) => (
-                  <th key={column.key} style={styles.th}>{column.label}</th>
-                ))}
+                {columnConfig.map((column) => <th key={column.key} style={styles.th}>{column.label}</th>)}
                 <th style={styles.th}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {tableRows.length === 0 ? (
-                <tr>
-                  <td style={styles.td} colSpan={columnConfig.length + 1}>No records found.</td>
-                </tr>
+                <tr><td style={styles.td} colSpan={columnConfig.length + 1}>No records found.</td></tr>
               ) : (
                 tableRows.map((row) => (
                   <tr key={row.id}>
                     {columnConfig.map((column) => (
                       <td key={`${row.id}-${column.key}`} style={styles.td} title={row[column.key] == null || row[column.key] === "" ? "-" : String(row[column.key])}>
                         {column.type === "month"
-                          ? row[column.key]
-                            ? toMonthLabel(row[column.key])
-                            : "-"
+                          ? row[column.key] ? toMonthLabel(row[column.key]) : "-"
                           : column.type === "date"
                             ? formatDate(row[column.key])
-                            : row[column.key] == null || row[column.key] === ""
-                              ? "-"
-                              : String(row[column.key])}
+                            : row[column.key] == null || row[column.key] === "" ? "-" : String(row[column.key])}
                       </td>
                     ))}
                     <td style={styles.td}>
@@ -777,19 +756,23 @@ export default function SalesTracker() {
         </div>
       </section>
 
-      {showModal ? (
+      {showModal && (
         <SalesTrackerModal
           form={form}
           editingRow={editingRow}
           saving={saving}
+          bdeUsers={bdeUsers}
+          bdeUsersError={bdeUsersError}
           onChange={handleChange}
           onClose={handleCloseModal}
           onSave={handleSave}
         />
-      ) : null}
+      )}
     </div>
   );
 }
+
+/* ───────────────────── METRIC CARD ───────────────────── */
 
 function MetricCard({ label, value, note }) {
   return (
@@ -800,6 +783,8 @@ function MetricCard({ label, value, note }) {
     </div>
   );
 }
+
+/* ───────────────────── CHART CARD ───────────────────── */
 
 function ChartCard({ title, subtitle, children }) {
   return (
@@ -813,16 +798,76 @@ function ChartCard({ title, subtitle, children }) {
   );
 }
 
-function SalesTrackerModal({ form, editingRow, saving, onChange, onClose, onSave }) {
+/* ───────────────────── SALES TRACKER MODAL ───────────────────── */
+
+function SalesTrackerModal({ form, editingRow, saving, bdeUsers, bdeUsersError, onChange, onClose, onSave }) {
+  // Lock body scroll while modal is open
   useEffect(() => {
     const originalOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = originalOverflow;
-    };
+    return () => { document.body.style.overflow = originalOverflow; };
   }, []);
 
   const formId = "sales-tracker-form";
+
+  const renderField = (column) => {
+    if (column.key === "bd") {
+      return (
+        <select style={styles.modalInput} name={column.key} value={form[column.key]} onChange={onChange}>
+          <option value="">Select BD Person</option>
+          {bdeUsersError ? <option value="" disabled>{bdeUsersError}</option> : null}
+          {!bdeUsersError && bdeUsers.length === 0 ? <option value="" disabled>No BDE users found</option> : null}
+          {bdeUsers.map((user) => (
+            <option
+              key={user.id}
+              value={user.email || user.name || ""}
+              data-display-name={user.name || user.email || ""}
+            >
+              {user.name || user.email || "-"}
+            </option>
+          ))}
+        </select>
+      );
+    }
+
+    if (column.key === "status") {
+      return (
+        <select style={styles.modalInput} name={column.key} value={form[column.key]} onChange={onChange}>
+          <option value="">Select Status</option>
+          <option value="Active">Active</option>
+          <option value="Inactive">Inactive</option>
+          <option value="On Hold">On Hold</option>
+          <option value="Offboarded">Offboarded</option>
+        </select>
+      );
+    }
+
+    if (column.key === "hire_mode") {
+      return (
+        <select style={styles.modalInput} name={column.key} value={form[column.key]} onChange={onChange}>
+          <option value="">Select Hire Mode</option>
+          <option value="Permanent">Permanent</option>
+          <option value="Contract">Contract</option>
+        </select>
+      );
+    }
+
+    if (column.type === "textarea") {
+      return (
+        <textarea style={styles.modalTextarea} name={column.key} value={form[column.key]} onChange={onChange} />
+      );
+    }
+
+    return (
+      <input
+        style={styles.modalInput}
+        type={column.type === "month" ? "month" : "text"}
+        name={column.key}
+        value={form[column.key]}
+        onChange={onChange}
+      />
+    );
+  };
 
   return (
     <div style={styles.overlay}>
@@ -842,29 +887,11 @@ function SalesTrackerModal({ form, editingRow, saving, onChange, onClose, onSave
               </div>
               <div style={styles.sectionGrid}>
                 {columnConfig.map((column) => (
-  <label key={column.key} style={styles.fieldLabel}>
-    {column.label}
-    {column.key === "status" ? (
-      <select style={styles.modalInput} name={column.key} value={form[column.key]} onChange={onChange}>
-        <option value="">Select Status</option>
-        <option value="Active">Active</option>
-        <option value="Inactive">Inactive</option>
-        <option value="On Hold">On Hold</option>
-        <option value="Offboarded">Offboarded</option>
-      </select>
-    ) : column.key === "hire_mode" ? (
-      <select style={styles.modalInput} name={column.key} value={form[column.key]} onChange={onChange}>
-        <option value="">Select Hire Mode</option>
-        <option value="Permanent">Permanent</option>
-        <option value="Contract">Contract</option>
-      </select>
-    ) : column.type === "textarea" ? (
-      <textarea style={styles.modalTextarea} name={column.key} value={form[column.key]} onChange={onChange} />
-    ) : (
-      <input style={styles.modalInput} type={column.type === "month" ? "month" : "text"} name={column.key} value={form[column.key]} onChange={onChange} />
-    )}
-  </label>
-))}
+                  <label key={column.key} style={styles.fieldLabel}>
+                    {column.label}
+                    {renderField(column)}
+                  </label>
+                ))}
               </div>
             </div>
           </form>
@@ -882,417 +909,64 @@ function SalesTrackerModal({ form, editingRow, saving, onChange, onClose, onSave
     </div>
   );
 }
+
+/* ───────────────────── STYLES ───────────────────── */
+
 const styles = {
-  page: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "18px",
-    width: "100%",
-    minWidth: 0,
-  },
-  heroCard: {
-    display: "flex",
-    justifyContent: "space-between",
-    gap: "16px",
-    flexWrap: "wrap",
-    padding: "22px",
-    borderRadius: "20px",
-    border: "1px solid #c7d2fe",
-    background:
-      "linear-gradient(135deg, rgba(240,253,250,1) 0%, rgba(239,246,255,1) 55%, rgba(250,245,255,1) 100%)",
-    boxShadow: "0 12px 28px rgba(15, 23, 42, 0.08)",
-  },
-  title: {
-    margin: 0,
-    fontSize: "32px",
-    lineHeight: 1.1,
-    color: "#0f172a",
-    fontWeight: 800,
-  },
-  subtitle: {
-    margin: "10px 0 0",
-    fontSize: "14px",
-    lineHeight: 1.6,
-    color: "#475569",
-    maxWidth: "760px",
-  },
-  filterCard: {
-    padding: "18px",
-    borderRadius: "18px",
-    background: "#ffffff",
-    border: "1px solid #e2e8f0",
-    boxShadow: "0 10px 28px rgba(15, 23, 42, 0.06)",
-  },
-  filterGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-    gap: "14px",
-    marginTop: "12px",
-  },
-  filterLabel: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "6px",
-    fontSize: "12px",
-    fontWeight: 700,
-    color: "#64748b",
-    textTransform: "uppercase",
-    letterSpacing: "0.03em",
-  },
-  filterInput: {
-    height: "44px",
-    borderRadius: "12px",
-    border: "1px solid #cbd5e1",
-    background: "#fff",
-    padding: "0 12px",
-    fontSize: "15px",
-    color: "#0f172a",
-    outline: "none",
-  },
-  section: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "12px",
-  },
-  sectionHeader: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "4px",
-  },
-  sectionTitle: {
-    margin: 0,
-    fontSize: "20px",
-    color: "#0f172a",
-    fontWeight: 800,
-  },
-  sectionSubtitle: {
-    margin: 0,
-    fontSize: "13px",
-    color: "#64748b",
-  },
-  cardGrid4: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-    gap: "14px",
-  },
-  metricCard: {
-    padding: "18px",
-    borderRadius: "18px",
-    background: "linear-gradient(180deg, #ffffff 0%, #eff6ff 100%)",
-    border: "1px solid #bfdbfe",
-    boxShadow: "0 8px 24px rgba(15, 23, 42, 0.06)",
-  },
-  metricLabel: {
-    margin: 0,
-    fontSize: "13px",
-    color: "#475569",
-    fontWeight: 700,
-    textTransform: "uppercase",
-    letterSpacing: "0.04em",
-  },
-  metricValue: {
-    margin: "10px 0 8px",
-    fontSize: "30px",
-    lineHeight: 1.05,
-    color: "#0f172a",
-    fontWeight: 800,
-  },
-  metricNote: {
-    margin: 0,
-    fontSize: "12px",
-    color: "#64748b",
-    lineHeight: 1.5,
-  },
-  chartGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))",
-    gap: "14px",
-  },
-  chartCard: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "12px",
-    padding: "18px",
-    borderRadius: "18px",
-    background: "#ffffff",
-    border: "1px solid #e2e8f0",
-    boxShadow: "0 10px 28px rgba(15, 23, 42, 0.06)",
-    minWidth: 0,
-  },
-  chartWrap: {
-    width: "100%",
-    height: "320px",
-    minWidth: 0,
-  },
-  riskGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-    gap: "12px",
-  },
-  riskCard: {
-    padding: "14px",
-    borderRadius: "14px",
-    background: "#f8fafc",
-    border: "1px solid #e2e8f0",
-  },
-  riskDot: {
-    display: "inline-block",
-    width: "10px",
-    height: "10px",
-    borderRadius: "999px",
-    marginBottom: "10px",
-  },
-  riskLabel: {
-    margin: 0,
-    fontSize: "12px",
-    color: "#64748b",
-    fontWeight: 700,
-    textTransform: "uppercase",
-    letterSpacing: "0.03em",
-  },
-  riskValue: {
-    margin: "8px 0 0",
-    fontSize: "26px",
-    fontWeight: 800,
-    color: "#0f172a",
-  },
-  tableSection: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "12px",
-  },
-  actionBar: {
-    display: "flex",
-    gap: "10px",
-    flexWrap: "wrap",
-  },
-  primaryBtn: {
-    padding: "10px 18px",
-    background: "#2563eb",
-    color: "#fff",
-    border: "none",
-    borderRadius: "10px",
-    cursor: "pointer",
-    fontWeight: 600,
-  },
-  uploadBtn: {
-    padding: "10px 18px",
-    background: "#0f172a",
-    color: "#fff",
-    border: "none",
-    borderRadius: "10px",
-    cursor: "pointer",
-    fontWeight: 600,
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  hiddenInput: {
-    display: "none",
-  },
-  searchInput: {
-    padding: "10px 12px",
-    width: "260px",
-    border: "1px solid #cbd5e1",
-    borderRadius: "10px",
-    fontSize: "14px",
-  },
-  tableContainer: {
-    width: "100%",
-    maxWidth: "100%",
-    minWidth: 0,
-    overflowX: "auto",
-    overflowY: "auto",
-    maxHeight: "70vh",
-    border: "1px solid #cbd5e1",
-    borderRadius: "14px",
-    background: "#fff",
-  },
-  table: {
-    width: "max-content",
-    minWidth: "100%",
-    borderCollapse: "collapse",
-    tableLayout: "auto",
-  },
-  th: {
-    border: "1px solid #cbd5e1",
-    padding: "8px 10px",
-    whiteSpace: "nowrap",
-    background: "#f8fafc",
-    position: "sticky",
-    top: 0,
-    zIndex: 2,
-    fontWeight: 600,
-    textAlign: "left",
-  },
-  td: {
-    border: "1px solid #cbd5e1",
-    padding: "8px 10px",
-    whiteSpace: "nowrap",
-    background: "#fff",
-    maxWidth: "240px",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-  },
-  actionBtns: {
-    display: "flex",
-    gap: "8px",
-  },
-  editBtn: {
-    padding: "6px 10px",
-    border: "1px solid #cbd5e1",
-    borderRadius: "8px",
-    background: "#fff",
-    color: "#0f172a",
-    cursor: "pointer",
-  },
-  deleteBtn: {
-    padding: "6px 10px",
-    border: "1px solid #fecaca",
-    borderRadius: "8px",
-    background: "#fff1f2",
-    color: "#b91c1c",
-    cursor: "pointer",
-  },
-  overlay: {
-    position: "fixed",
-    inset: 0,
-    background: "rgba(0,0,0,0.4)",
-    zIndex: 1000,
-  },
-  modalShell: {
-    position: "fixed",
-    top: "50%",
-    left: "50%",
-    transform: "translate(-50%, -50%)",
-    background: "#fff",
-    width: "78vw",
-    maxWidth: "1100px",
-    minWidth: "320px",
-    maxHeight: "88vh",
-    borderRadius: "14px",
-    boxShadow: "0 20px 50px rgba(2, 6, 23, 0.25)",
-    display: "flex",
-    flexDirection: "column",
-    overflow: "hidden",
-  },
-  modalHeader: {
-    padding: "16px 20px",
-    borderBottom: "1px solid #e2e8f0",
-    background: "#fff",
-    flexShrink: 0,
-  },
-  modalHeaderRow: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: "12px",
-  },
-  modalTitle: {
-    margin: 0,
-    fontSize: "30px",
-    fontWeight: 800,
-    color: "#0f172a",
-  },
-  closeBtn: {
-    width: "38px",
-    height: "38px",
-    borderRadius: "10px",
-    border: "1px solid #d1d5db",
-    background: "#fff",
-    color: "#111827",
-    cursor: "pointer",
-    fontSize: "22px",
-    lineHeight: 1,
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  modalBody: {
-    padding: "18px 20px",
-    overflowY: "auto",
-    overflowX: "hidden",
-    flex: 1,
-    background: "#f8fafc",
-  },
-  modalFooter: {
-    padding: "14px 20px",
-    borderTop: "1px solid #e2e8f0",
-    background: "#fff",
-    flexShrink: 0,
-  },
-  footerActions: {
-    display: "flex",
-    justifyContent: "space-between",
-    width: "100%",
-    alignItems: "center",
-    gap: "10px",
-  },
-  secondaryBtn: {
-    padding: "10px 18px",
-    borderRadius: "10px",
-    border: "1px solid #d1d5db",
-    background: "#fff",
-    color: "#111827",
-    cursor: "pointer",
-  },
-  form: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "16px",
-  },
-  sectionCard: {
-    background: "#ffffff",
-    border: "1px solid #e2e8f0",
-    borderRadius: "14px",
-    padding: "14px",
-  },
-  sectionHead: {
-    marginBottom: "10px",
-    paddingBottom: "8px",
-    borderBottom: "1px solid #e5e7eb",
-  },
-  modalSectionTitle: {
-    margin: 0,
-    fontSize: "18px",
-    fontWeight: 700,
-    color: "#0f172a",
-  },
-  sectionGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-    gap: "12px 16px",
-  },
-  fieldLabel: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "6px",
-    fontSize: "12px",
-    fontWeight: 600,
-    color: "#64748b",
-    textTransform: "uppercase",
-    letterSpacing: "0.02em",
-  },
-  modalInput: {
-    height: "44px",
-    borderRadius: "12px",
-    border: "1px solid #cbd5e1",
-    background: "#fff",
-    padding: "0 12px",
-    fontSize: "15px",
-    color: "#0f172a",
-    outline: "none",
-  },
-  modalTextarea: {
-    minHeight: "88px",
-    borderRadius: "12px",
-    border: "1px solid #cbd5e1",
-    background: "#fff",
-    padding: "10px 12px",
-    fontSize: "15px",
-    color: "#0f172a",
-    outline: "none",
-    resize: "vertical",
-    fontFamily: "inherit",
-  },
+  page: { display: "flex", flexDirection: "column", gap: "18px", width: "100%", minWidth: 0 },
+  heroCard: { display: "flex", justifyContent: "space-between", gap: "16px", flexWrap: "wrap", padding: "22px", borderRadius: "20px", border: "1px solid #c7d2fe", background: "linear-gradient(135deg, rgba(240,253,250,1) 0%, rgba(239,246,255,1) 55%, rgba(250,245,255,1) 100%)", boxShadow: "0 12px 28px rgba(15, 23, 42, 0.08)" },
+  title: { margin: 0, fontSize: "32px", lineHeight: 1.1, color: "#0f172a", fontWeight: 800 },
+  subtitle: { margin: "10px 0 0", fontSize: "14px", lineHeight: 1.6, color: "#475569", maxWidth: "760px" },
+  filterCard: { padding: "18px", borderRadius: "18px", background: "#ffffff", border: "1px solid #e2e8f0", boxShadow: "0 10px 28px rgba(15, 23, 42, 0.06)" },
+  filterGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "14px", marginTop: "12px" },
+  filterLabel: { display: "flex", flexDirection: "column", gap: "6px", fontSize: "12px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.03em" },
+  filterInput: { height: "44px", borderRadius: "12px", border: "1px solid #cbd5e1", background: "#fff", padding: "0 12px", fontSize: "15px", color: "#0f172a", outline: "none" },
+  section: { display: "flex", flexDirection: "column", gap: "12px" },
+  sectionHeader: { display: "flex", flexDirection: "column", gap: "4px" },
+  sectionTitle: { margin: 0, fontSize: "20px", color: "#0f172a", fontWeight: 800 },
+  sectionSubtitle: { margin: 0, fontSize: "13px", color: "#64748b" },
+  cardGrid4: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "14px" },
+  metricCard: { padding: "18px", borderRadius: "18px", background: "linear-gradient(180deg, #ffffff 0%, #eff6ff 100%)", border: "1px solid #bfdbfe", boxShadow: "0 8px 24px rgba(15, 23, 42, 0.06)" },
+  metricLabel: { margin: 0, fontSize: "13px", color: "#475569", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" },
+  metricValue: { margin: "10px 0 8px", fontSize: "30px", lineHeight: 1.05, color: "#0f172a", fontWeight: 800 },
+  metricNote: { margin: 0, fontSize: "12px", color: "#64748b", lineHeight: 1.5 },
+  chartGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: "14px" },
+  chartCard: { display: "flex", flexDirection: "column", gap: "12px", padding: "18px", borderRadius: "18px", background: "#ffffff", border: "1px solid #e2e8f0", boxShadow: "0 10px 28px rgba(15, 23, 42, 0.06)", minWidth: 0 },
+  chartWrap: { width: "100%", height: "320px", minWidth: 0 },
+  riskGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "12px" },
+  riskCard: { padding: "14px", borderRadius: "14px", background: "#f8fafc", border: "1px solid #e2e8f0" },
+  riskDot: { display: "inline-block", width: "10px", height: "10px", borderRadius: "999px", marginBottom: "10px" },
+  riskLabel: { margin: 0, fontSize: "12px", color: "#64748b", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.03em" },
+  riskValue: { margin: "8px 0 0", fontSize: "26px", fontWeight: 800, color: "#0f172a" },
+  tableSection: { display: "flex", flexDirection: "column", gap: "12px" },
+  actionBar: { display: "flex", gap: "10px", flexWrap: "wrap" },
+  primaryBtn: { padding: "10px 18px", background: "#2563eb", color: "#fff", border: "none", borderRadius: "10px", cursor: "pointer", fontWeight: 600 },
+  uploadBtn: { padding: "10px 18px", background: "#0f172a", color: "#fff", border: "none", borderRadius: "10px", cursor: "pointer", fontWeight: 600, display: "inline-flex", alignItems: "center", justifyContent: "center" },
+  hiddenInput: { display: "none" },
+  searchInput: { padding: "10px 12px", width: "260px", border: "1px solid #cbd5e1", borderRadius: "10px", fontSize: "14px" },
+  tableContainer: { width: "100%", maxWidth: "100%", minWidth: 0, overflowX: "auto", overflowY: "auto", maxHeight: "70vh", border: "1px solid #cbd5e1", borderRadius: "14px", background: "#fff" },
+  table: { width: "max-content", minWidth: "100%", borderCollapse: "collapse", tableLayout: "auto" },
+  th: { border: "1px solid #cbd5e1", padding: "8px 10px", whiteSpace: "nowrap", background: "#f8fafc", position: "sticky", top: 0, zIndex: 2, fontWeight: 600, textAlign: "left" },
+  td: { border: "1px solid #cbd5e1", padding: "8px 10px", whiteSpace: "nowrap", background: "#fff", maxWidth: "240px", overflow: "hidden", textOverflow: "ellipsis" },
+  actionBtns: { display: "flex", gap: "8px" },
+  editBtn: { padding: "6px 10px", border: "1px solid #cbd5e1", borderRadius: "8px", background: "#fff", color: "#0f172a", cursor: "pointer" },
+  deleteBtn: { padding: "6px 10px", border: "1px solid #fecaca", borderRadius: "8px", background: "#fff1f2", color: "#b91c1c", cursor: "pointer" },
+  overlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 1000 },
+  modalShell: { position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", background: "#fff", width: "78vw", maxWidth: "1100px", minWidth: "320px", maxHeight: "88vh", borderRadius: "14px", boxShadow: "0 20px 50px rgba(2, 6, 23, 0.25)", display: "flex", flexDirection: "column", overflow: "hidden" },
+  modalHeader: { padding: "16px 20px", borderBottom: "1px solid #e2e8f0", background: "#fff", flexShrink: 0 },
+  modalHeaderRow: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" },
+  modalTitle: { margin: 0, fontSize: "30px", fontWeight: 800, color: "#0f172a" },
+  closeBtn: { width: "38px", height: "38px", borderRadius: "10px", border: "1px solid #d1d5db", background: "#fff", color: "#111827", cursor: "pointer", fontSize: "22px", lineHeight: 1, display: "inline-flex", alignItems: "center", justifyContent: "center" },
+  modalBody: { padding: "18px 20px", overflowY: "auto", overflowX: "hidden", flex: 1, background: "#f8fafc" },
+  modalFooter: { padding: "14px 20px", borderTop: "1px solid #e2e8f0", background: "#fff", flexShrink: 0 },
+  footerActions: { display: "flex", justifyContent: "space-between", width: "100%", alignItems: "center", gap: "10px" },
+  secondaryBtn: { padding: "10px 18px", borderRadius: "10px", border: "1px solid #d1d5db", background: "#fff", color: "#111827", cursor: "pointer" },
+  form: { display: "flex", flexDirection: "column", gap: "16px" },
+  sectionCard: { background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "14px", padding: "14px" },
+  sectionHead: { marginBottom: "10px", paddingBottom: "8px", borderBottom: "1px solid #e5e7eb" },
+  modalSectionTitle: { margin: 0, fontSize: "18px", fontWeight: 700, color: "#0f172a" },
+  sectionGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "12px 16px" },
+  fieldLabel: { display: "flex", flexDirection: "column", gap: "6px", fontSize: "12px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.02em" },
+  modalInput: { height: "44px", borderRadius: "12px", border: "1px solid #cbd5e1", background: "#fff", padding: "0 12px", fontSize: "15px", color: "#0f172a", outline: "none" },
+  modalTextarea: { minHeight: "88px", borderRadius: "12px", border: "1px solid #cbd5e1", background: "#fff", padding: "10px 12px", fontSize: "15px", color: "#0f172a", outline: "none", resize: "vertical", fontFamily: "inherit" },
 };

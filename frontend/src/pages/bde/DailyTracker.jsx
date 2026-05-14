@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { apiFetch } from "../../utils/apiFetch";
+import { deleteCompany, listCompanies, updateCompany } from "../../services/bdeCompanies";
+import { normalizePhone10 } from "../../utils/phone";
 
 const today = new Date().toISOString().split("T")[0];
 
@@ -28,24 +30,19 @@ export default function DailyTracker() {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const response = await apiFetch(`/api/bde/daily-tracker?bde=${encodeURIComponent(user?.name || "")}`);
-        if (!response.ok) {
-          const text = await response.text();
-          console.error("Server error:", text);
-          throw new Error(`Server error: ${response.status}`);
-        }
-        const data = await response.json();
-        if (Array.isArray(data)) {
-          setRows(data);
-        }
+        const companies = await listCompanies();
+        const todayRows = (companies || []).filter((c) =>
+          String(c.created_at || "").startsWith(today)
+        );
+        setRows(todayRows);
       } catch (error) {
         console.error("Error fetching daily tracker:", error);
       }
       setLoading(false);
     };
 
-    if (user?.name) fetchData();
-  }, [user?.name]); // ← useEffect closes here
+    if (user?.email || user?.name) fetchData();
+  }, [user?.email, user?.name]); // ← useEffect closes here
 
   // ↓ All handlers are OUTSIDE useEffect
   const handleEdit = (row) => {
@@ -66,7 +63,7 @@ export default function DailyTracker() {
   const handleDelete = async (row) => {
     if (!window.confirm("Delete this entry?")) return;
     try {
-      await apiFetch(`/api/bde/companies/${row.id}`, { method: "DELETE" });
+      await deleteCompany(row.id);
       setRows(rows.filter(r => r.id !== row.id));
     } catch (error) {
       console.error("Error deleting entry:", error);
@@ -75,19 +72,15 @@ export default function DailyTracker() {
 
   const handleSave = async () => {
     try {
-      const response = await apiFetch(`/api/bde/companies/${editRow.id}`, {
-        method: "PUT",
-        body: JSON.stringify({
-          companyName: form.company,
-          contactPerson: form.leadName,
-          source: form.source,
-          phone: form.mobile,
-          email: form.email,
-          status: form.status,
-          notes: form.remarks,
-        }),
+      const updatedData = await updateCompany(editRow.id, {
+        company_name: form.company,
+        contact_person: form.leadName,
+        source: form.source,
+        phone: form.mobile,
+        email: form.email,
+        status: form.status,
+        remarks: form.remarks,
       });
-      const updatedData = await response.json();
       setRows(rows.map(r =>
         r.id === editRow.id
           ? {
@@ -100,7 +93,7 @@ export default function DailyTracker() {
               status: form.status,
               remarks: form.remarks,
               notes: form.remarks,
-              ...(updatedData[0] || {}),
+              ...(updatedData || {}),
             }
           : r
       ));
@@ -318,7 +311,12 @@ const filteredRows = activeTab === "new"
                     <input
                       type={type}
                       value={form[key] || ""}
-                      onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+                      onChange={(e) =>
+                        setForm({ ...form, [key]: key === "mobile" ? normalizePhone10(e.target.value) : e.target.value })
+                      }
+                      inputMode={key === "mobile" ? "numeric" : undefined}
+                      maxLength={key === "mobile" ? 10 : undefined}
+                      pattern={key === "mobile" ? "\\d{10}" : undefined}
                       style={{ padding: "8px 12px", borderRadius: 6, border: "1px solid #d1d5db", fontSize: 13 }}
                     />
                   )}

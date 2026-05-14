@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../services/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
+import { createCompany, deleteCompany, listCompanies, updateCompany } from "../../services/bdeCompanies";
+import { normalizePhone10 } from "../../utils/phone";
 const STATUS_COLORS = {
   New: "#4e8ef7",
   Contacted: "#f7e44e",
@@ -182,7 +184,7 @@ function PocCell({ lead, onUpdate }) {
 
 export default function LeadsManagement() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, authLoading } = useAuth();
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -198,7 +200,7 @@ export default function LeadsManagement() {
   const [phoneError, setPhoneError] = useState("");
 
   const handlePhoneChange = (value) => {
-    const numericOnly = value.replace(/\D/g, "").slice(0, 10);
+    const numericOnly = normalizePhone10(value);
     setForm((f) => ({ ...f, phone: numericOnly }));
     if (numericOnly.length > 0 && numericOnly.length < 10) {
       setPhoneError("Phone number must be exactly 10 digits");
@@ -207,29 +209,21 @@ export default function LeadsManagement() {
     }
   };
 
-  const fetchLeads = async () => {
+ const fetchLeads = async () => {
   setLoading(true);
-  let query = supabase
-    .from("companies")
-    .select("*")
-    .neq("status", "Client")
-    .eq("created_by", user?.name)   // ✅ only logged-in user's leads
-    .order("created_at", { ascending: false });
-
-  if (filters.status) query = query.eq("status", filters.status);
-  if (filters.priority) query = query.eq("priority", filters.priority);
-  if (filters.search) query = query.or(
-    `company_name.ilike.%${filters.search}%,contact_person.ilike.%${filters.search}%`
-  );
-
-  const { data, error } = await query;
-  if (error) console.error(error);
-  else setLeads(data || []);
+  try {
+    const data = await listCompanies({ status: filters.status, search: filters.search });
+    setLeads((data || []).filter((c) => c.status !== "Client"));
+  } catch (err) {
+    console.error(err);
+    setLeads([]);
+  }
   setLoading(false);
 };
-useEffect(() => { 
-  if (user?.name) fetchLeads(); 
-}, [filters, user?.name]);
+useEffect(() => {
+  if (authLoading) return;
+  fetchLeads();
+}, [filters, authLoading]);
 
   // Auto-fetch existing POCs when company name is typed in the form
   const handleCompanyNameChange = async (name) => {
@@ -321,17 +315,19 @@ const handleSubmit = async () => {
     website: form.website || null,
     notes: form.notes || null,
     lead_status: "In Progress",      // ✅ always set on create/edit
-    created_by: user?.name || null,  // ✅ always logged-in user
+    // created_by is set by Supabase service to the authenticated user's email
   };
 
-  let error;
-  if (selectedLead) {
-    ({ error } = await supabase.from("companies").update(payload).eq("id", selectedLead.id));
-  } else {
-    ({ error } = await supabase.from("companies").insert(payload));
+  try {
+    if (selectedLead) {
+      await updateCompany(selectedLead.id, payload);
+    } else {
+      await createCompany(payload);
+    }
+  } catch (e) {
+    console.error(e);
+    return alert(e?.message || "Failed to save lead");
   }
-
-  if (error) return alert(error.message);
   setShowModal(false);
   setSelectedLead(null);
   setForm(EMPTY_FORM);
@@ -383,11 +379,10 @@ const handleSubmit = async () => {
     setShowModal(true);
   };
 
-  const deleteLead = async (id) => {
-    if (!window.confirm("Delete this lead?")) return;
-    const { error } = await supabase.from("companies").delete().eq("id", id);
-    if (error) return alert(error.message);
-    fetchLeads();
+ const deleteLead = async (id) => {
+  if (!window.confirm("Delete this lead?")) return;
+  await deleteCompany(id);
+  fetchLeads();
   };
 
   const addNote = async () => {
@@ -415,14 +410,10 @@ const handleSubmit = async () => {
 
   const updateStatus = async (id, status) => {
   const dbStatus = status === "Converted" ? "Client" : status;
-  const leadStatus = status === "Lost" ? "Drop out" : "In Progress"; // ✅ track lead_status
-  const { error } = await supabase
-    .from("companies")
-    .update({ status: dbStatus, lead_status: leadStatus })
-    .eq("id", id);
-  if (error) return alert(error.message);
-  fetchLeads();
-};
+  const leadStatus = status === "Lost" ? "Drop out" : "In Progress";
+  await updateCompany(id, { status: dbStatus, lead_status: leadStatus });
+    fetchLeads();
+  };
 
   const convertToClient = async (lead) => {
     if (!window.confirm(`Convert "${lead.company_name}" to client?`)) return;
@@ -658,7 +649,16 @@ const handleSubmit = async () => {
               <input style={inputStyle} type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
             </FormField>
             <FormField label="Phone">
-              <input style={inputStyle} value={form.phone} onChange={(e) => handlePhoneChange(e.target.value)} placeholder="Enter 10-digit phone number" />
+              <input
+                style={inputStyle}
+                type="tel"
+                inputMode="numeric"
+                maxLength={10}
+                pattern="\\d{10}"
+                value={form.phone}
+                onChange={(e) => handlePhoneChange(e.target.value)}
+                placeholder="Enter 10-digit phone number"
+              />
               {phoneError && <div style={{ color: "#f74e4e", fontSize: 11, marginTop: 4 }}>{phoneError}</div>}
             </FormField>
             <FormField label="Status">
@@ -673,9 +673,10 @@ const handleSubmit = async () => {
             </FormField>
             <FormField label="Source">
               <select style={selectStyle} value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })}>
-                {["LinkedIn", "Referral", "Phone", "Email", "Website", "Event", "Other"].map((s) => <option key={s}>{s}</option>)}
+                {["Phone", "Email", "LinkedIn"].map((s) => <option key={s}>{s}</option>)}
               </select>
             </FormField>
+
             <FormField label="Industry">
               <input style={inputStyle} value={form.industry} onChange={(e) => setForm({ ...form, industry: e.target.value })} />
             </FormField>

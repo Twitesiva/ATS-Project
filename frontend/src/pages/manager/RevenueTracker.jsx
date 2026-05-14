@@ -191,6 +191,12 @@ export default function MRevenueTracker() {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
+    // Enforce numbers-only for CTC/ECTC/Billing fields.
+    if (name === "ctc" || name === "offered_ctc" || name === "billing_rate") {
+      const isNumericOnly = /^\d*$/.test(String(value));
+      if (!isNumericOnly) return;
+    }
+
     setForm((prev) => ({ ...prev, [name]: value }));
   };
 

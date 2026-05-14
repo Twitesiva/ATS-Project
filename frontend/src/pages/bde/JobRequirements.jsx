@@ -55,6 +55,7 @@ export default function JobRequirements() {
     company_id: passedCompany?.id || passedCompanyId || "",
   });
   const [expError, setExpError] = useState("");
+  const [loadError, setLoadError] = useState("");
 
   const handleExpChange = (value) => {
     const numericOnly = value.replace(/\D/g, "");
@@ -68,22 +69,36 @@ export default function JobRequirements() {
 
   const fetchAll = async () => {
     setLoading(true);
-    const [{ data: reqs }, { data: companies }] = await Promise.all([
-      supabase
-        .from("requirements")
-        .select("*, companies(company_name)")
-        .ilike("created_by", `%${user?.name || ""}%`)  // ← filter by logged-in user
-        .order("created_at", { ascending: false }),
+    setLoadError("");
+
+    const [{ data: companies }, reqRes] = await Promise.all([
       supabase.from("companies").select("id, company_name").eq("status", "Client"),
+      supabase.from("requirements").select("*, companies(company_name)").order("created_at", { ascending: false }),
     ]);
-    setRequirements(reqs || []);
+
+    if (reqRes?.error) {
+      console.error("[requirements] fetch failed", reqRes.error);
+      // Fallback: fetch without join if FK/relationship is misconfigured.
+      const fallback = await supabase.from("requirements").select("*").order("created_at", { ascending: false });
+      if (fallback?.error) {
+        console.error("[requirements] fallback fetch failed", fallback.error);
+        setLoadError(fallback.error.message || "Failed to load requirements");
+        setRequirements([]);
+      } else {
+        setLoadError("Loaded requirements without company join (relationship missing)");
+        setRequirements(fallback.data || []);
+      }
+    } else {
+      setRequirements(reqRes?.data || []);
+    }
+
     setClients(companies || []);
     setLoading(false);
   };
 
   useEffect(() => { 
-    if (user?.name) fetchAll();  // ← wait for user to load
-  }, [user?.name]);
+    if (user?.name || user?.email) fetchAll();  // wait for user to load
+  }, [user?.name, user?.email]);
 
   useEffect(() => {
     if (passedCompany) {
@@ -114,7 +129,7 @@ export default function JobRequirements() {
   urgency: form.urgency,
   status: form.status,
   description: form.description || null,
-  created_by: user?.name, 
+  created_by: user?.email || user?.name, 
 };
     let error;
     if (editingId) {
@@ -369,7 +384,11 @@ filtered.forEach((row) => {
           </thead>
           <tbody>
             {loading ? (
-              <><tr><td colSpan={11} style={{ color: "#64748b", textAlign: "center", padding: 40 }}>Loading…</td></tr><tr><td colSpan={11} style={{ color: "#64748b", textAlign: "center", padding: 40 }}>No requirements found.</td></tr></>
+              <tr><td colSpan={11} style={{ color: "#64748b", textAlign: "center", padding: 40 }}>Loading…</td></tr>
+            ) : loadError ? (
+              <tr><td colSpan={11} style={{ color: "#dc2626", textAlign: "center", padding: 40 }}>{loadError}</td></tr>
+            ) : filtered.length === 0 ? (
+              <tr><td colSpan={11} style={{ color: "#64748b", textAlign: "center", padding: 40 }}>No requirements found.</td></tr>
             ) : filtered.map((req, i) => (
               <tr key={req.id} style={{ borderTop: "1px solid #e2e8f0" }}>
                 <td style={{ padding: "10px 14px", color: "#64748b", fontSize: 12 }}>{i + 1}</td>

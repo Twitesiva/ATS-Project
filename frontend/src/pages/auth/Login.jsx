@@ -27,13 +27,15 @@ export default function Login({ title = "ATS Login" }) {
     setLoading(true);
     try {
       const result = await loginWithEmail(email, password);
-console.log("LOGIN RESULT =>", result); // ✅ ADD THIS LINE
       if (result.error) {
         setError(result.error);
         return;
       }
 
-      login(result.user);
+      // ✅ FIX: pass accessToken as second argument so AuthContext stores it
+      // This makes the JWT available for all API calls as: Authorization: Bearer <token>
+      login(result.user, result.accessToken);
+
       const nextPath = getRoleHomePath(result.user.role);
       if (nextPath === "/login") {
         setError("Invalid user role");
@@ -57,13 +59,14 @@ console.log("LOGIN RESULT =>", result); // ✅ ADD THIS LINE
             <Loader text="Signing in..." />
           </div>
         ) : (
-          <form onSubmit={handleLogin} style={styles.form}>
+          <form style={styles.form} onSubmit={handleLogin}>
             <input
               type="email"
               placeholder="Email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               style={styles.input}
+              autoComplete="email"
             />
 
             <input
@@ -72,12 +75,27 @@ console.log("LOGIN RESULT =>", result); // ✅ ADD THIS LINE
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               style={styles.input}
+              autoComplete="current-password"
             />
 
             {error && <p style={styles.error}>{error}</p>}
 
             <button type="submit" style={styles.loginBtn}>
               Login
+            </button>
+
+            <div style={styles.divider}>
+              <span style={styles.dividerLine} />
+              <span style={styles.dividerText}>or</span>
+              <span style={styles.dividerLine} />
+            </div>
+
+            <button
+              type="button"
+              onClick={() => navigate("/signup")}
+              style={styles.signupBtn}
+            >
+              Sign Up (HR Only)
             </button>
           </form>
         )}
@@ -104,6 +122,9 @@ const styles = {
   title: {
     textAlign: "center",
     marginBottom: "20px",
+    fontSize: "22px",
+    fontWeight: "700",
+    color: "#111827",
   },
   form: {
     display: "flex",
@@ -115,6 +136,7 @@ const styles = {
     borderRadius: "6px",
     border: "1px solid #d1d5db",
     fontSize: "14px",
+    outline: "none",
   },
   loginBtn: {
     padding: "10px",
@@ -124,6 +146,32 @@ const styles = {
     borderRadius: "6px",
     cursor: "pointer",
     fontWeight: "600",
+    fontSize: "14px",
+  },
+  signupBtn: {
+    padding: "10px",
+    background: "#ffffff",
+    color: "#111827",
+    border: "2px solid #111827",
+    borderRadius: "6px",
+    cursor: "pointer",
+    fontWeight: "600",
+    fontSize: "14px",
+  },
+  divider: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    margin: "4px 0",
+  },
+  dividerLine: {
+    flex: 1,
+    height: "1px",
+    background: "#e5e7eb",
+  },
+  dividerText: {
+    fontSize: "12px",
+    color: "#9ca3af",
   },
   loginLoaderWrap: {
     minHeight: "220px",
@@ -132,5 +180,6 @@ const styles = {
     color: "red",
     fontSize: "13px",
     textAlign: "center",
+    margin: "0",
   },
 };

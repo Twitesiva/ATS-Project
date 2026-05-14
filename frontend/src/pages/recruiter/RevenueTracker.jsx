@@ -232,6 +232,12 @@ export default function RRevenueTracker() {
   const handleChange = (e) => {
     const { name, value } = e.target;
     setForm((prev) => {
+      // Enforce numbers-only for CTC/ECTC/Billing fields.
+      if (name === "ctc" || name === "offered_ctc" || name === "billing_rate") {
+        const isNumericOnly = /^\d*$/.test(String(value));
+        if (!isNumericOnly) return prev;
+      }
+
       const next = { ...prev, [name]: value };
       const margins = calculateMargins(next);
       return {
