@@ -433,7 +433,6 @@ export default function SearchCRMPage() {
 
       if (filters.roleFilter.trim()) {
         params.role_filter = filters.roleFilter.trim();
-        console.log(`[DEBUG] Role: "${filters.roleFilter}" → ${resolvedRoleSkills.length} skills`);
       }
 
       if (filters.location.trim()) params.location = filters.location.trim();
@@ -457,10 +456,8 @@ export default function SearchCRMPage() {
 
       if (filters.phoneNumber.trim()) params.phone_number = filters.phoneNumber.trim();
 
-      console.log("[DEBUG] FINAL REQUEST:", JSON.stringify(params, null, 2));
       const data = await fetchResumes(params);
       const rows = data.resumes || [];
-      console.log(`[DEBUG] Received ${rows.length} resumes`);
       setResumes(rows);
       setPreviewResume((prev) =>
         prev && rows.some((r) => r.resume_id === prev.resume_id) ? prev : null

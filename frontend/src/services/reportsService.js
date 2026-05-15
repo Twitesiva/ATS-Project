@@ -165,7 +165,7 @@ export const getCandidateStats = async (filters = {}) => {
     const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
     const lastOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split("T")[0];
 
-    console.log("Querying closures between:", firstOfMonth, "and", lastOfMonth);
+
 
     const { count, error: closureError } = await supabase
       .from("revenue_tracker")
@@ -173,7 +173,7 @@ export const getCandidateStats = async (filters = {}) => {
       .gte("doj", firstOfMonth)
       .lte("doj", lastOfMonth);
 
-    console.log("closures count:", count, "error:", closureError);
+    
 
     if (closureError) throw closureError;
 
@@ -202,7 +202,7 @@ export const getRevenueTrend = async (filters = {}) => {
 };
 
 export const getRecruiterPerformance = async (filters = {}) => {
-  console.log("getRecruiterPerformance filters:", filters);
+
   const allData = await fetchAllPages((from, to) =>
     applyCandidateFilters(
       supabase.from("candidate_records").select("recruiter,id,status").range(from, to),
@@ -210,7 +210,7 @@ export const getRecruiterPerformance = async (filters = {}) => {
     )
   );
 
-  console.log("Raw recruiter data sample:", allData.slice(0,5).map(r => ({recruiter_raw: r.recruiter, status: r.status})));
+ 
 
   const map = new Map();
   allData.forEach((row) => {
@@ -226,7 +226,6 @@ export const getRecruiterPerformance = async (filters = {}) => {
   });
 
   const result = Array.from(map.values()).sort((a, b) => a.recruiter.localeCompare(b.recruiter));
-  console.log("RecruiterPerformance result (Nandhini/Manager):", result.filter(r => r.recruiter.toLowerCase().includes('nand') || r.recruiter.toLowerCase().includes('manag')).map(r => ({recruiter: r.recruiter, cand: r.candidates, int: r.interviews, clos: r.closures})));
   return result;
 };
 
@@ -468,7 +467,7 @@ export const getFilterOptions = async (filters = {}) => {
         .filter(Boolean)
     ),
   ];
-  console.log("recruitersData:", recruitersData);
+
 
   // ✅ Normalize statuses before deduplicating — collapses "Backout"/"Back Out"/"Dropout" etc.
   const statuses = [

@@ -4,6 +4,8 @@ import { supabase } from "../../services/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import { createCompany, deleteCompany, listCompanies, updateCompany } from "../../services/bdeCompanies";
 import { normalizePhone10 } from "../../utils/phone";
+import { parseLeadsFile } from "../../utils/parseUploadLeads";
+
 const STATUS_COLORS = {
   New: "#4e8ef7",
   Contacted: "#f7e44e",
@@ -29,10 +31,10 @@ const Modal = ({ title, onClose, children }) => (
     position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)",
     display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000,
   }}>
-    <div style={{ background: "#1a2236", borderRadius: 14, padding: 28, width: 560, maxHeight: "90vh", overflowY: "auto" }}>
+    <div style={{ background: "#ffffff", borderRadius: 14, padding: 28, width: 560, maxHeight: "90vh", overflowY: "auto", border: "1px solid #e2e8f0" }}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 20 }}>
-        <h2 style={{ color: "#fff", margin: 0, fontSize: 18 }}>{title}</h2>
-        <button onClick={onClose} style={{ background: "none", border: "none", color: "#8892a4", cursor: "pointer", fontSize: 20 }}>×</button>
+        <h2 style={{ color: "#0f172a", margin: 0, fontSize: 18 }}>{title}</h2>
+        <button onClick={onClose} style={{ background: "none", border: "none", color: "#334155", cursor: "pointer", fontSize: 20 }}>×</button>
       </div>
       {children}
     </div>
@@ -41,14 +43,20 @@ const Modal = ({ title, onClose, children }) => (
 
 const FormField = ({ label, children }) => (
   <div style={{ marginBottom: 16 }}>
-    <label style={{ color: "#8892a4", fontSize: 12, display: "block", marginBottom: 6 }}>{label}</label>
+    <label style={{ color: "#334155", fontSize: 12, display: "block", marginBottom: 6 }}>{label}</label>
     {children}
   </div>
 );
 
 const inputStyle = {
-  width: "100%", background: "#0d1525", border: "1px solid #2a3550",
-  color: "#fff", padding: "9px 12px", borderRadius: 8, fontSize: 13, boxSizing: "border-box",
+  width: "100%",
+  background: "#ffffff",
+  border: "1px solid #cbd5e1",
+  color: "#0f172a",
+  padding: "9px 12px",
+  borderRadius: 8,
+  fontSize: 13,
+  boxSizing: "border-box",
 };
 
 const selectStyle = { ...inputStyle, cursor: "pointer" };
@@ -444,8 +452,122 @@ const handleSubmit = async () => {
         >+ Add Lead</button>
       </div>
 
-      {/* Filters */}
-      <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
+      {/* Filters + Bulk Upload */}
+      <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
+
+        {/* Bulk upload buttons */}
+        <label
+          style={{
+            background: "#0f172a",
+            color: "#fff",
+            border: "none",
+            borderRadius: 8,
+            padding: "10px 14px",
+            cursor: "pointer",
+            fontWeight: 700,
+            fontSize: 13,
+          }}
+        >
+          Upload CSV
+          <input
+            type="file"
+            accept=".csv"
+            style={{ display: "none" }}
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (!file) return;
+              try {
+                const rows = await parseLeadsFile(file);
+                if (!rows?.length) return alert("No rows found in file");
+
+                // Insert each row into companies
+                // (Pased via createCompany to reuse created_by logic)
+                let inserted = 0;
+                for (const r of rows) {
+                  if (!r.company_name) continue;
+                  await createCompany({
+                    company_name: r.company_name,
+                    contact_person: r.contact_person,
+                    poc: r.poc,
+                    mode_of_source: r.mode_of_source,
+                    email: r.email,
+                    phone: r.phone,
+                    status: r.status,
+                    priority: r.priority,
+                    source: r.source,
+                    industry: r.industry,
+                    website: r.website,
+                    notes: r.notes,
+                    lead_status: "In Progress",
+                  });
+                  inserted += 1;
+                }
+                alert(`Uploaded ${inserted} rows`);
+                fetchLeads();
+              } catch (err) {
+                console.error(err);
+                alert(err?.message || "Upload failed");
+              }
+            }}
+          />
+        </label>
+
+        <label
+          style={{
+            background: "#2563eb",
+            color: "#fff",
+            border: "none",
+            borderRadius: 8,
+            padding: "10px 14px",
+            cursor: "pointer",
+            fontWeight: 700,
+            fontSize: 13,
+          }}
+        >
+          Upload XLS/XLSX
+          <input
+            type="file"
+            accept=".xlsx,.xls"
+            style={{ display: "none" }}
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (!file) return;
+              try {
+                const rows = await parseLeadsFile(file);
+                if (!rows?.length) return alert("No rows found in file");
+
+                let inserted = 0;
+                for (const r of rows) {
+                  if (!r.company_name) continue;
+                  await createCompany({
+                    company_name: r.company_name,
+                    contact_person: r.contact_person,
+                    poc: r.poc,
+                    mode_of_source: r.mode_of_source,
+                    email: r.email,
+                    phone: r.phone,
+                    status: r.status,
+                    priority: r.priority,
+                    source: r.source,
+                    industry: r.industry,
+                    website: r.website,
+                    notes: r.notes,
+                    lead_status: "In Progress",
+                  });
+                  inserted += 1;
+                }
+                alert(`Uploaded ${inserted} rows`);
+                fetchLeads();
+              } catch (err) {
+                console.error(err);
+                alert(err?.message || "Upload failed");
+              }
+            }}
+          />
+        </label>
+
         <input
           placeholder="Search company, contact..."
           value={filters.search}
@@ -453,10 +575,12 @@ const handleSubmit = async () => {
           style={{ ...inputStyle, width: 220 }}
         />
         <select value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })} style={{ ...selectStyle, width: 150 }}>
+
           <option value="">All Status</option>
           {Object.keys(STATUS_COLORS).map((s) => <option key={s}>{s}</option>)}
         </select>
         <select value={filters.priority} onChange={(e) => setFilters({ ...filters, priority: e.target.value })} style={{ ...selectStyle, width: 140 }}>
+
           <option value="">All Priority</option>
           <option>High</option><option>Medium</option><option>Low</option>
         </select>
@@ -688,8 +812,8 @@ const handleSubmit = async () => {
             <textarea style={{ ...inputStyle, height: 80, resize: "vertical" }} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
           </FormField>
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-            <button onClick={() => { setShowModal(false); setFormNewPoc(false); setPhoneError(""); }} style={{ background: "#2a3550", color: "#cdd5e0", border: "none", borderRadius: 8, padding: "9px 20px", cursor: "pointer" }}>Cancel</button>
-            <button onClick={handleSubmit} style={{ background: "#4e8ef7", color: "#fff", border: "none", borderRadius: 8, padding: "9px 20px", fontWeight: 600, cursor: "pointer" }}>
+            <button onClick={() => { setShowModal(false); setFormNewPoc(false); setPhoneError(""); }} style={{ background: "#e2e8f0", color: "#0f172a", border: "none", borderRadius: 8, padding: "9px 20px", cursor: "pointer" }}>Cancel</button>
+            <button onClick={handleSubmit} style={{ background: "#2563eb", color: "#fff", border: "none", borderRadius: 8, padding: "9px 20px", fontWeight: 600, cursor: "pointer" }}>
               {selectedLead ? "Update" : "Add Lead"}
             </button>
           </div>
@@ -701,11 +825,11 @@ const handleSubmit = async () => {
         <Modal title={`Notes — ${selectedLead.company_name}`} onClose={() => setShowNotesModal(false)}>
           <div style={{ maxHeight: 260, overflowY: "auto", marginBottom: 16 }}>
             {(selectedLead.communication_history || []).length === 0 ? (
-              <p style={{ color: "#8892a4", fontSize: 13 }}>No notes yet.</p>
+              <p style={{ color: "#64748b", fontSize: 13 }}>No notes yet.</p>
             ) : [...(selectedLead.communication_history || [])].reverse().map((n, i) => (
-              <div key={i} style={{ background: "#0d1525", borderRadius: 8, padding: "10px 14px", marginBottom: 8 }}>
-                <div style={{ color: "#cdd5e0", fontSize: 13 }}>{n.note}</div>
-                <div style={{ color: "#8892a4", fontSize: 11, marginTop: 4 }}>{new Date(n.date).toLocaleString("en-IN")}</div>
+              <div key={i} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 14px", marginBottom: 8 }}>
+                <div style={{ color: "#0f172a", fontSize: 13 }}>{n.note}</div>
+                <div style={{ color: "#64748b", fontSize: 11, marginTop: 4 }}>{new Date(n.date).toLocaleString("en-IN")}</div>
               </div>
             ))}
           </div>

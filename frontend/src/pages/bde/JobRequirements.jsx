@@ -378,7 +378,7 @@ filtered.forEach((row) => {
           <thead>
             <tr style={{ background: "#f1f5f9" }}>
              {["#", "Client","Created By", "Job Title", "Skills", "Location", "No of Opening", "Mode", "Salary", "Urgency", "Status", "Actions"].map((h) => (
-                <th key={h} style={{ color: "#8892a4", padding: "12px 14px", textAlign: "left", fontSize: 12, fontWeight: 600 }}>{h}</th>
+                <th key={h} style={{ color: "#000", padding: "12px 14px", textAlign: "left", fontSize: 12, fontWeight: 800 }}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -391,14 +391,14 @@ filtered.forEach((row) => {
               <tr><td colSpan={11} style={{ color: "#64748b", textAlign: "center", padding: 40 }}>No requirements found.</td></tr>
             ) : filtered.map((req, i) => (
               <tr key={req.id} style={{ borderTop: "1px solid #e2e8f0" }}>
-                <td style={{ padding: "10px 14px", color: "#64748b", fontSize: 12 }}>{i + 1}</td>
+                <td style={{ padding: "10px 14px", color: "#000", fontSize: 12, fontWeight: 800 }}>{i + 1}</td>
                 <td style={{ padding: "10px 14px", color: "#0f172a", fontSize: 13 }}>{req.companies?.company_name || "—"}</td>
                 <td style={{ padding: "10px 14px", fontSize: 13, color: "#0f172a" }}>{req.created_by || "—"}</td>
                 <td style={{ padding: "10px 14px" }}>
-                  <div style={{ color: "#0f172a", fontWeight: 500, fontSize: 13 }}>{req.job_title}</div>
-                  <div style={{ color: "#64748b", fontSize: 11 }}>{req.experience}</div>
+                  <div style={{ color: "#000", fontWeight: 800, fontSize: 13 }}>{req.job_title}</div>
+                  <div style={{ color: "#000", fontSize: 11, fontWeight: 800 }}>{req.experience}</div>
                 </td>
-                <td style={{ padding: "10px 14px", color: "#64748b", fontSize: 12 }}>{req.skills || "—"}</td>
+                <td style={{ padding: "10px 14px", color: "#000", fontSize: 12, fontWeight: 800 }}>{req.skills || "—"}</td>
              <td style={{ padding: "10px 14px", color: "#0f172a", fontSize: 12 }}>{req.location || "—"}</td>
 <td style={{ padding: "10px 14px", color: "#0f172a", fontSize: 12, fontWeight: 600 }}>{req.no_of_openings || "—"}</td>
 <td style={{ padding: "10px 14px", color: "#64748b", fontSize: 12 }}>{req.mode || "—"}</td>

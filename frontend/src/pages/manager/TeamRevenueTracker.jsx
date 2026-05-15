@@ -218,7 +218,6 @@ export default function TeamTracker() {
         }
       )
       .subscribe((status) => {
-        console.log("[team-tracker] realtime status", status);
       });
 
     return () => {

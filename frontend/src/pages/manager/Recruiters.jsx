@@ -4,13 +4,22 @@ import { supabase } from "../../services/supabaseClient";
 import { canonicalizeRole, getRoleLabel, getRoleQueryValues } from "../../utils/roles";
 import { isValidPhone10, normalizePhone10 } from "../../utils/phone";
 import { apiFetch } from "../../services/api";
+
 const MANAGED_ROLES = ["recruiter", "tl"];
+
+// If last_seen_at was within the last 30 seconds → Online
+const isOnline = (lastSeenAt) => {
+  if (!lastSeenAt) return false;
+  const diff = Date.now() - new Date(lastSeenAt).getTime();
+  return diff < 30000;
+};
 
 const formatDate = (value) => {
   const dt = new Date(value);
   if (Number.isNaN(dt.getTime())) return "-";
   return dt.toLocaleDateString("en-GB");
 };
+
 const formatLastActivity = (value) => {
   if (!value) return "Last activity: No activity";
   const dt = new Date(value);
@@ -46,6 +55,13 @@ export default function Recruiters() {
   const [editForm, setEditForm] = useState({ name: "", email: "", phone: "", role: "recruiter" });
   const [actionBusyId, setActionBusyId] = useState(null);
 
+  // Re-compute online status every 15s so cards update without a DB fetch
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => setTick((t) => t + 1), 15000);
+    return () => clearInterval(timer);
+  }, []);
+
   const loadUsers = async () => {
     setError("");
 
@@ -54,12 +70,15 @@ export default function Recruiters() {
         MANAGED_ROLES.map((role) =>
           supabase
             .from("users")
-            .select("id,auth_id,name,email,phone_number,role,created_at,is_online")
+            .select("id,auth_id,name,email,phone_number,role,created_at,last_seen_at")
             .in("role", getRoleQueryValues(role))
             .order("created_at", { ascending: false })
         )
       ),
-      supabase.from("status_history").select("recruiter_name,updated_at").order("updated_at", { ascending: false }),
+      supabase
+        .from("status_history")
+        .select("recruiter_name,updated_at")
+        .order("updated_at", { ascending: false }),
     ]);
 
     const userError = userResults.find((result) => result.error)?.error;
@@ -92,8 +111,8 @@ export default function Recruiters() {
           email: row.email || "-",
           phone_number: row.phone_number || "-",
           created_at: row.created_at || null,
+          last_seen_at: row.last_seen_at || null,   // ← store raw value
           role: getRoleLabel(role),
-          status: row.is_online ? "Active" : "Offline",
           stats: formatLastActivity(latestActivityByName.get(name.toLowerCase()) || null),
         };
       });
@@ -123,10 +142,19 @@ export default function Recruiters() {
     };
   }, []);
 
+  // allCards re-derives on tick so online pill updates every 15s client-side
   const allCards = useMemo(
-    () => [...usersByRole.recruiter, ...usersByRole.tl],
-    [usersByRole.recruiter, usersByRole.tl]
+    () =>
+      [...usersByRole.recruiter, ...usersByRole.tl].map((u) => ({
+        ...u,
+        status: isOnline(u.last_seen_at) ? "Online" : "Offline",
+      })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [usersByRole.recruiter, usersByRole.tl, tick]
   );
+
+  // Helper to compute status for table rows (also re-runs on tick)
+  const getStatus = (lastSeenAt) => (isOnline(lastSeenAt) ? "Online" : "Offline");
 
   const handleAddUser = async (e) => {
     e.preventDefault();
@@ -160,47 +188,47 @@ export default function Recruiters() {
     setForm({ name: "", email: "", password: "", phone: "", role: "recruiter" });
     await loadUsers();
   };
-const handleUpdatePassword = async (e) => {
-  e.preventDefault();
-  if (!passwordTarget?.id) return;
 
-  if (!newPassword.trim()) {
-    setError("New password is required");
-    return;
-  }
+  const handleUpdatePassword = async (e) => {
+    e.preventDefault();
+    if (!passwordTarget?.id) return;
 
-  if (!passwordTarget?.auth_id) {
-    setError("This user has no auth account linked.");
-    return;
-  }
+    if (!newPassword.trim()) {
+      setError("New password is required");
+      return;
+    }
 
-  setActionBusyId(passwordTarget.id);
+    if (!passwordTarget?.auth_id) {
+      setError("This user has no auth account linked.");
+      return;
+    }
 
-  try {
-    // ✅ Call Python backend to update auth.users
-    await apiFetch("/admin/users/password", {
-      method: "PATCH",
-      body: JSON.stringify({
-        auth_id: passwordTarget.auth_id,
-        new_password: newPassword.trim(),
-      }),
-    });
+    setActionBusyId(passwordTarget.id);
 
-    // ✅ Also update public.users
-    await supabase
-      .from("users")
-      .update({ password: newPassword.trim() })
-      .eq("id", passwordTarget.id);
+    try {
+      await apiFetch("/admin/users/password", {
+        method: "PATCH",
+        body: JSON.stringify({
+          auth_id: passwordTarget.auth_id,
+          new_password: newPassword.trim(),
+        }),
+      });
 
-    setMessage(`Password updated for ${passwordTarget.name}`);
-    setPasswordTarget(null);
-    setNewPassword("");
-  } catch (err) {
-    setError(err.message || "Failed to update password");
-  } finally {
-    setActionBusyId(null);
-  }
-};
+      await supabase
+        .from("users")
+        .update({ password: newPassword.trim() })
+        .eq("id", passwordTarget.id);
+
+      setMessage(`Password updated for ${passwordTarget.name}`);
+      setPasswordTarget(null);
+      setNewPassword("");
+    } catch (err) {
+      setError(err.message || "Failed to update password");
+    } finally {
+      setActionBusyId(null);
+    }
+  };
+
   const handleDeleteUser = async (user, role) => {
     const ok = window.confirm(`Are you sure you want to delete this ${getRoleLabel(role)}?`);
     if (!ok) return;
@@ -348,8 +376,8 @@ const handleUpdatePassword = async (e) => {
               <span
                 style={{
                   ...styles.statusPill,
-                  background: user.status === "Active" ? "#dcfce7" : "#fee2e2",
-                  color: user.status === "Active" ? "#166534" : "#991b1b",
+                  background: user.status === "Online" ? "#dcfce7" : "#fee2e2",
+                  color: user.status === "Online" ? "#166534" : "#991b1b",
                 }}
               >
                 {user.status}
@@ -401,7 +429,17 @@ const handleUpdatePassword = async (e) => {
                       <td style={styles.td}>{user.email}</td>
                       <td style={styles.td}>{user.phone_number || "-"}</td>
                       <td style={styles.td}>{formatDate(user.created_at)}</td>
-                      <td style={styles.td}>{user.status}</td>
+                      <td style={styles.td}>
+                        <span
+                          style={{
+                            ...styles.statusPill,
+                            background: getStatus(user.last_seen_at) === "Online" ? "#dcfce7" : "#fee2e2",
+                            color: getStatus(user.last_seen_at) === "Online" ? "#166534" : "#991b1b",
+                          }}
+                        >
+                          {getStatus(user.last_seen_at)}
+                        </span>
+                      </td>
                       <td style={styles.td}>
                         <div style={styles.actionBtns}>
                           <button
@@ -508,9 +546,9 @@ const handleUpdatePassword = async (e) => {
                 onChange={(e) => setEditForm((prev) => ({ ...prev, role: e.target.value }))}
                 style={styles.input}
               >
-                {MANAGED_ROLES.map((role) => (
-                  <option key={role} value={role}>
-                    {getRoleLabel(role)}
+                {MANAGED_ROLES.map((r) => (
+                  <option key={r} value={r}>
+                    {getRoleLabel(r)}
                   </option>
                 ))}
               </select>

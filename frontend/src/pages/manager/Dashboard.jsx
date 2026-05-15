@@ -210,7 +210,7 @@ export default function Dashboard() {
       // Sort alphabetically
       transformed.sort((a, b) => a.recruiter.localeCompare(b.recruiter));
 
-      console.log("Recruiter analytics:", transformed);
+     
       setRecruiterAnalytics(transformed);
     } catch (err) {
       console.error("Failed to load recruiter analytics", err);

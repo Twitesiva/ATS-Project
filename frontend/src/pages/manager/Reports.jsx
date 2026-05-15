@@ -110,7 +110,7 @@ export default function Reports() {
 
     try {
       const apiFilters = getApiFilters(appliedFilters);
-      console.log("Manager Reports apiFilters:", apiFilters);
+
 
       const [statsRes, tableRes, optionsRes, trendRes, statusDistRes, funnelRes] = await Promise.all([
         getCandidateStats(apiFilters),
@@ -124,7 +124,7 @@ export default function Reports() {
       setStatusDistribution(statusDistRes);
       setHiringFunnel(funnelRes);
 
-      console.log("Manager Reports tableRows sample:", tableRes.slice(0,3));
+      
 
       // FIXED Revenue Trend logic
       const grouped = {};

@@ -73,6 +73,7 @@ export default function BDELayout() {
           overflowX: "auto",
           overflowY: "auto",
         }}
+        className="bde-portal-content"
       >
         <Outlet />
       </div>

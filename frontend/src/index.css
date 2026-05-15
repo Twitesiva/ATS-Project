@@ -1771,6 +1771,20 @@ body {
   display: none;
 }
 
+/* BDE PORTAL TYPOGRAPHY FIX: make ALL portal text bold + black (sidebar unaffected) */
+.bde-portal-content {
+  font-weight: 700;
+  color: #000;
+}
+
+.bde-portal-content * {
+  font-weight: inherit;
+  color: inherit;
+}
+
+/* If a component needs lighter/colored text (inputs, muted labels, status badges, etc.)
+   it can override color/font-weight with more specific selectors or inline styles. */
+
 .score-fill {
   height: 100%;
   border-radius: 4px;

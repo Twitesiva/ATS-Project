@@ -34,7 +34,7 @@ const insertStatusHistoryRows = async (rows, source) => {
     return { ok: false, error };
   }
 
-  console.log(`[status_history][${source}] insert success`, data || []);
+ 
   return { ok: true, data: data || [] };
 };
 
@@ -459,7 +459,7 @@ export default function RecruiterData({ scopeRole }) {
       .single();
 
     if (error) {
-      console.log("code:", error.code, "message:", error.message);
+
       alert(JSON.stringify(error));
       return;
     }
