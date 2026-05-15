@@ -44,57 +44,66 @@ export default function BDEDashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!user?.name) return;
+    if (!(user?.email || user?.name)) return;
     fetchDashboard();
-  }, [user?.name]);
+  }, [user?.email, user?.name]);
 
   const fetchDashboard = async () => {
     setLoading(true);
+    const createdBy = user?.email || user?.name;
+    if (!createdBy) {
+      setStats({});
+      setPipeline([]);
+      setFollowups([]);
+      setLoading(false);
+      return;
+    }
 
-    // All queries scoped to logged-in user via created_by
-    const [
-      { data: leads },
-      { data: clients },
-      { data: pendingActs },
-      { data: completedActs },
-      { data: followupData },
-    ] = await Promise.all([
+    try {
+      // All queries scoped to logged-in user via created_by
+      const [
+        { data: leads },
+        { data: clients },
+        { data: pendingActs },
+        { data: completedActs },
+        { data: followupData },
+      ] = await Promise.all([
       // Total leads — scoped by created_by
       supabase
         .from("companies")
-        .select("id")
-        .eq("created_by", user.name),
+        .select("id,status")
+        .eq("created_by", createdBy),
 
       // Converted clients — scoped by created_by
       supabase
         .from("companies")
         .select("id")
         .eq("status", "Client")
-        .eq("created_by", user.name),
+        .eq("created_by", createdBy),
 
       // Pending follow-ups — scoped by created_by
       supabase
         .from("activities")
         .select("id")
         .eq("status", "Pending")
-        .eq("created_by", user.name),
+        .eq("created_by", createdBy),
 
       // Completed activities — scoped by created_by
       supabase
         .from("activities")
         .select("id")
         .eq("status", "Completed")
-        .eq("created_by", user.name),
+        .eq("created_by", createdBy),
 
       // Pending follow-ups list for display — scoped by created_by
       supabase
         .from("activities")
         .select("*, companies(company_name)")
         .eq("status", "Pending")
-        .eq("created_by", user.name)
+        .eq("created_by", createdBy)
         .order("activity_datetime", { ascending: true })
         .limit(5),
-    ]);
+      ]);
 
     // Build pipeline from leads statuses
     const stageMap = {};
@@ -108,16 +117,22 @@ export default function BDEDashboard() {
       .filter((s) => stageMap[s])
       .map((s) => ({ _id: s, count: stageMap[s] }));
 
-    setStats({
-      leads: (leads || []).length,
-      clients: (clients || []).length,
-      pendingActivities: (pendingActs || []).length,
-      completedActivities: (completedActs || []).length,
-    });
+      setStats({
+        leads: (leads || []).length,
+        clients: (clients || []).length,
+        pendingActivities: (pendingActs || []).length,
+        completedActivities: (completedActs || []).length,
+      });
 
-    setPipeline(pipelineData);
-    setFollowups(followupData || []);
-    setLoading(false);
+      setPipeline(pipelineData);
+      setFollowups(followupData || []);
+    } catch {
+      setStats({ leads: 0, clients: 0, pendingActivities: 0, completedActivities: 0 });
+      setPipeline([]);
+      setFollowups([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const kpis = [

@@ -717,9 +717,7 @@ function AddCandidateModal({ user, onClose, onSaved }) {
   const handleChange = (e) => {
     const { name, value } = e.target;
 
-    // Recruiter portal Compensation fields (CTC / ECTC): reject alphabets entirely.
     if (name === "ctc" || name === "ectc") {
-      // If user typed anything other than digits, keep current value (so nothing becomes null/empty).
       const isNumericOnly = /^\d*$/.test(String(value));
       if (!isNumericOnly) return;
       return setForm({ ...form, [name]: value });
@@ -974,14 +972,12 @@ function EditCandidateModal({ record, onClose, onUpdated }) {
     status:         record.status         || "",
   });
 
-  // ── State for the closure confirmation modal ──
   const [showClosureModal, setShowClosureModal] = useState(false);
   const [closurePayload,   setClosurePayload]   = useState(null);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
 
-    // Enforce numbers-only for compensation fields (CTC / ECTC).
     if (name === "ctc" || name === "ectc") {
       const isNumericOnly = /^\d*$/.test(String(value));
       if (!isNumericOnly) return;
@@ -1018,7 +1014,7 @@ function EditCandidateModal({ record, onClose, onUpdated }) {
 
     if (!statusChanged && !nonStatusChanged) { onClose(); return; }
 
-    // Always save non-status fields first (fixes hire_mode being lost on closure)
+    // Always save non-status fields first
     if (nonStatusChanged) {
       const nonStatusPayload = {
         candidate_name : form.candidate_name,
@@ -1046,7 +1042,7 @@ function EditCandidateModal({ record, onClose, onUpdated }) {
       }
     }
 
-    // For Closure: open the editable confirmation modal instead of saving blindly
+    // For Closure: open the editable confirmation modal
     if (statusChanged && (form.status || "").trim().toLowerCase() === "closure") {
       const draft = {
         doj            : new Date().toISOString().split("T")[0],
@@ -1064,7 +1060,7 @@ function EditCandidateModal({ record, onClose, onUpdated }) {
       };
       setClosurePayload(draft);
       setShowClosureModal(true);
-      return; // ClosureConfirmModal takes over from here
+      return;
     }
 
     // Normal status change (not closure)
@@ -1077,6 +1073,35 @@ function EditCandidateModal({ record, onClose, onUpdated }) {
       if (!updatedRows?.length) { alert("Unable to update status for this record."); return; }
 
       const updated = updatedRows[0];
+
+      // ── If changed FROM Closure TO Backout → update requirements row to "Drop Out" ──
+      const prevStatusNorm = (record.status || "").trim().toLowerCase();
+      const newStatusNorm  = (form.status   || "").trim().toLowerCase();
+    if (prevStatusNorm === "closure" && newStatusNorm === "backout") {
+  // Update requirements table
+  const { error: reqError } = await supabase
+    .from("requirements")
+    .update({ status: "Drop Out" })
+    .eq("job_title",  record.requirement || "")
+    .eq("created_by", user?.email        || "");
+
+  if (reqError) {
+    console.error("[status_update] requirements Drop Out update failed", reqError);
+  }
+
+  // ── Also update revenue_tracker so MasterTracker reflects backout ──
+  const { error: revError } = await supabase
+    .from("revenue_tracker")
+    .update({ offer_status: "Backout" })
+    .eq("candidate_name", record.candidate_name || "")
+    .eq("client_name",    record.client_name    || "")
+    .eq("recruiter_name", record.recruiter      || "");
+
+  if (revError) {
+    console.error("[status_update] revenue_tracker backout update failed", revError);
+  }
+}
+
       const historyPayload = {
         candidate_id   : updated.id,
         recruiter_name : updated.recruiter || user?.name || "-",
@@ -1233,12 +1258,12 @@ function EditCandidateModal({ record, onClose, onUpdated }) {
         </div>
       </div>
 
-      {/* Closure confirmation modal rendered outside the main modal shell */}
       {showClosureModal && closurePayload && (
         <ClosureConfirmModal
           initialData   = {closurePayload}
           recordId      = {record.id}
           recruiterName = {record.recruiter || user?.name}
+          userEmail     = {user?.email}
           userId        = {user?.id}
           onConfirm={() => { setShowClosureModal(false); onUpdated(); onClose(); }}
           onCancel ={() => { setShowClosureModal(false); setClosurePayload(null); }}
@@ -1250,13 +1275,12 @@ function EditCandidateModal({ record, onClose, onUpdated }) {
 
 /* ------------------------- CLOSURE CONFIRM MODAL ------------------------- */
 
-function ClosureConfirmModal({ initialData, recordId, recruiterName, userId, onConfirm, onCancel }) {
+function ClosureConfirmModal({ initialData, recordId, recruiterName, userEmail, userId, onConfirm, onCancel }) {
   const [form, setForm] = useState({ ...initialData });
   const [saving, setSaving] = useState(false);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    // Numbers-only for CTC/ECTC/Billing fields to prevent invalid values.
     if (name === "ctc" || name === "offered_ctc" || name === "billing_rate") {
       const isNumericOnly = /^\d*$/.test(String(value));
       if (!isNumericOnly) return;
@@ -1287,6 +1311,7 @@ function ClosureConfirmModal({ initialData, recordId, recruiterName, userId, onC
     const revenuePayload = {
       doj            : form.doj            || null,
       recruiter_name : form.recruiter_name || recruiterName,
+      bd_name        : userEmail           || "",
       candidate_name : form.candidate_name || "",
       client_name    : form.client_name    || "",
       position       : form.position       || "",
@@ -1316,8 +1341,31 @@ function ClosureConfirmModal({ initialData, recordId, recruiterName, userId, onC
       return;
     }
 
+    // ── Insert into requirements table on closure ──
+    const requirementPayload = {
+      job_title          : form.position       || "",
+      location           : form.location       || "",
+      hire_mode          : form.hire           || "",
+      hire               : form.hire           || "",
+      status             : "Closed",
+      created_by         : userEmail           || "",
+      salary             : form.offered_ctc != null ? String(form.offered_ctc) : null,
+      salary_min         : toNum(form.ctc),
+      salary_max         : toNum(form.offered_ctc),
+      number_of_openings : 1,
+      no_of_openings     : 1,
+      urgency            : "Medium",
+    };
+
+    const { error: requirementError } = await supabase.from("requirements").insert([requirementPayload]);
+    if (requirementError) {
+      console.error("[closure] requirements insert failed", requirementError);
+      // Non-blocking — closure still succeeds even if this fails
+      alert("Saved to Revenue Tracker ✅ but failed to add to Requirements: " + requirementError.message);
+    }
+
     await touchUserLastSeen(userId, "closure_confirm");
-    alert("Candidate added to Revenue Tracker and status updated to Closure ✅");
+    alert("Candidate added to Revenue Tracker, Requirements, and status updated to Closure ✅");
     onConfirm();
   };
 

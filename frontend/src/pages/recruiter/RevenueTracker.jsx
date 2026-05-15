@@ -5,6 +5,7 @@ import { supabase } from "../../services/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import Loader from "../../components/common/Loader";
 import { formatDate } from "../../utils/dateFormat";
+import { mirrorClosureRowToRequirements, mirrorClosureRowsToRequirements } from "../../services/closureToRequirements";
 
 const columns = [
   { key: "doj", label: "DOJ", type: "date" },
@@ -309,6 +310,13 @@ export default function RRevenueTracker() {
         setSaving(false);
         return;
       }
+
+      // Best-effort: mirror closure into requirements (matching columns only)
+      try {
+        await mirrorClosureRowToRequirements(payload);
+      } catch (e) {
+        console.error("[closure->requirements] mirror failed", e);
+      }
     }
 
     setSaving(false);
@@ -406,6 +414,13 @@ export default function RRevenueTracker() {
       alert(error.message);
       e.target.value = "";
       return;
+    }
+
+    // Best-effort: mirror uploaded closures into requirements
+    try {
+      await mirrorClosureRowsToRequirements(validRows);
+    } catch (e) {
+      console.error("[closure->requirements] bulk mirror failed", e);
     }
 
     alert("Upload successful.");
