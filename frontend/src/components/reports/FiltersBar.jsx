@@ -5,8 +5,40 @@ export default function FiltersBar({
   onReset,
   clients = [],
   recruiters = [],
+  assignedRecruiters = [],   // ← new: TL's scoped recruiter list
   statuses = [],
-}) { 
+  bdes = [],
+  managers = [],
+  showRecruiterFilter = false,
+  extraFilterTypes = [],
+  showStatusFilter = true,
+}) {
+  const filterTypes = [
+    { value: "client", label: "Client" },
+    ...(showRecruiterFilter ? [{ value: "recruiter", label: "Recruiter" }] : []),
+    ...(extraFilterTypes || []),
+  ];
+
+  const valueLabel =
+    filters.filterType === "recruiter"
+      ? "All Recruiters"
+      : filters.filterType === "manager"
+        ? "All Managers"
+        : filters.filterType === "bde"
+          ? "All BDE"
+          : "All Clients";
+
+  // ── key change: when filterType is "recruiter", prefer assignedRecruiters
+  // if provided (TL portal), otherwise fall back to recruiters (other portals)
+  const valueOptions =
+    filters.filterType === "recruiter"
+      ? (assignedRecruiters.length ? assignedRecruiters : recruiters)
+      : filters.filterType === "manager"
+        ? managers
+        : filters.filterType === "bde"
+          ? bdes
+          : clients;
+
   return (
     <div style={styles.wrap}>
       <div style={styles.grid}>
@@ -30,12 +62,13 @@ export default function FiltersBar({
             value={filters.filterType || "client"}
             onChange={(e) => {
               onChange("filterType", e.target.value);
-              onChange("filterValue", "");
+              onChange("filterValue", ""); // clear value on type switch
             }}
             style={styles.filterTypeSelect}
           >
-            <option value="client">Client</option>
-            <option value="recruiter">Recruiter</option>
+            {filterTypes.map((t) => (
+              <option key={t.value} value={t.value}>{t.label}</option>
+            ))}
           </select>
 
           <select
@@ -43,26 +76,19 @@ export default function FiltersBar({
             onChange={(e) => onChange("filterValue", e.target.value)}
             style={styles.filterValueSelect}
           >
-            <option value="">
-              {filters.filterType === "recruiter"
-                ? "All Recruiters"
-                : "All Clients"}
-            </option>
-
-            {(filters.filterType === "recruiter" ? recruiters : clients).map(
-              (item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              )
-            )}
+            <option value="">{valueLabel}</option>
+            {valueOptions.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
           </select>
         </div>
 
         <select
           value={filters.status || ""}
           onChange={(e) => onChange("status", e.target.value)}
-          style={styles.input}
+          style={{ ...styles.input, display: showStatusFilter ? "block" : "none" }}
         >
           <option value="">All Status</option>
           {statuses.map((status) => (

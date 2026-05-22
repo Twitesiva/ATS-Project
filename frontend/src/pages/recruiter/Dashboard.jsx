@@ -36,6 +36,7 @@ const INTERVIEW_STATUSES = new Set([
   "AI Interview",
   "Assessment Round",
   "HR Round",
+  "Director Round",
   "Interview Scheduled",
 ]);
 

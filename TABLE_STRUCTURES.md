@@ -373,11 +373,14 @@ if (existing && existing.length > 0) {
 | Field | Purpose |
 |-------|---------|
 | `id` | User ID |
+| `auth_id` | Supabase Auth user id (1:1 with `auth.users`) |
 | `name` | User name |
 | `email` | Email address |
 | `role` | User role (manager, recruiter, tl, admin) |
 | `is_online` | Boolean for online status |
 | `last_seen_at` | ISO timestamp of last activity |
+
+**Important:** Ensure `public.users.auth_id` is **unique** (one profile row per auth user). Duplicate `auth_id` rows can break login/profile lookup (PostgREST "multiple rows returned"). See `ADMIN_USERS_DB_SQL_SNIPPETS.sql`.
 
 ### Activity Update
 ```javascript
@@ -426,6 +429,11 @@ const stats = {
 - **Admin Activity Page:** [frontend/src/pages/admin/activity.jsx](frontend/src/pages/admin/activity.jsx) Lines 1-60
 
 ---
+
+## Notes: Status History (`status_history`)
+If `candidate_records.id` is a UUID, ensure `status_history.candidate_id` is **text** (or uuid) and not bigint, otherwise history inserts will fail with:
+`invalid input syntax for type bigint: '<uuid>'`.
+See `STATUS_HISTORY_CANDIDATE_ID_FIX.sql`.
 
 ## Summary: Data Flow & Relationships
 

@@ -1,6 +1,8 @@
 # TODO
 
-- [x] Inspect current AuthContext implementation.
-- [ ] Update `src/context/AuthContext.jsx` to keep `ats_access_token` synced with Supabase refreshed tokens via `supabase.auth.onAuthStateChange`.
-- [ ] (If needed) Run frontend typecheck/build.
+- [ ] Remove TL sidebar menu items: "Client Report" and "Client Analysis".
+- [ ] Remove corresponding TL routes/pages from TL portal navigation (App.jsx routes).
+- [ ] Remove unused TL-related imports/components/routes after removal.
+- [ ] Confirm no other sidebar items are impacted and spacing/alignment remains intact.
+- [ ] Quick sanity check by searching for remaining references to /tl/clients and /tl/Sales.
 

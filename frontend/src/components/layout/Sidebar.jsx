@@ -43,7 +43,15 @@ export default function Sidebar({ role }) {
   { label: "Reports", path: "/manager/reports", icon: <BarChart3 size={18} /> },
 ],
     recruiter: recruiterPortalMenu,
-    tl: recruiterPortalMenu,
+    tl: [
+  { label: "Dashboard",        path: "/tl/dashboard",  icon: <LayoutDashboard size={18} color="Blue" /> },
+  { label: "Profile Matching", path: "/tl/ats-match",  icon: <UserSearch size={18} /> },
+  { label: "Profile Database", path: "/tl/ats-search", icon: <Database size={18} /> },
+  { label: "Monthly Report",   path: "/tl/data",       icon: <FileText size={18} /> },
+  { label: "TA Activity",      path: "/tl/rec-hist",   icon: <Activity size={18} /> },
+  { label: "Team Revenue",     path: "/tl/tem-trac",   icon: <IndianRupee size={18} /> },
+  { label: "Reports",          path: "/tl/reports",    icon: <BarChart3 size={18} /> },
+],
    bde: [
   { label: "Dashboard",     path: "/bde/dashboard",     icon: <LayoutDashboard size={18} /> },
   { label: "Leads",         path: "/bde/leads",         icon: <Users size={18} /> },

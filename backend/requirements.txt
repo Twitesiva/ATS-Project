@@ -20,3 +20,4 @@ en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_
 httpx==0.24.1
 gotrue==2.8.1
 postgrest==0.13.2
+pyjwt

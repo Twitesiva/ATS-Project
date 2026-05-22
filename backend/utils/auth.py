@@ -44,7 +44,20 @@ def verify_token(token):
 def get_role_from_db(user_id):
     try:
         supabase = get_supabase_client()
-        result = supabase.table("users").select("role").eq("auth_id", user_id).limit(1).execute()
+        # Prefer the newest row if duplicates exist (until uniqueness constraints are applied).
+        try:
+            result = (
+                supabase.table("users")
+                .select("role,created_at,id")
+                .eq("auth_id", user_id)
+                .order("created_at", desc=True)
+                .order("id", desc=True)
+                .limit(1)
+                .execute()
+            )
+        except Exception:
+            result = supabase.table("users").select("role").eq("auth_id", user_id).limit(1).execute()
+
         rows = getattr(result, "data", None) or []
         if rows:
             return (rows[0].get("role") or "").strip().lower()

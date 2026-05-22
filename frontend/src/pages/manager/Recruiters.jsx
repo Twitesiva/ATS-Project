@@ -2,12 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { addRecruiter } from "../../services/authService";
 import { supabase } from "../../services/supabaseClient";
 import { canonicalizeRole, getRoleLabel, getRoleQueryValues } from "../../utils/roles";
-import { isValidPhone10, normalizePhone10 } from "../../utils/phone";
 import { apiFetch } from "../../services/api";
 
 const MANAGED_ROLES = ["recruiter", "tl"];
 
-// If last_seen_at was within the last 30 seconds → Online
 const isOnline = (lastSeenAt) => {
   if (!lastSeenAt) return false;
   const diff = Date.now() - new Date(lastSeenAt).getTime();
@@ -24,18 +22,20 @@ const formatLastActivity = (value) => {
   if (!value) return "Last activity: No activity";
   const dt = new Date(value);
   if (Number.isNaN(dt.getTime())) return "Last activity: No activity";
-
   const now = new Date();
   const diffMs = now.getTime() - dt.getTime();
   const mins = Math.floor(diffMs / 60000);
   const days = Math.floor(diffMs / 86400000);
-
   if (mins < 1) return "Last activity: Just now";
   if (mins < 60) return `Last activity: ${mins} minute${mins === 1 ? "" : "s"} ago`;
   if (days === 0) return "Last activity: Today";
   if (days === 1) return "Last activity: Yesterday";
   return `Last activity: ${dt.toLocaleDateString()}`;
 };
+
+// ── Phone helpers defined locally — no external dependency ──
+const cleanPhone = (val) => (val || "").replace(/\D/g, "").slice(0, 10);
+const isValidPhone = (val) => !val || val.replace(/\D/g, "").length === 10;
 
 export default function Recruiters() {
   const [form, setForm] = useState({
@@ -55,23 +55,35 @@ export default function Recruiters() {
   const [editForm, setEditForm] = useState({ name: "", email: "", phone: "", role: "recruiter" });
   const [actionBusyId, setActionBusyId] = useState(null);
 
-  // Re-compute online status every 15s so cards update without a DB fetch
+  // Assignment state
+  const [assignments, setAssignments] = useState([]);
+  const [assignModal, setAssignModal] = useState(null);
+  const [assignedRecruiters, setAssignedRecruiters] = useState([]);
+  const [assignBusy, setAssignBusy] = useState(false);
+
   const [tick, setTick] = useState(0);
   useEffect(() => {
     const timer = setInterval(() => setTick((t) => t + 1), 15000);
     return () => clearInterval(timer);
   }, []);
 
+  const loadAssignments = async () => {
+    const { data, error: err } = await supabase
+      .from("tl_recruiter_assignments")
+      .select("tl_id, recruiter_id");
+    if (!err) setAssignments(data || []);
+  };
+
   const loadUsers = async () => {
     setError("");
-
     const [userResults, activityRes] = await Promise.all([
       Promise.all(
         MANAGED_ROLES.map((role) =>
           supabase
             .from("users")
             .select("id,auth_id,name,email,phone_number,role,created_at,last_seen_at")
-            .in("role", getRoleQueryValues(role))
+            // IMPORTANT: force role filtering by canonical value
+            .in("role", [canonicalizeRole(role), ...(getRoleQueryValues(role) || [])])
             .order("created_at", { ascending: false })
         )
       ),
@@ -81,18 +93,9 @@ export default function Recruiters() {
         .order("updated_at", { ascending: false }),
     ]);
 
-    const userError = userResults.find((result) => result.error)?.error;
-    if (userError) {
-      console.error("[manager-users] users fetch failed", userError);
-      setError(userError.message || "Failed to load users");
-      return;
-    }
-
-    if (activityRes.error) {
-      console.error("[manager-users] status_history fetch failed", activityRes.error);
-      setError(activityRes.error.message || "Failed to load activity");
-      return;
-    }
+    const userError = userResults.find((r) => r.error)?.error;
+    if (userError) { setError(userError.message || "Failed to load users"); return; }
+    if (activityRes.error) { setError(activityRes.error.message || "Failed to load activity"); return; }
 
     const latestActivityByName = new Map();
     (activityRes.data || []).forEach((row) => {
@@ -111,7 +114,7 @@ export default function Recruiters() {
           email: row.email || "-",
           phone_number: row.phone_number || "-",
           created_at: row.created_at || null,
-          last_seen_at: row.last_seen_at || null,   // ← store raw value
+          last_seen_at: row.last_seen_at || null,
           role: getRoleLabel(role),
           stats: formatLastActivity(latestActivityByName.get(name.toLowerCase()) || null),
         };
@@ -125,6 +128,7 @@ export default function Recruiters() {
 
   useEffect(() => {
     loadUsers();
+    loadAssignments();
 
     const usersChannel = supabase
       .channel("manager-users")
@@ -136,13 +140,18 @@ export default function Recruiters() {
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "status_history" }, loadUsers)
       .subscribe();
 
+    const assignChannel = supabase
+      .channel("manager-assignments")
+      .on("postgres_changes", { event: "*", schema: "public", table: "tl_recruiter_assignments" }, loadAssignments)
+      .subscribe();
+
     return () => {
       supabase.removeChannel(usersChannel);
       supabase.removeChannel(activityChannel);
+      supabase.removeChannel(assignChannel);
     };
   }, []);
 
-  // allCards re-derives on tick so online pill updates every 15s client-side
   const allCards = useMemo(
     () =>
       [...usersByRole.recruiter, ...usersByRole.tl].map((u) => ({
@@ -153,7 +162,6 @@ export default function Recruiters() {
     [usersByRole.recruiter, usersByRole.tl, tick]
   );
 
-  // Helper to compute status for table rows (also re-runs on tick)
   const getStatus = (lastSeenAt) => (isOnline(lastSeenAt) ? "Online" : "Offline");
 
   const handleAddUser = async (e) => {
@@ -166,7 +174,9 @@ export default function Recruiters() {
       return;
     }
 
-    if (form.phone && !isValidPhone10(form.phone)) {
+    // Phone: optional, but if provided must be exactly 10 digits
+    const phoneDigits = cleanPhone(form.phone);
+    if (form.phone && phoneDigits.length !== 10) {
       setError("Phone number must be exactly 10 digits");
       return;
     }
@@ -175,7 +185,7 @@ export default function Recruiters() {
       name: form.name.trim(),
       email: form.email.trim(),
       password: form.password.trim(),
-      phone: form.phone.trim(),
+      phone: phoneDigits || null, // send null if empty
       role: canonicalizeRole(form.role),
     });
 
@@ -185,26 +195,17 @@ export default function Recruiters() {
     }
 
     setMessage(`${getRoleLabel(form.role)} added successfully`);
-    setForm({ name: "", email: "", password: "", phone: "", role: "recruiter" });
+    setForm({ name: "", email: "", password: "", phone: "", role: form.role });
     await loadUsers();
   };
 
   const handleUpdatePassword = async (e) => {
     e.preventDefault();
     if (!passwordTarget?.id) return;
-
-    if (!newPassword.trim()) {
-      setError("New password is required");
-      return;
-    }
-
-    if (!passwordTarget?.auth_id) {
-      setError("This user has no auth account linked.");
-      return;
-    }
+    if (!newPassword.trim()) { setError("New password is required"); return; }
+    if (!passwordTarget?.auth_id) { setError("This user has no auth account linked."); return; }
 
     setActionBusyId(passwordTarget.id);
-
     try {
       await apiFetch("/admin/users/password", {
         method: "PATCH",
@@ -232,16 +233,10 @@ export default function Recruiters() {
   const handleDeleteUser = async (user, role) => {
     const ok = window.confirm(`Are you sure you want to delete this ${getRoleLabel(role)}?`);
     if (!ok) return;
-
     setActionBusyId(user.id);
     const { error: deleteError } = await supabase.from("users").delete().eq("id", user.id);
     setActionBusyId(null);
-
-    if (deleteError) {
-      setError(deleteError.message || "Failed to delete user");
-      return;
-    }
-
+    if (deleteError) { setError(deleteError.message || "Failed to delete user"); return; }
     setMessage(`${getRoleLabel(role)} deleted successfully`);
     await loadUsers();
   };
@@ -249,13 +244,10 @@ export default function Recruiters() {
   const handleUpdateUser = async (e) => {
     e.preventDefault();
     if (!editTarget?.id) return;
+    if (!editForm.name.trim() || !editForm.email.trim()) { setError("Name and email are required"); return; }
 
-    if (!editForm.name.trim() || !editForm.email.trim()) {
-      setError("Name and email are required");
-      return;
-    }
-
-    if (editForm.phone && !isValidPhone10(editForm.phone)) {
+    const phoneDigits = cleanPhone(editForm.phone);
+    if (editForm.phone && phoneDigits.length !== 10) {
       setError("Phone number must be exactly 10 digits");
       return;
     }
@@ -266,20 +258,45 @@ export default function Recruiters() {
       .update({
         name: editForm.name.trim(),
         email: editForm.email.trim(),
-        phone_number: editForm.phone.trim() || null,
+        phone_number: phoneDigits || null,
         role: canonicalizeRole(editForm.role),
       })
       .eq("id", editTarget.id);
     setActionBusyId(null);
 
-    if (updateError) {
-      setError(updateError.message || "Failed to update user");
-      return;
-    }
-
+    if (updateError) { setError(updateError.message || "Failed to update user"); return; }
     setMessage(`${getRoleLabel(editForm.role)} updated successfully`);
     setEditTarget(null);
     await loadUsers();
+  };
+
+  const handleSaveAssignments = async () => {
+    if (!assignModal) return;
+    setAssignBusy(true);
+
+    const { error: delError } = await supabase
+      .from("tl_recruiter_assignments")
+      .delete()
+      .eq("tl_id", assignModal.id);
+
+    if (delError) { setError(delError.message || "Failed to update assignments"); setAssignBusy(false); return; }
+
+    if (assignedRecruiters.length > 0) {
+      const { error: insError } = await supabase
+        .from("tl_recruiter_assignments")
+        .insert(assignedRecruiters.map((rid) => ({ tl_id: assignModal.id, recruiter_id: rid })));
+      if (insError) { setError(insError.message || "Failed to assign recruiters"); setAssignBusy(false); return; }
+    }
+
+    await loadAssignments();
+    setAssignBusy(false);
+    setAssignModal(null);
+    setMessage(`Recruiters assigned to ${assignModal.name} successfully`);
+  };
+
+  const getAssignedRecruiterNames = (tlId) => {
+    const assignedIds = assignments.filter((a) => a.tl_id === tlId).map((a) => a.recruiter_id);
+    return usersByRole.recruiter.filter((r) => assignedIds.includes(r.id)).map((r) => r.name);
   };
 
   return (
@@ -289,6 +306,7 @@ export default function Recruiters() {
         <p style={styles.subtitle}>Create and manage recruiter and TL access</p>
       </header>
 
+      {/* ── Add User ── */}
       <section style={styles.panel}>
         <div style={styles.panelHeader}>
           <div>
@@ -300,10 +318,7 @@ export default function Recruiters() {
               <button
                 key={role}
                 type="button"
-                style={{
-                  ...styles.secondaryBtn,
-                  ...(form.role === role ? styles.activeToggle : {}),
-                }}
+                style={{ ...styles.secondaryBtn, ...(form.role === role ? styles.activeToggle : {}) }}
                 onClick={() => setForm((prev) => ({ ...prev, role }))}
               >
                 Add {getRoleLabel(role)}
@@ -321,26 +336,29 @@ export default function Recruiters() {
           />
           <input
             placeholder="Email"
+            type="email"
             value={form.email}
             onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))}
             style={styles.input}
           />
           <input
             placeholder="Password"
+            type="password"
             value={form.password}
             onChange={(e) => setForm((prev) => ({ ...prev, password: e.target.value }))}
             style={styles.input}
-            type="password"
           />
+          {/* ✅ Phone: strip non-digits on every keystroke, max 10 digits */}
           <input
-            placeholder="Phone Number"
-            value={form.phone}
-            onChange={(e) => setForm((prev) => ({ ...prev, phone: normalizePhone10(e.target.value) }))}
-            style={styles.input}
+            placeholder="Phone Number (10 digits)"
             type="tel"
             inputMode="numeric"
+            value={form.phone}
+            onChange={(e) =>
+              setForm((prev) => ({ ...prev, phone: cleanPhone(e.target.value) }))
+            }
             maxLength={10}
-            pattern="\\d{10}"
+            style={styles.input}
           />
           <input value={getRoleLabel(form.role)} readOnly style={styles.input} />
 
@@ -353,6 +371,7 @@ export default function Recruiters() {
         </form>
       </section>
 
+      {/* ── User Cards ── */}
       <section style={styles.grid}>
         {allCards.map((user, index) => (
           <article
@@ -360,10 +379,9 @@ export default function Recruiters() {
             style={{
               ...styles.card,
               transform: hoveredCard === index ? "translateY(-2px)" : "translateY(0)",
-              boxShadow:
-                hoveredCard === index
-                  ? "0 12px 24px rgba(15, 23, 42, 0.12)"
-                  : "0 6px 16px rgba(15, 23, 42, 0.08)",
+              boxShadow: hoveredCard === index
+                ? "0 12px 24px rgba(15, 23, 42, 0.12)"
+                : "0 6px 16px rgba(15, 23, 42, 0.08)",
             }}
             onMouseEnter={() => setHoveredCard(index)}
             onMouseLeave={() => setHoveredCard(null)}
@@ -373,17 +391,14 @@ export default function Recruiters() {
                 <h4 style={styles.cardName}>{user.name}</h4>
                 <p style={styles.cardEmail}>{user.email}</p>
               </div>
-              <span
-                style={{
-                  ...styles.statusPill,
-                  background: user.status === "Online" ? "#dcfce7" : "#fee2e2",
-                  color: user.status === "Online" ? "#166534" : "#991b1b",
-                }}
-              >
+              <span style={{
+                ...styles.statusPill,
+                background: user.status === "Online" ? "#dcfce7" : "#fee2e2",
+                color: user.status === "Online" ? "#166534" : "#991b1b",
+              }}>
                 {user.status}
               </span>
             </div>
-
             <div style={styles.metaRow}>
               <span style={styles.metaLabel}>Role</span>
               <span style={styles.metaValue}>{user.role}</span>
@@ -396,11 +411,13 @@ export default function Recruiters() {
         ))}
       </section>
 
+      {/* ── Manage Tables ── */}
       {MANAGED_ROLES.map((role) => (
         <section key={role} style={styles.panel}>
           <h3 style={styles.panelTitle}>Manage {getRoleLabel(role)} Users</h3>
           <p style={styles.panelSubtitle}>
             Update profile details, change passwords, or remove {getRoleLabel(role)} access.
+            {role === "tl" && " Use 'Assign Recruiters' to map recruiters under each TL."}
           </p>
 
           <div style={styles.tableContainer}>
@@ -412,75 +429,99 @@ export default function Recruiters() {
                   <th style={styles.th}>Phone Number</th>
                   <th style={styles.th}>Created At</th>
                   <th style={styles.th}>Online Status</th>
+                  {role === "tl" && <th style={styles.th}>Assigned Recruiters</th>}
                   <th style={styles.th}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {usersByRole[role].length === 0 ? (
                   <tr>
-                    <td style={styles.td} colSpan={6}>
+                    <td style={styles.td} colSpan={role === "tl" ? 7 : 6}>
                       No {getRoleLabel(role)} users found.
                     </td>
                   </tr>
                 ) : (
-                  usersByRole[role].map((user) => (
-                    <tr key={user.id}>
-                      <td style={styles.td}>{user.name}</td>
-                      <td style={styles.td}>{user.email}</td>
-                      <td style={styles.td}>{user.phone_number || "-"}</td>
-                      <td style={styles.td}>{formatDate(user.created_at)}</td>
-                      <td style={styles.td}>
-                        <span
-                          style={{
+                  usersByRole[role].map((user) => {
+                    const assignedNames = role === "tl" ? getAssignedRecruiterNames(user.id) : [];
+                    return (
+                      <tr key={user.id}>
+                        <td style={styles.td}>{user.name}</td>
+                        <td style={styles.td}>{user.email}</td>
+                        <td style={styles.td}>{user.phone_number || "-"}</td>
+                        <td style={styles.td}>{formatDate(user.created_at)}</td>
+                        <td style={styles.td}>
+                          <span style={{
                             ...styles.statusPill,
                             background: getStatus(user.last_seen_at) === "Online" ? "#dcfce7" : "#fee2e2",
                             color: getStatus(user.last_seen_at) === "Online" ? "#166534" : "#991b1b",
-                          }}
-                        >
-                          {getStatus(user.last_seen_at)}
-                        </span>
-                      </td>
-                      <td style={styles.td}>
-                        <div style={styles.actionBtns}>
-                          <button
-                            type="button"
-                            style={styles.secondaryBtn}
-                            onClick={() => {
-                              setEditTarget(user);
-                              setEditForm({
-                                name: user.name,
-                                email: user.email,
-                                phone: user.phone_number || "",
-                                role,
-                              });
-                            }}
-                            disabled={actionBusyId === user.id}
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            style={styles.secondaryBtn}
-                            onClick={() => {
-                              setPasswordTarget(user);
-                              setNewPassword("");
-                            }}
-                            disabled={actionBusyId === user.id}
-                          >
-                            Change Password
-                          </button>
-                          <button
-                            type="button"
-                            style={styles.dangerBtn}
-                            onClick={() => handleDeleteUser(user, role)}
-                            disabled={actionBusyId === user.id}
-                          >
-                            {actionBusyId === user.id ? "Processing..." : `Delete ${getRoleLabel(role)}`}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+                          }}>
+                            {getStatus(user.last_seen_at)}
+                          </span>
+                        </td>
+
+                        {role === "tl" && (
+                          <td style={styles.td}>
+                            {assignedNames.length === 0 ? (
+                              <span style={{ color: "#94a3b8", fontSize: 13 }}>None</span>
+                            ) : (
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                {assignedNames.map((n) => (
+                                  <span key={n} style={styles.recruiterBadge}>{n}</span>
+                                ))}
+                              </div>
+                            )}
+                          </td>
+                        )}
+
+                        <td style={styles.td}>
+                          <div style={styles.actionBtns}>
+                            <button
+                              type="button"
+                              style={styles.secondaryBtn}
+                              onClick={() => {
+                                setEditTarget(user);
+                                setEditForm({ name: user.name, email: user.email, phone: cleanPhone(user.phone_number), role });
+                              }}
+                              disabled={actionBusyId === user.id}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              style={styles.secondaryBtn}
+                              onClick={() => { setPasswordTarget(user); setNewPassword(""); }}
+                              disabled={actionBusyId === user.id}
+                            >
+                              Change Password
+                            </button>
+                            {role === "tl" && (
+                              <button
+                                type="button"
+                                style={styles.assignBtn}
+                                onClick={() => {
+                                  setAssignModal(user);
+                                  setAssignedRecruiters(
+                                    assignments.filter((a) => a.tl_id === user.id).map((a) => a.recruiter_id)
+                                  );
+                                }}
+                                disabled={actionBusyId === user.id}
+                              >
+                                Assign Recruiters
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              style={styles.dangerBtn}
+                              onClick={() => handleDeleteUser(user, role)}
+                              disabled={actionBusyId === user.id}
+                            >
+                              {actionBusyId === user.id ? "Processing..." : `Delete ${getRoleLabel(role)}`}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -488,6 +529,7 @@ export default function Recruiters() {
         </section>
       ))}
 
+      {/* ── Change Password Modal ── */}
       {passwordTarget && (
         <div style={styles.overlay}>
           <div style={styles.modal}>
@@ -502,18 +544,15 @@ export default function Recruiters() {
                 style={styles.input}
               />
               <div style={styles.modalActions}>
-                <button type="button" style={styles.secondaryBtn} onClick={() => setPasswordTarget(null)}>
-                  Cancel
-                </button>
-                <button type="submit" style={styles.primaryBtn}>
-                  Update Password
-                </button>
+                <button type="button" style={styles.secondaryBtn} onClick={() => setPasswordTarget(null)}>Cancel</button>
+                <button type="submit" style={styles.primaryBtn}>Update Password</button>
               </div>
             </form>
           </div>
         </div>
       )}
 
+      {/* ── Edit User Modal ── */}
       {editTarget && (
         <div style={styles.overlay}>
           <div style={styles.modal}>
@@ -531,15 +570,17 @@ export default function Recruiters() {
                 onChange={(e) => setEditForm((prev) => ({ ...prev, email: e.target.value }))}
                 style={styles.input}
               />
+              {/* ✅ Phone in edit modal — same clean handling */}
               <input
-                placeholder="Phone Number"
-                value={editForm.phone}
-                onChange={(e) => setEditForm((prev) => ({ ...prev, phone: normalizePhone10(e.target.value) }))}
-                style={styles.input}
+                placeholder="Phone Number (10 digits)"
                 type="tel"
                 inputMode="numeric"
+                value={editForm.phone}
+                onChange={(e) =>
+                  setEditForm((prev) => ({ ...prev, phone: cleanPhone(e.target.value) }))
+                }
                 maxLength={10}
-                pattern="\\d{10}"
+                style={styles.input}
               />
               <select
                 value={editForm.role}
@@ -547,21 +588,89 @@ export default function Recruiters() {
                 style={styles.input}
               >
                 {MANAGED_ROLES.map((r) => (
-                  <option key={r} value={r}>
-                    {getRoleLabel(r)}
-                  </option>
+                  <option key={r} value={r}>{getRoleLabel(r)}</option>
                 ))}
               </select>
-
               <div style={styles.modalActions}>
-                <button type="button" style={styles.secondaryBtn} onClick={() => setEditTarget(null)}>
-                  Cancel
-                </button>
-                <button type="submit" style={styles.primaryBtn}>
-                  Save Changes
-                </button>
+                <button type="button" style={styles.secondaryBtn} onClick={() => setEditTarget(null)}>Cancel</button>
+                <button type="submit" style={styles.primaryBtn}>Save Changes</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Assign Recruiters Modal ── */}
+      {assignModal && (
+        <div style={styles.overlay}>
+          <div style={styles.modal}>
+            <h3 style={styles.modalTitle}>Assign Recruiters</h3>
+            <p style={styles.modalSubtitle}>
+              Select recruiters to assign under <strong>{assignModal.name}</strong>
+            </p>
+            {usersByRole.recruiter.length === 0 ? (
+              <p style={{ color: "#94a3b8", fontSize: 14, margin: "12px 0" }}>
+                No recruiters available. Add a recruiter first.
+              </p>
+            ) : (
+              <div style={styles.checkboxList}>
+                {usersByRole.recruiter.map((rec) => {
+                  const checked = assignedRecruiters.includes(rec.id);
+                  const assignedToOtherTL = assignments.find(
+                    (a) => a.recruiter_id === rec.id && a.tl_id !== assignModal.id
+                  );
+                  const otherTLName = assignedToOtherTL
+                    ? usersByRole.tl.find((t) => t.id === assignedToOtherTL.tl_id)?.name
+                    : null;
+                  return (
+                    <label
+                      key={rec.id}
+                      style={{
+                        ...styles.checkboxRow,
+                        background: checked ? "#eff6ff" : "#fff",
+                        borderColor: checked ? "#bfdbfe" : "#e2e8f0",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() =>
+                          setAssignedRecruiters((prev) =>
+                            checked ? prev.filter((id) => id !== rec.id) : [...prev, rec.id]
+                          )
+                        }
+                        style={{ accentColor: "#2563eb", width: 16, height: 16 }}
+                      />
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: "#0f172a" }}>{rec.name}</div>
+                        <div style={{ fontSize: 12, color: "#64748b" }}>{rec.email}</div>
+                        {otherTLName && (
+                          <div style={{ fontSize: 11, color: "#f59e0b", marginTop: 2 }}>
+                            ⚠ Currently under {otherTLName}
+                          </div>
+                        )}
+                      </div>
+                      {checked && (
+                        <span style={{ ...styles.statusPill, background: "#dbeafe", color: "#1d4ed8" }}>
+                          Selected
+                        </span>
+                      )}
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+            <div style={{ fontSize: 13, color: "#64748b", margin: "10px 0 4px 0" }}>
+              {assignedRecruiters.length} recruiter{assignedRecruiters.length !== 1 ? "s" : ""} selected
+            </div>
+            <div style={styles.modalActions}>
+              <button type="button" style={styles.secondaryBtn} onClick={() => setAssignModal(null)} disabled={assignBusy}>
+                Cancel
+              </button>
+              <button type="button" style={styles.primaryBtn} onClick={handleSaveAssignments} disabled={assignBusy}>
+                {assignBusy ? "Saving..." : "Save Assignments"}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -570,234 +679,51 @@ export default function Recruiters() {
 }
 
 const styles = {
-  page: {
-    padding: "24px",
-    display: "flex",
-    flexDirection: "column",
-    gap: "18px",
-  },
-  header: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "6px",
-  },
-  title: {
-    margin: 0,
-    fontSize: "30px",
-    fontWeight: 700,
-    color: "#0f172a",
-  },
-  subtitle: {
-    margin: 0,
-    color: "#475569",
-    fontSize: "15px",
-  },
+  page: { padding: "24px", display: "flex", flexDirection: "column", gap: "18px" },
+  header: { display: "flex", flexDirection: "column", gap: "6px" },
+  title: { margin: 0, fontSize: "30px", fontWeight: 700, color: "#0f172a" },
+  subtitle: { margin: 0, color: "#475569", fontSize: "15px" },
   panel: {
-    background: "#ffffff",
-    border: "1px solid #e2e8f0",
-    borderRadius: "14px",
-    padding: "18px",
-    boxShadow: "0 6px 16px rgba(15, 23, 42, 0.06)",
+    background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "14px",
+    padding: "18px", boxShadow: "0 6px 16px rgba(15, 23, 42, 0.06)",
   },
-  panelHeader: {
-    display: "flex",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: "12px",
-    flexWrap: "wrap",
-  },
-  panelTitle: {
-    margin: 0,
-    fontSize: "20px",
-    color: "#0f172a",
-  },
-  panelSubtitle: {
-    margin: "6px 0 14px 0",
-    color: "#64748b",
-    fontSize: "14px",
-  },
-  toggleWrap: {
-    display: "flex",
-    gap: "8px",
-    flexWrap: "wrap",
-  },
-  formGrid: {
-    display: "grid",
-    gap: "10px",
-    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-    alignItems: "center",
-  },
+  panelHeader: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" },
+  panelTitle: { margin: 0, fontSize: "20px", color: "#0f172a" },
+  panelSubtitle: { margin: "6px 0 14px 0", color: "#64748b", fontSize: "14px" },
+  toggleWrap: { display: "flex", gap: "8px", flexWrap: "wrap" },
+  formGrid: { display: "grid", gap: "10px", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", alignItems: "center" },
   input: {
-    width: "100%",
-    padding: "10px 12px",
-    marginBottom: "10px",
-    border: "1px solid #cbd5e1",
-    borderRadius: "10px",
-    outline: "none",
-    fontSize: "14px",
-    boxSizing: "border-box",
+    width: "100%", padding: "10px 12px", marginBottom: "10px",
+    border: "1px solid #cbd5e1", borderRadius: "10px", outline: "none",
+    fontSize: "14px", boxSizing: "border-box",
   },
-  errorText: {
-    color: "#dc2626",
-    margin: "4px 0 10px 0",
-    fontSize: "14px",
-  },
-  successText: {
-    color: "#16a34a",
-    margin: "4px 0 10px 0",
-    fontSize: "14px",
-  },
-  primaryBtn: {
-    border: "none",
-    background: "#2563eb",
-    color: "#ffffff",
-    padding: "10px 14px",
-    borderRadius: "10px",
-    fontWeight: 600,
-    cursor: "pointer",
-  },
-  secondaryBtn: {
-    border: "1px solid #cbd5e1",
-    background: "#ffffff",
-    color: "#0f172a",
-    padding: "8px 12px",
-    borderRadius: "10px",
-    fontWeight: 600,
-    cursor: "pointer",
-  },
-  activeToggle: {
-    background: "#eff6ff",
-    borderColor: "#2563eb",
-    color: "#1d4ed8",
-  },
-  dangerBtn: {
-    border: "1px solid #fecaca",
-    background: "#fff1f2",
-    color: "#b91c1c",
-    padding: "8px 12px",
-    borderRadius: "10px",
-    fontWeight: 600,
-    cursor: "pointer",
-  },
-  grid: {
-    display: "grid",
-    gap: "14px",
-    gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-  },
-  card: {
-    background: "#ffffff",
-    border: "1px solid #e2e8f0",
-    borderRadius: "14px",
-    padding: "16px",
-    transition: "all 0.18s ease",
-  },
-  cardTop: {
-    display: "flex",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: "10px",
-    marginBottom: "14px",
-  },
-  cardName: {
-    margin: 0,
-    fontSize: "18px",
-    color: "#0f172a",
-  },
-  cardEmail: {
-    margin: "5px 0 0 0",
-    fontSize: "13px",
-    color: "#64748b",
-    wordBreak: "break-word",
-  },
-  statusPill: {
-    fontSize: "12px",
-    fontWeight: 600,
-    borderRadius: "999px",
-    padding: "5px 10px",
-    whiteSpace: "nowrap",
-  },
-  metaRow: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    borderTop: "1px solid #f1f5f9",
-    paddingTop: "10px",
-    marginTop: "10px",
-  },
-  metaLabel: {
-    fontSize: "13px",
-    color: "#64748b",
-  },
-  metaValue: {
-    fontSize: "13px",
-    color: "#0f172a",
-    fontWeight: 600,
-  },
-  tableContainer: {
-    width: "100%",
-    overflowX: "auto",
-    border: "1px solid #e2e8f0",
-    borderRadius: "12px",
-    background: "#fff",
-  },
-  table: {
-    width: "100%",
-    borderCollapse: "collapse",
-    minWidth: "900px",
-  },
-  th: {
-    textAlign: "left",
-    padding: "10px 12px",
-    borderBottom: "1px solid #e2e8f0",
-    background: "#f8fafc",
-    fontSize: "13px",
-    color: "#334155",
-    whiteSpace: "nowrap",
-  },
-  td: {
-    padding: "10px 12px",
-    borderBottom: "1px solid #f1f5f9",
-    fontSize: "14px",
-    color: "#0f172a",
-    verticalAlign: "middle",
-    whiteSpace: "nowrap",
-  },
-  actionBtns: {
-    display: "flex",
-    gap: "8px",
-    alignItems: "center",
-  },
-  overlay: {
-    position: "fixed",
-    inset: 0,
-    background: "rgba(15, 23, 42, 0.35)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 1000,
-  },
-  modal: {
-    width: "100%",
-    maxWidth: "420px",
-    background: "#fff",
-    borderRadius: "14px",
-    border: "1px solid #e2e8f0",
-    boxShadow: "0 18px 40px rgba(2, 6, 23, 0.18)",
-    padding: "16px",
-  },
-  modalTitle: {
-    margin: 0,
-    fontSize: "20px",
-    color: "#0f172a",
-  },
-  modalSubtitle: {
-    margin: "6px 0 12px 0",
-    color: "#64748b",
-    fontSize: "13px",
-  },
-  modalActions: {
-    display: "flex",
-    justifyContent: "flex-end",
-    gap: "8px",
-  },
+  errorText: { color: "#dc2626", margin: "4px 0 10px 0", fontSize: "14px" },
+  successText: { color: "#16a34a", margin: "4px 0 10px 0", fontSize: "14px" },
+  primaryBtn: { border: "none", background: "#2563eb", color: "#ffffff", padding: "10px 14px", borderRadius: "10px", fontWeight: 600, cursor: "pointer" },
+  secondaryBtn: { border: "1px solid #cbd5e1", background: "#ffffff", color: "#0f172a", padding: "8px 12px", borderRadius: "10px", fontWeight: 600, cursor: "pointer" },
+  activeToggle: { background: "#eff6ff", borderColor: "#2563eb", color: "#1d4ed8" },
+  assignBtn: { border: "1px solid #bfdbfe", background: "#eff6ff", color: "#1d4ed8", padding: "8px 12px", borderRadius: "10px", fontWeight: 600, cursor: "pointer" },
+  dangerBtn: { border: "1px solid #fecaca", background: "#fff1f2", color: "#b91c1c", padding: "8px 12px", borderRadius: "10px", fontWeight: 600, cursor: "pointer" },
+  grid: { display: "grid", gap: "14px", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" },
+  card: { background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "14px", padding: "16px", transition: "all 0.18s ease" },
+  cardTop: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "10px", marginBottom: "14px" },
+  cardName: { margin: 0, fontSize: "18px", color: "#0f172a" },
+  cardEmail: { margin: "5px 0 0 0", fontSize: "13px", color: "#64748b", wordBreak: "break-word" },
+  statusPill: { fontSize: "12px", fontWeight: 600, borderRadius: "999px", padding: "5px 10px", whiteSpace: "nowrap" },
+  metaRow: { display: "flex", alignItems: "center", justifyContent: "space-between", borderTop: "1px solid #f1f5f9", paddingTop: "10px", marginTop: "10px" },
+  metaLabel: { fontSize: "13px", color: "#64748b" },
+  metaValue: { fontSize: "13px", color: "#0f172a", fontWeight: 600 },
+  tableContainer: { width: "100%", overflowX: "auto", border: "1px solid #e2e8f0", borderRadius: "12px", background: "#fff" },
+  table: { width: "100%", borderCollapse: "collapse", minWidth: "900px" },
+  th: { textAlign: "left", padding: "10px 12px", borderBottom: "1px solid #e2e8f0", background: "#f8fafc", fontSize: "13px", color: "#334155", whiteSpace: "nowrap" },
+  td: { padding: "10px 12px", borderBottom: "1px solid #f1f5f9", fontSize: "14px", color: "#0f172a", verticalAlign: "middle", whiteSpace: "nowrap" },
+  actionBtns: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" },
+  recruiterBadge: { background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#166534", borderRadius: "999px", padding: "3px 10px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" },
+  overlay: { position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.35)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 },
+  modal: { width: "100%", maxWidth: "460px", background: "#fff", borderRadius: "14px", border: "1px solid #e2e8f0", boxShadow: "0 18px 40px rgba(2, 6, 23, 0.18)", padding: "20px" },
+  modalTitle: { margin: 0, fontSize: "20px", color: "#0f172a" },
+  modalSubtitle: { margin: "6px 0 12px 0", color: "#64748b", fontSize: "13px" },
+  modalActions: { display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "12px" },
+  checkboxList: { display: "flex", flexDirection: "column", gap: "8px", maxHeight: "280px", overflowY: "auto", paddingRight: "4px" },
+  checkboxRow: { display: "flex", alignItems: "center", gap: "12px", padding: "10px 12px", border: "1px solid #e2e8f0", borderRadius: "10px", cursor: "pointer", transition: "all 0.15s ease" },
 };

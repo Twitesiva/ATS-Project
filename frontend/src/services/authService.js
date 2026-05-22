@@ -60,14 +60,17 @@ export async function loginWithEmail(email, password) {
     const user = data?.user;
     if (!user) return { error: "Login failed" };
 
-    // ✅ FIX: capture the JWT access token from the session
     const accessToken = data?.session?.access_token || null;
 
     const { data: profile, error: profileError } = await Promise.race([
       supabase
         .from("users")
-        .select("role, name, phone_number")
+        .select("id, role, name, phone_number")
         .eq("auth_id", user.id)
+        // Defensive: some environments ended up with duplicate rows for the same auth_id.
+        // limit(1) avoids PostgREST's "multiple rows returned" error when using maybeSingle().
+        .order("created_at", { ascending: false })
+        .limit(1)
         .maybeSingle(),
       new Promise((_, reject) =>
         setTimeout(() => reject(new Error("Profile lookup timed out")), 10000)
@@ -79,8 +82,16 @@ export async function loginWithEmail(email, password) {
     }
 
     const normalizedRole = canonicalizeRole(profile?.role);
+    if (!profile?.id) {
+      return { error: "User profile not found. Please contact an admin." };
+    }
+    if (!normalizedRole) {
+      return {
+        error:
+          "Your account is missing a valid role (or has duplicate user records). Please contact an admin.",
+      };
+    }
 
-    // Don't block login flow on online-status update.
     supabase
       .from("users")
       .update({ is_online: true, last_seen_at: new Date().toISOString() })
@@ -90,10 +101,11 @@ export async function loginWithEmail(email, password) {
       });
 
     return {
-      // ✅ FIX: return accessToken so Login.js can pass it to AuthContext
       accessToken,
       user: {
-        id: user.id,
+        // `id` must be the `public.users.id` (used across the app, e.g. heartbeat updates).
+        id: profile.id,
+        auth_id: user.id,
         email: user.email,
         role: normalizedRole,
         name: profile?.name || user.email.split("@")[0],
@@ -117,14 +129,18 @@ export async function getCurrentUser() {
 
   const { data: profile } = await supabase
     .from("users")
-    .select("role, name, phone_number")
+    .select("id, role, name, phone_number")
     .eq("auth_id", data.user.id)
+    .order("created_at", { ascending: false })
+    .limit(1)
     .maybeSingle();
 
   const normalizedRole = canonicalizeRole(profile?.role);
+  if (!normalizedRole) return null;
 
   return {
-    id: data.user.id,
+    id: profile?.id ?? null,
+    auth_id: data.user.id,
     email: data.user.email,
     role: normalizedRole,
     name: profile?.name || data.user.email.split("@")[0],
@@ -171,8 +187,9 @@ export async function setUserOnlineStatus(userId, isOnline) {
 }
 
 /* -----------------------------
-   CREATE RECRUITER
-   Uses Supabase Auth — NO password stored in users table
+   CREATE USER (Recruiter / TL / etc.)
+   Primary path: backend /admin/users (service-role, no duplicate risk)
+   Fallback path: supabase.auth.signUp — cleans up any trigger-inserted duplicate rows
 ------------------------------*/
 export async function addRecruiter({
   email,
@@ -184,7 +201,13 @@ export async function addRecruiter({
   const normalizedRole = canonicalizeRole(role || "recruiter");
   const normalizedEmail = (email || "").trim().toLowerCase();
 
-  // Preferred: create user via backend using service-role (creates auth.users + users row).
+  if (!normalizedRole) {
+    return { error: "Invalid role selected" };
+  }
+
+  // ── Primary: backend route using service-role key ──────────────────────────
+  // This is the safest path — backend controls both auth.users and public.users
+  // insertion atomically, so no duplicates.
   try {
     const res = await apiFetch("/admin/users", {
       method: "POST",
@@ -204,36 +227,10 @@ export async function addRecruiter({
 
     return { success: true };
   } catch (e) {
-    // Fallback for older deployments with no backend route configured.
-    const { data, error: signUpError } = await supabase.auth.signUp({
-      email: normalizedEmail,
-      password,
-    });
-
-    if (signUpError) {
-      return { error: signUpError.message };
-    }
-
-    const userId = data?.user?.id;
-
-    if (!userId) {
-      return { error: "Failed to create auth user" };
-    }
-
-    const userRow = {
-      auth_id: userId,
-      email: normalizedEmail,
-      phone_number: phone,
-      role: normalizedRole,
-      name: name || normalizedEmail.split("@")[0] || null,
-    };
-
-    const { error: upsertError } = await supabase
-      .from("users")
-      .upsert([userRow], { onConflict: "email" });
-
-    if (upsertError) return { error: upsertError.message };
-
-    return { success: true };
+    // IMPORTANT: Do NOT fall back to supabase.auth.signUp.
+    // If the backend /admin/users call partially succeeded (auth created and
+    // a trigger inserted a default profile row), the fallback will create a
+    // second profile row, producing recruiter+tl duplicates.
+    return { error: e?.message || "Failed to create user" };
   }
 }

@@ -133,9 +133,8 @@ def fetch():
         import traceback
         print(f"[API ERROR] Fetch resumes error: {e}")
         print(f"[API ERROR] Traceback: {traceback.format_exc()}")
-        # Return empty resumes array instead of crashing
         return jsonify({
             "resumes": [],
-            "error": "Failed to fetch resumes",
-            "details": str(e)
-        }), 500
+            "error": str(e),
+            "details": traceback.format_exc()
+        }), 200

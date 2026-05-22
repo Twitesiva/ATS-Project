@@ -33,7 +33,7 @@ def admin_create_user():
     body = request.get_json(silent=True) or {}
     email = (body.get("email") or "").strip().lower()
     password = (body.get("password") or "").strip()
-    role = (body.get("role") or "recruiter").strip()
+    role = (body.get("role") or "").strip().lower()
     name = body.get("name")
     phone_number = body.get("phone_number")
 
@@ -43,6 +43,12 @@ def admin_create_user():
         return {"ok": False, "error": "password is required"}, 400
     if len(password) < 6:
         return {"ok": False, "error": "Password must be at least 6 characters"}, 400
+    if not role:
+        return {"ok": False, "error": "role is required"}, 400
+
+    allowed_roles = {"hr", "manager", "recruiter", "tl", "bde"}
+    if role not in allowed_roles:
+        return {"ok": False, "error": f"Invalid role. Allowed: {sorted(allowed_roles)}"}, 400
 
     import os
 
@@ -81,13 +87,33 @@ def admin_create_user():
     }
 
     try:
-        # Prefer upsert on email; if constraint doesn't exist, fall back to lookup.
-        upsert = supabase.table("users").upsert(user_row, on_conflict="email").execute()
-        if getattr(upsert, "error", None):
-            raise RuntimeError(str(upsert.error))
+        # Avoid relying solely on ON CONFLICT constraints (which might not exist yet).
+        # If a DB trigger already inserted a default profile row for this auth user,
+        # update it instead of inserting a second row.
+        existing = supabase.table("users").select("id").eq("auth_id", auth_id).limit(1).execute()
+        existing_rows = (
+            (getattr(existing, "data", None) or (existing.get("data") if isinstance(existing, dict) else None) or [])
+            or []
+        )
+        existing_id = (existing_rows[0].get("id") if existing_rows else None)
+
+        if existing_id:
+            supabase.table("users").update(user_row).eq("id", existing_id).execute()
+        else:
+            # Prefer upsert when possible (requires a unique constraint on auth_id).
+            upsert = supabase.table("users").upsert(user_row, on_conflict="auth_id").execute()
+            if getattr(upsert, "error", None):
+                raise RuntimeError(str(upsert.error))
     except Exception:
         try:
-            existing = supabase.table("users").select("id").eq("email", email).limit(1).execute()
+            # Last-resort fallback: locate by either auth_id or email.
+            existing = (
+                supabase.table("users")
+                .select("id")
+                .or_(f"auth_id.eq.{auth_id},email.eq.{email}")
+                .limit(1)
+                .execute()
+            )
             existing_row = (getattr(existing, "data", None) or existing.get("data") if isinstance(existing, dict) else []) or []
             existing_id = (existing_row[0].get("id") if existing_row else None)
             if existing_id:
@@ -98,6 +124,37 @@ def admin_create_user():
             return {"ok": False, "error": f"Auth user created, but failed to upsert users row: {e}"}, 500
 
     return {"ok": True, "auth_id": auth_id}
+
+
+@bp.delete("/admin/users/delete")
+@require_role("manager", "hr")
+def delete_user_auth():
+    """Delete a Supabase Auth user by auth_id and return ok/error.
+
+    Body: { "auth_id": "<uuid>" }
+    """
+    body = request.get_json(silent=True) or {}
+    auth_id = (body.get("auth_id") or "").strip()
+
+    if not auth_id:
+        return {"ok": False, "error": "auth_id is required"}, 400
+
+    import os
+
+    if not (os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_SERVICE_KEY")):
+        return {
+            "ok": False,
+            "error": "Backend missing SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SERVICE_KEY) for auth admin operations",
+        }, 500
+
+    supabase = get_supabase_client()
+
+    try:
+        supabase.auth.admin.delete_user(auth_id)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}, 500
+
+    return {"ok": True}
 
 
 @bp.patch("/admin/users/password")

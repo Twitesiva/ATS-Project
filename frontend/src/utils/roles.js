@@ -15,7 +15,7 @@ export const canonicalizeRole = (role) => {
 export const getRoleLabel = (role) => {
   const canonical = canonicalizeRole(role);
 
-  if (canonical === "hr")        return "HR";
+  if (canonical === "hr")        return "Director";
   if (canonical === "manager")   return "Manager";
   if (canonical === "recruiter") return "Recruiter";
   if (canonical === "tl")        return "TL";

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../services/supabaseClient";
 import Loader from "../../components/common/Loader";
+import { useAuth } from "../../context/AuthContext";
+import { getAssignedRecruitersForTL } from "../../services/tlAssignmentsService";
 
 function dedupeHistoryRows(rows) {
   return [...(rows || [])].sort(
@@ -22,6 +24,7 @@ function mapRow(row) {
 }
 
 export default function History() {
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [rows, setRows] = useState([]);
@@ -36,10 +39,51 @@ export default function History() {
   const dragRef = useRef(null);
   const [scrollInfo, setScrollInfo] = useState({ scrollTop: 0, clientHeight: 0, scrollHeight: 0 });
   const [recruiterOptions, setRecruiterOptions] = useState([]);
+  const [assignedRecruiters, setAssignedRecruiters] = useState([]);
+  const [assignmentsLoaded, setAssignmentsLoaded] = useState(false);
 
-  const [tlOptions, setTlOptions] = useState([]);
-  const [selectedTl, setSelectedTl] = useState("all");
-  const [tlRecruiterMap, setTlRecruiterMap] = useState({});
+  const allowedRecruiterNames = useMemo(() => {
+    const tlName = String(user?.name || "").trim();
+    const assigned = (assignedRecruiters || [])
+      .map((r) => String(r?.name || "").trim())
+      .filter(Boolean);
+    const merged = [tlName, ...assigned].filter(Boolean);
+    return Array.from(new Set(merged));
+  }, [assignedRecruiters, user?.name]);
+
+  const allowedRecruiterLowerSet = useMemo(() => {
+    return new Set(
+      allowedRecruiterNames.map((name) => String(name || "").trim().toLowerCase()).filter(Boolean)
+    );
+  }, [allowedRecruiterNames]);
+
+  const recruiterOrFilter = useMemo(() => {
+    // Supabase `.or()` filter for case-insensitive exact match.
+    // Example: "recruiter_name.ilike.Sherin,recruiter_name.ilike.Shiva"
+    // NOTE: We intentionally avoid `.in()` because status_history often contains mixed casing/spacing.
+    const parts = (allowedRecruiterNames || [])
+      .map((name) => String(name || "").trim())
+      .filter(Boolean)
+      // Escape commas to avoid breaking the OR syntax.
+      .map((name) => `recruiter_name.ilike.${name.replaceAll(",", "\\,")}`);
+    return parts.join(",");
+  }, [allowedRecruiterNames]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      if (!user?.id) return;
+      setAssignmentsLoaded(false);
+      const rows = await getAssignedRecruitersForTL(user.id);
+      if (cancelled) return;
+      setAssignedRecruiters(rows || []);
+      setAssignmentsLoaded(true);
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
 
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -49,84 +93,13 @@ export default function History() {
     };
   }, []);
 
-  // Fetch all TLs from users table
-  useEffect(() => {
-    const fetchTLs = async () => {
-      const { data, error } = await supabase
-        .from("users")                  // ← fixed: was "profiles"
-        .select("id, name")
-        .eq("role", "tl")
-        .order("name");
-
-      if (error) {
-        console.error("Failed to fetch TLs", error);
-        return;
-      }
-
-      setTlOptions(data || []);
-    };
-    fetchTLs();
-  }, []);
-
-  // When a TL is selected, fetch their assigned recruiters
-  useEffect(() => {
-    if (selectedTl === "all") return;
-    if (tlRecruiterMap[selectedTl]) return;
-
-    const fetchRecruitersForTL = async () => {
-      // Step 1: get recruiter_ids under this TL
-      const { data: assignments, error: assignErr } = await supabase
-        .from("tl_recruiter_assignments")   // ← fixed: was "tl_assignments"
-        .select("recruiter_id")
-        .eq("tl_id", selectedTl);
-
-      if (assignErr) {
-        console.error("Failed to fetch TL assignments", assignErr);
-        return;
-      }
-
-      const recruiterIds = (assignments || []).map((r) => r.recruiter_id).filter(Boolean);
-
-      if (!recruiterIds.length) {
-        // TL has no assigned recruiters, just show TL's own data
-        const tlName = tlOptions.find((t) => String(t.id) === String(selectedTl))?.name || "";
-        setTlRecruiterMap((prev) => ({
-          ...prev,
-          [selectedTl]: tlName ? [tlName] : [],
-        }));
-        return;
-      }
-
-      // Step 2: get recruiter names from users table using those ids
-      const { data: profiles, error: profileErr } = await supabase
-        .from("users")                      // ← fixed: was "profiles"
-        .select("id, name")
-        .in("id", recruiterIds);
-
-      if (profileErr) {
-        console.error("Failed to fetch recruiter profiles", profileErr);
-        return;
-      }
-
-      // Step 3: include TL's own name so their own history rows show up too
-      const tlName = tlOptions.find((t) => String(t.id) === String(selectedTl))?.name || "";
-
-      const recruiterNames = [
-        tlName,
-        ...(profiles || []).map((p) => (p.name || "").trim()),
-      ].filter(Boolean);
-
-      setTlRecruiterMap((prev) => ({
-        ...prev,
-        [selectedTl]: recruiterNames,
-      }));
-    };
-
-    fetchRecruitersForTL();
-  }, [selectedTl, tlOptions]);
-
   useEffect(() => {
     const fetchRecruiters = async () => {
+      if (!assignmentsLoaded) return;
+      if (allowedRecruiterNames.length === 0) {
+        setRecruiterOptions([]);
+        return;
+      }
       const pageSize = 1000;
       let allNames = [];
       let from = 0;
@@ -136,6 +109,7 @@ export default function History() {
         const { data, error } = await supabase
           .from("status_history")
           .select("recruiter_name")
+          .or(recruiterOrFilter)
           .not("recruiter_name", "is", null)
           .neq("recruiter_name", "")
           .range(from, from + pageSize - 1);
@@ -154,14 +128,22 @@ export default function History() {
       setRecruiterOptions(unique);
     };
     fetchRecruiters();
-  }, []);
+  }, [allowedRecruiterNames, assignmentsLoaded, recruiterOrFilter]);
 
   useEffect(() => {
     let mounted = true;
 
     const loadRows = async () => {
+      if (!user?.id) return;
+      if (!assignmentsLoaded) return;
       setLoading(true);
       setError("");
+
+      if (allowedRecruiterNames.length === 0) {
+        setRows([]);
+        setLoading(false);
+        return;
+      }
 
       const pageSize = 1000;
       let allData = [];
@@ -172,12 +154,13 @@ export default function History() {
         const { data, error } = await supabase
           .from("status_history")
           .select("id,candidate_id,recruiter_name,candidate_name,new_status,updated_at")
+          .or(recruiterOrFilter)
           .order("updated_at", { ascending: false })
           .order("id", { ascending: false })
           .range(from, from + pageSize - 1);
 
         if (error) {
-          console.error("[manager-history] fetch failed", error);
+          console.error("[tl-history] fetch failed", error);
           if (mounted) {
             setError(error.message || "Failed to load history");
             setLoading(false);
@@ -201,12 +184,14 @@ export default function History() {
     loadRows();
 
     const channel = supabase
-      .channel("manager-history-live")
+      .channel(`tl-history-live-${user.id}`)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "status_history" },
         (payload) => {
           setRows((prev) => {
+            const recruiterName = String(payload?.new?.recruiter_name || "").trim();
+            if (!allowedRecruiterLowerSet.has(recruiterName.toLowerCase())) return prev;
             const merged = [payload.new, ...prev];
             return dedupeHistoryRows(merged);
           });
@@ -218,7 +203,7 @@ export default function History() {
       mounted = false;
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [allowedRecruiterLowerSet, assignmentsLoaded, recruiterOrFilter, user?.id]);
 
   const mappedRows = useMemo(() => rows.map(mapRow), [rows]);
 
@@ -251,23 +236,10 @@ export default function History() {
       if (statusValue !== "all" && String(r.status || "").trim().toLowerCase() !== statusValue.trim().toLowerCase()) return false;
 
       // Role filter
-      if (roleFilter === "manager") {
-        const isManager = r.recruiterName?.toLowerCase() === "manager";
-        if (!isManager) return false;
-      } else if (roleFilter === "recruiter") {
-        const isManager = r.recruiterName?.toLowerCase() === "manager";
-        if (isManager) return false;
-      } else if (roleFilter === "tl") {
-        if (selectedTl !== "all") {
-          const allowed = tlRecruiterMap[selectedTl] || [];
-          const recruiterLower = (r.recruiterName || "").trim().toLowerCase();
-          const match = allowed.some((name) => name.trim().toLowerCase() === recruiterLower);
-          if (!match) return false;
-        } else {
-          const tlNames = tlOptions.map((t) => (t.name || "").trim().toLowerCase());
-          const recruiterLower = (r.recruiterName || "").trim().toLowerCase();
-          if (!tlNames.includes(recruiterLower)) return false;
-        }
+      if (roleFilter !== "all") {
+        const isTL = String(r.recruiterName || "").trim().toLowerCase() === String(user?.name || "").trim().toLowerCase();
+        if (roleFilter === "tl" && !isTL) return false;
+        if (roleFilter === "recruiter" && isTL) return false;
       }
 
       // Search filter
@@ -293,7 +265,7 @@ export default function History() {
 
       return true;
     });
-  }, [mappedRows, searchMode, searchText, statusFilter, dateFilter, fromDate, toDate, roleFilter, selectedTl, tlRecruiterMap, tlOptions]);
+  }, [mappedRows, searchMode, searchText, statusFilter, dateFilter, fromDate, toDate, roleFilter, user?.name]);
 
   useEffect(() => {
     const el = tableWrapRef.current;
@@ -380,14 +352,6 @@ export default function History() {
     window.addEventListener("mouseup", onUp);
   };
 
-  const handleRoleFilter = (role) => {
-    setRoleFilter((prev) => {
-      const next = prev === role ? "all" : role;
-      if (next !== "tl") setSelectedTl("all");
-      return next;
-    });
-  };
-
   const STATUS_OPTIONS = useMemo(
     () => [
       "Profile Submitted",
@@ -414,6 +378,10 @@ export default function History() {
     []
   );
 
+  const handleRoleFilter = (role) => {
+    setRoleFilter((prev) => (prev === role ? "all" : role));
+  };
+
   return (
     <div style={styles.page}>
       <style>{`
@@ -423,14 +391,13 @@ export default function History() {
 
       <h2 style={styles.title}>Recruiters History</h2>
 
-      {/* Role buttons */}
       <div style={styles.roleCards}>
         <button
           type="button"
-          onClick={() => handleRoleFilter("manager")}
-          style={roleFilter === "manager" ? styles.roleCardActive : styles.roleCard}
+          onClick={() => handleRoleFilter("tl")}
+          style={roleFilter === "tl" ? styles.roleCardActive : styles.roleCard}
         >
-          Manager
+          TL
         </button>
         <button
           type="button"
@@ -439,28 +406,6 @@ export default function History() {
         >
           Recruiter
         </button>
-        <button
-          type="button"
-          onClick={() => handleRoleFilter("tl")}
-          style={roleFilter === "tl" ? styles.roleCardActive : styles.roleCard}
-        >
-          TL
-        </button>
-
-        {roleFilter === "tl" && (
-          <select
-            value={selectedTl}
-            onChange={(e) => setSelectedTl(e.target.value)}
-            style={styles.tlSelect}
-          >
-            <option value="all">All TLs</option>
-            {tlOptions.map((tl) => (
-              <option key={tl.id} value={tl.id}>
-                {tl.name}
-              </option>
-            ))}
-          </select>
-        )}
       </div>
 
       <div style={styles.filtersBar}>
@@ -533,7 +478,6 @@ export default function History() {
             setFromDate("");
             setToDate("");
             setRoleFilter("all");
-            setSelectedTl("all");
           }}
           style={styles.clearBtn}
         >
@@ -624,7 +568,6 @@ const styles = {
     display: "flex",
     gap: "10px",
     marginBottom: "12px",
-    alignItems: "center",
   },
   roleCard: {
     padding: "10px 20px",
@@ -645,18 +588,6 @@ const styles = {
     fontWeight: 600,
     fontSize: "14px",
     color: "#fff",
-  },
-  tlSelect: {
-    height: "40px",
-    padding: "0 12px",
-    borderRadius: "10px",
-    border: "1px solid #2563eb",
-    background: "#eff6ff",
-    color: "#1d4ed8",
-    fontWeight: 600,
-    fontSize: "14px",
-    cursor: "pointer",
-    minWidth: "160px",
   },
   filtersBar: {
     display: "flex",

@@ -1,6 +1,47 @@
 import { supabase } from "./supabaseClient";
 import { sanitizeMarginValue, normalizeRecruiter, normalizeStatus, parseRevenueValue } from "../utils/reportHelpers";
 
+// Reports Status dropdown categories -> DB statuses (`candidate_records.status`)
+export const STATUS_CATEGORY_TO_DB_STATUSES = {
+  "All Status": [],
+  "Submitted": ["Profile Submitted"],
+  "Interview In Progress": [
+    "Feedback Pending",
+    "Assessment Round",
+    "Director Round",
+    "L1 Scheduled",
+    "L2 Scheduled",
+    "Interview Scheduled",
+  ],
+  "AI Interview": ["AI Interview"],
+  "Offered": ["Offered"],
+  "Closed": ["Closure", "Position Closed"],
+  "Dropped": [
+    "Duplicate",
+    "Drop Out By Client",
+    "Drop Out By Candidate",
+    "Backout",
+  ],
+  "Interview Rejected": [
+    "L1 Reject",
+    "L2 Reject",
+    "Final Round Rejected",
+  ],
+  "Screening Selected": ["Shortlisted"],
+  "On Hold": ["Position Hold"],
+};
+
+const mapDbStatusToCategory = (dbStatus) => {
+  const raw = String(dbStatus || "").trim();
+  if (!raw) return "Unknown";
+  for (const [category, statuses] of Object.entries(STATUS_CATEGORY_TO_DB_STATUSES)) {
+    if (category === "All Status") continue;
+    if (statuses.includes(raw)) return category;
+  }
+  // fallback for any unexpected DB statuses
+  return normalizeStatus(raw);
+};
+
 const isValidDate = (value) => {
   const date = new Date(value);
   return !Number.isNaN(date.getTime());
@@ -20,10 +61,20 @@ const applyCandidateFilters = (query, filters = {}) => {
   const dateField = filters.candidateDateField || "created_at";
   const isTimestampField = dateField === "created_at";
 
+  if (Array.isArray(filters.clientIn) && filters.clientIn.length) {
+    q = q.in("client_name", filters.clientIn);
+  }
+
+  if (Array.isArray(filters.recruiterIn) && filters.recruiterIn.length) {
+    q = q.in("recruiter", filters.recruiterIn);
+  }
+
   if (filters.fromDate && isValidDate(filters.fromDate)) {
     q = q.gte(
       dateField,
-      isTimestampField ? new Date(filters.fromDate).toISOString() : toDateInputValue(filters.fromDate)
+      isTimestampField
+        ? new Date(filters.fromDate).toISOString()
+        : toDateInputValue(filters.fromDate)
     );
   }
 
@@ -32,7 +83,9 @@ const applyCandidateFilters = (query, filters = {}) => {
     end.setHours(23, 59, 59, 999);
     q = q.lte(
       dateField,
-      isTimestampField ? end.toISOString() : toDateInputValue(end)
+      isTimestampField
+        ? end.toISOString()
+        : toDateInputValue(end)
     );
   }
 
@@ -41,7 +94,10 @@ const applyCandidateFilters = (query, filters = {}) => {
   }
 
   if (filters.status) {
-    q = q.eq("status", filters.status);
+    const category = String(filters.status || "").trim();
+    const mapped = STATUS_CATEGORY_TO_DB_STATUSES[category];
+    if (Array.isArray(mapped) && mapped.length) q = q.in("status", mapped);
+    else if (category && category !== "All Status") q = q.eq("status", category);
   }
 
   if (filters.recruiter) {
@@ -53,6 +109,14 @@ const applyCandidateFilters = (query, filters = {}) => {
 
 const applyRevenueFilters = (query, filters = {}) => {
   let q = query;
+
+  if (Array.isArray(filters.clientIn) && filters.clientIn.length) {
+    q = q.in("client_name", filters.clientIn);
+  }
+
+  if (Array.isArray(filters.recruiterNameIn) && filters.recruiterNameIn.length) {
+    q = q.in("recruiter_name", filters.recruiterNameIn);
+  }
 
   if (filters.fromDate && isValidDate(filters.fromDate)) {
     q = q.gte("doj", filters.fromDate);
@@ -145,7 +209,7 @@ export const getCandidateStats = async (filters = {}) => {
 
     const totalCandidates = rows.length;
     const interviewsScheduled = rows.filter((r) =>
-      ["L1 Scheduled","L2 Scheduled","AI Interview","Assessment Round","HR Round","Interview Scheduled"].includes(r.status)
+      ["L1 Scheduled","L2 Scheduled","AI Interview","Assessment Round","HR Round","Director Round","Interview Scheduled"].includes(r.status)
     ).length;
     const shortlisted = rows.filter((r) => r.status === "Shortlisted").length;
 
@@ -219,7 +283,7 @@ export const getRecruiterPerformance = async (filters = {}) => {
     const current = map.get(recruiter) || { recruiter, candidates: 0, interviews: 0, closures: 0 };
 
     current.candidates += 1;
-    if (["L1 Scheduled","L2 Scheduled","AI Interview","Assessment Round","HR Round","Interview Scheduled"].includes(row.status)) current.interviews += 1;
+    if (["L1 Scheduled","L2 Scheduled","AI Interview","Assessment Round","HR Round","Director Round","Interview Scheduled"].includes(row.status)) current.interviews += 1;
     if (row.status === "Closure") current.closures += 1;
 
     map.set(recruiter, current);
@@ -304,7 +368,7 @@ export const getClientPerformance = async (filters = {}) => {
     const current = map.get(client) || { client, candidates: 0, interviews: 0, shortlisted: 0, closures: 0, revenue: 0 };
 
     current.candidates += 1;
-    if (["L1 Scheduled","L2 Scheduled","AI Interview","Assessment Round","HR Round","Interview Scheduled"].includes(row.status)) current.interviews += 1;
+    if (["L1 Scheduled","L2 Scheduled","AI Interview","Assessment Round","HR Round","Director Round","Interview Scheduled"].includes(row.status)) current.interviews += 1;
     if (row.status === "Shortlisted") current.shortlisted += 1;
     if (row.status === "Closure") current.closures += 1;
 
@@ -406,7 +470,7 @@ export const getReportsTableData = async (filters = {}) => {
     const current = map.get(key) || { client: clientRaw, recruiter: recruiterNorm, candidates: 0, interviews: 0, shortlisted: 0, closures: 0, revenue: 0 };
 
     current.candidates += 1;
-    if (["L1 Scheduled","L2 Scheduled","AI Interview","Assessment Round","HR Round","Interview Scheduled"].includes(row.status)) current.interviews += 1;
+    if (["L1 Scheduled","L2 Scheduled","AI Interview","Assessment Round","HR Round","Director Round","Interview Scheduled"].includes(row.status)) current.interviews += 1;
     if (row.status === "Shortlisted") current.shortlisted += 1;
     if (row.status === "Closure") current.closures += 1;
 
@@ -473,7 +537,7 @@ export const getFilterOptions = async (filters = {}) => {
   const statuses = [
     ...new Set(
       statusesData
-        .map((r) => normalizeStatus(String(r.status || "").trim()))
+        .map((r) => mapDbStatusToCategory(r.status))
         .filter(Boolean)
     ),
   ].sort((a, b) => a.localeCompare(b));

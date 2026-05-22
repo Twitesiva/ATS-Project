@@ -47,7 +47,7 @@ export default function Login({ title = "ATS Login" }) {
     }
   };
 
-  const resolvedTitle = location.pathname === "/hr-login" ? "HR Login" : title;
+  const resolvedTitle = location.pathname === "/hr-login" ? "Director Login" : title;
 
   return (
     <div style={styles.container}>
@@ -95,7 +95,7 @@ export default function Login({ title = "ATS Login" }) {
               onClick={() => navigate("/signup")}
               style={styles.signupBtn}
             >
-              Sign Up (HR Only)
+              Sign Up (Director Only)
             </button>
           </form>
         )}

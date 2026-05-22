@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Loader from "../../components/common/Loader";
 import { supabase } from "../../services/supabaseClient";
+import { useAuth } from "../../context/AuthContext";
+import { getAssignedRecruitersForTL } from "../../services/tlAssignmentsService";
 import {
   getRecruiterPerformance
 } from "../../services/reportsService";
@@ -54,8 +56,11 @@ const toNumber = (value) => {
 };
 
 export default function Dashboard() {
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [analyticsLoading, setAnalyticsLoading] = useState(true);
+  const [assignedRecruiters, setAssignedRecruiters] = useState([]);
+  const [assignmentsLoaded, setAssignmentsLoaded] = useState(false);
 
   const [kpis, setKpis] = useState({
     totalActiveCandidates: 0,
@@ -71,9 +76,71 @@ export default function Dashboard() {
   const [activeIndex, setActiveIndex] = useState(null);
   const [selectedMetric, setSelectedMetric] = useState(null);
 
+  const assignedRecruiterNames = useMemo(() => {
+    return (assignedRecruiters || [])
+      .map((r) => String(r?.name || "").trim())
+      .filter(Boolean);
+  }, [assignedRecruiters]);
+
+  const assignedRecruiterKeySet = useMemo(() => {
+    return new Set(assignedRecruiterNames.map((n) => normalizeRecruiter(n)));
+  }, [assignedRecruiterNames]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setAssignmentsLoaded(false);
+      const rows = await getAssignedRecruitersForTL(user?.id);
+      if (cancelled) return;
+      setAssignedRecruiters(rows || []);
+      setAssignmentsLoaded(true);
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
   const loadDashboardKPIs = useCallback(async () => {
     setLoading(true);
     const { start, end } = getMonthBounds();
+
+    if (!assignmentsLoaded) {
+      setLoading(false);
+      return;
+    }
+
+    if (assignedRecruiterNames.length === 0) {
+      setKpis({
+        totalActiveCandidates: 0,
+        totalOpenPositions: 0,
+        totalInterviewsScheduled: 0,
+        totalClosuresThisMonth: 0,
+        revenueThisMonth: 0,
+        overallMarginPercent: 0,
+      });
+      setLoading(false);
+      return;
+    }
+
+    // Derive TL client scope from candidate activity of assigned recruiters
+    const { data: teamClients, error: teamClientsError } = await supabase
+      .from("candidate_records")
+      .select("client_name")
+      .in("recruiter", assignedRecruiterNames)
+      .not("client_name", "is", null);
+
+    if (teamClientsError) {
+      console.error("[tl-dashboard] failed to derive team client scope", teamClientsError);
+    }
+
+    const clientNames = Array.from(
+      new Set(
+        (teamClients || [])
+          .map((r) => String(r.client_name || "").trim())
+          .filter(Boolean)
+      )
+    );
 
     const [
       activeCandidatesRes,
@@ -86,11 +153,15 @@ export default function Dashboard() {
       supabase
         .from("candidate_records")
         .select("*", { count: "exact" })
+        .in("recruiter", assignedRecruiterNames)
         .not("status", "in", "(Closure,Drop Out By Client,Drop Out By Candidate,Backout,Position Closed,L1 Reject,L2 Reject,Final Round Rejected)"),
-      supabase.from("client_records").select("number_of_openings,closure"),
+      clientNames.length
+        ? supabase.from("client_records").select("number_of_openings,closure").in("client_name", clientNames)
+        : supabase.from("client_records").select("number_of_openings,closure").limit(0),
       supabase
         .from("candidate_records")
         .select("*", { count: "exact" })
+        .in("recruiter", assignedRecruiterNames)
         .in("status", [
           "L1 Scheduled",
           "L2 Scheduled",
@@ -103,12 +174,17 @@ export default function Dashboard() {
       supabase
         .from("revenue_tracker")
         .select("*", { count: "exact" })
+        .in("recruiter_name", assignedRecruiterNames)
         .gte("doj", start)
         .lte("doj", end),
       supabase
         .from("revenue_tracker")
-        .select("margin_value,doj"),
-      supabase.from("revenue_tracker").select("margin_value,billing_rate"),
+        .select("margin_value,doj")
+        .in("recruiter_name", assignedRecruiterNames),
+      supabase
+        .from("revenue_tracker")
+        .select("margin_value,billing_rate")
+        .in("recruiter_name", assignedRecruiterNames),
     ]);
 
     const errors = [
@@ -160,15 +236,27 @@ export default function Dashboard() {
     });
 
     setLoading(false);
-  }, []);
+  }, [assignedRecruiterNames, assignmentsLoaded]);
 
   const loadRecruiterAnalytics = useCallback(async () => {
     setAnalyticsLoading(true);
 
     try {
+      if (!assignmentsLoaded) {
+        setRecruiterAnalytics([]);
+        return;
+      }
+      if (assignedRecruiterNames.length === 0) {
+        setRecruiterAnalytics([]);
+        return;
+      }
+
       const [recruiterPerf, revenueRes] = await Promise.all([
         getRecruiterPerformance({}),
-        supabase.from("revenue_tracker").select("recruiter_name, margin_value"),
+        supabase
+          .from("revenue_tracker")
+          .select("recruiter_name, margin_value")
+          .in("recruiter_name", assignedRecruiterNames),
       ]);
 
       if (revenueRes.error) {
@@ -188,16 +276,18 @@ export default function Dashboard() {
 
       // Transform: candidates/interviews from getRecruiterPerformance,
       // closures and revenue from revenue_tracker
-      const transformed = (recruiterPerf || []).map(r => ({
-        ...r,
-        candidatesAdded: r.candidates ?? r.candidatesAdded ?? 0,
-        closures: closuresMap[normalizeRecruiter(r.recruiter)] ?? 0,
-        revenue: revenueMap[normalizeRecruiter(r.recruiter)] ?? 0,
-      }));
+      const transformed = (recruiterPerf || [])
+        .filter((r) => assignedRecruiterKeySet.has(normalizeRecruiter(r.recruiter)))
+        .map((r) => ({
+          ...r,
+          candidatesAdded: r.candidates ?? r.candidatesAdded ?? 0,
+          closures: closuresMap[normalizeRecruiter(r.recruiter)] ?? 0,
+          revenue: revenueMap[normalizeRecruiter(r.recruiter)] ?? 0,
+        }));
 
       // Also add any recruiters present in revenue_tracker but missing from getRecruiterPerformance
       const existingNames = new Set(transformed.map(r => normalizeRecruiter(r.recruiter)));
-      Object.keys(revenueMap).forEach(name => {
+      Object.keys(revenueMap).forEach((name) => {
         if (!existingNames.has(name)) {
           transformed.push({
             recruiter: name,
@@ -220,7 +310,7 @@ export default function Dashboard() {
     } finally {
       setAnalyticsLoading(false);
     }
-  }, []);
+  }, [assignedRecruiterKeySet, assignedRecruiterNames, assignmentsLoaded]);
 
   useEffect(() => {
     loadDashboardKPIs();

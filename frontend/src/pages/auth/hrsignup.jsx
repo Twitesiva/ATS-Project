@@ -176,14 +176,14 @@ export default function HRSignup() {
         {/* ── First-setup banner (only shown when no HR exists) ── */}
         {isFirstSetup && (
           <div style={styles.setupBanner}>
-            🚀 No HR account found. Please create the first HR account to get started.
+            🚀 No Director account found. Please create the first Director account to get started.
           </div>
         )}
 
         {/* Step 1: Secret Code */}
         {step === STEPS.CODE && (
           <>
-            <h2 style={styles.title}>HR Sign Up</h2>
+            <h2 style={styles.title}>Director Sign Up</h2>
             <p style={styles.subtitle}>Enter the secret code to continue</p>
             <div style={styles.form}>
               <input
@@ -212,7 +212,7 @@ export default function HRSignup() {
         {/* Step 2: Register */}
         {step === STEPS.REGISTER && (
           <>
-            <h2 style={styles.title}>Create HR Account</h2>
+            <h2 style={styles.title}>Create Director Account</h2>
             <p style={styles.subtitle}>Fill in your details below</p>
             <div style={styles.form}>
               <input
@@ -262,7 +262,7 @@ export default function HRSignup() {
             <div style={styles.successIcon}>✓</div>
             <h2 style={styles.title}>Account Created!</h2>
             <p style={styles.subtitle}>
-              Your HR account has been created. You can now log in.
+              Your Director account has been created. You can now log in.
             </p>
             <button onClick={() => navigate("/login")} style={styles.primaryBtn}>
               Go to Login

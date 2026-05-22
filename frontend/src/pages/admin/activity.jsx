@@ -94,7 +94,7 @@ const bdes = allRows.filter((r) => String(r.role || "").toLowerCase() === "bde")
 
   return (
     <div style={styles.page}>
-      <h2 style={styles.title}>HR Activity</h2>
+      <h2 style={styles.title}>Director Activity</h2>
 
       <div style={styles.roleCards}>
         <button

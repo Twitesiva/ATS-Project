@@ -51,10 +51,16 @@ CORS(
     resources={
         r"/api/*": {
             "origins": "*",
-            "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],  # ✅ added PATCH
+            "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+            "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"],
+        },
+        r"/*": {
+            "origins": "*",
+            "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
             "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"],
         }
     },
+    supports_credentials=True,
 )
 
 init_db()

@@ -188,6 +188,20 @@ export default function AdminManagers() {
         return;
       }
     }
+    // Before calling addRecruiter, check for existing email (prevents duplicate profile rows)
+    const normalizedEmail = (form.email || "").trim().toLowerCase();
+
+    const { data: existing } = await supabase
+      .from("users")
+      .select("id")
+      .eq("email", normalizedEmail)
+      .maybeSingle();
+
+    if (existing) {
+      setError("A user with this email already exists.");
+      return;
+    }
+
 
     const result = await addRecruiter({
       email: form.email.trim(),
@@ -314,28 +328,56 @@ export default function AdminManagers() {
     await loadUsers();
   };
 
+
+
   const handleDeleteUser = async (user, role) => {
     const ok = window.confirm(`Are you sure you want to delete this ${getRoleLabel(role)}?`);
     if (!ok) return;
 
     setActionBusyId(user.id);
-    const { error: deleteError } = await supabase.from("users").delete().eq("id", user.id);
-    setActionBusyId(null);
 
-    if (deleteError) {
-      setError(deleteError.message || "Failed to delete user");
+    // Delete from Auth via your admin API (needs auth_id)
+    if (!user?.auth_id) {
+      setActionBusyId(null);
+      setError("Missing auth_id for this user. Cannot delete Supabase Auth account.");
       return;
     }
 
-    setMessage(`${getRoleLabel(role)} deleted successfully`);
-    await loadUsers();
-  };
 
-  if (loading) return <Loader text="Loading HR user management..." />;
+  const authRes = await apiFetch("/admin/users/delete", {
+    method: "DELETE",
+    body: JSON.stringify({ auth_id: user.auth_id }),
+  });
+
+  if (!authRes.ok) {
+    const body = await authRes.json().catch(() => ({}));
+    setActionBusyId(null);
+    setError(body?.error || "Failed to delete Supabase Auth user");
+    return;
+  }
+
+  // Delete from users table
+  const { error: deleteError } = await supabase
+    .from("users")
+    .delete()
+    .eq("id", user.id);
+
+  setActionBusyId(null);
+
+  if (deleteError) {
+    setError(deleteError.message || "Failed to delete user");
+    return;
+  }
+
+  setMessage(`${getRoleLabel(role)} deleted successfully`);
+  await loadUsers();
+};
+
+  if (loading) return <Loader text="Loading Director user management..." />;
 
   return (
     <div style={styles.page}>
-      <h2 style={styles.title}>HR User Management</h2>
+      <h2 style={styles.title}>Director User Management</h2>
       {error && <p style={styles.error}>{error}</p>}
       {message && <p style={styles.success}>{message}</p>}
 
@@ -385,9 +427,9 @@ export default function AdminManagers() {
             type="tel"
             inputMode="numeric"
             maxLength={10}
-            pattern="\\d{10}"
+            pattern="^[0-9]{10}$"
             value={form.phone}
-            onChange={(e) => handleFormChange("phone", e.target.value)}
+            onChange={(e) => handleFormChange("phone", normalizePhone10(e.target.value))}
           />
           <input style={styles.input} value={getRoleLabel(form.role)} readOnly />
           <button type="submit" style={styles.primaryBtn}>
@@ -485,7 +527,7 @@ export default function AdminManagers() {
                 type="tel"
                 inputMode="numeric"
                 maxLength={10}
-                pattern="\\d{10}"
+                pattern="^[0-9]{10}$"
                 onChange={(e) => setEditForm((prev) => ({ ...prev, phone: normalizePhone10(e.target.value) }))}
               />
               <select

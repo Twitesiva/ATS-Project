@@ -2,7 +2,16 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { supabase } from "./services/supabaseClient";
 import { getRoleHomePath } from "./utils/roles";
-
+// Add these imports
+import TLLayout from "./components/layout/TLLayout";
+import TLDashboard from "./pages/tl/Dashboard";
+import TLATSMatch from "./pages/manager/ATSMatch";
+import TLATSSearch from "./pages/manager/ATSSearch";
+import TLClients from "./pages/manager/Clients";
+import TLData from "./pages/tl/Data";
+import TLHistory from "./pages/tl/History";
+import TLTeamRevenue from "./pages/tl/TeamRevenueTracker";
+import TLReports from "./pages/tl/Reports";
 import ProtectedRoute from "./components/common/ProtectedRoute";
 import { AuthProvider } from "./context/AuthContext";
 
@@ -162,7 +171,19 @@ export default function App() {
               <Route path="reports" element={<RecruiterReports />} />
             </Route>
           </Route>
-
+{/* ---------------- TL ---------------- */}
+<Route element={<ProtectedRoute role="tl" />}>
+  <Route path="/tl" element={<TLLayout />}>
+    <Route index element={<Navigate to="dashboard" />} />
+    <Route path="dashboard"  element={<TLDashboard />} />
+    <Route path="ats-match"  element={<TLATSMatch />} />
+    <Route path="ats-search" element={<TLATSSearch />} />
+    <Route path="data"       element={<TLData />} />
+    <Route path="rec-hist"   element={<TLHistory />} />
+    <Route path="tem-trac"   element={<TLTeamRevenue />} />
+    <Route path="reports"    element={<TLReports />} />
+  </Route>
+</Route>
           {/* ---------------- BDE ---------------- */}
           <Route element={<ProtectedRoute role="bde" />}>
             <Route path="/bde" element={<BDELayout />}>

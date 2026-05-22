@@ -113,7 +113,7 @@ export default function AdminDashboard() {
     loadDashboard();
   }, [loadDashboard]);
 
-  if (loading) return <Loader text="Loading HR dashboard..." />;
+  if (loading) return <Loader text="Loading Director dashboard..." />;
 
   const cards = [
     { title: "Total Managers", value: kpis.totalManagers, rawValue: kpis.totalManagers },
@@ -127,7 +127,7 @@ export default function AdminDashboard() {
 
   return (
     <div style={styles.page}>
-      <h2 style={styles.title}>HR Dashboard</h2>
+      <h2 style={styles.title}>Director Dashboard</h2>
 
       <div style={styles.kpiGrid}>
         {cards.map((card) => {
