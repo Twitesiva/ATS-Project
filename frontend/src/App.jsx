@@ -89,7 +89,8 @@ function RootRedirect() {
 
         // No session → check if HR exists
         const { data: hrExists } = await supabase.rpc("check_hr_exists");
-        setDestination(hrExists ? "/login" : "/signup");
+        // ✅ Fixed
+setDestination("/login");
       } catch (err) {
         console.error("[RootRedirect]", err);
         setDestination("/login");

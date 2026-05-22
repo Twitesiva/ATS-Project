@@ -13,7 +13,6 @@ const columns = [
   { key: "location", label: "Location" },
 ];
 
-// ✅ offered_ctc removed from table
 const tableColumns = [
   ...columns,
   { key: "bd_name", label: "BD Name" },
@@ -64,7 +63,6 @@ const formatCurrency = (v) => {
   return `\u20B9${parsed.toLocaleString("en-IN")}`;
 };
 
-// ✅ offered_ctc removed from emptyForm
 const emptyForm = {
   ...tableColumns.reduce((acc, col) => {
     acc[col.key] = "";
@@ -93,6 +91,84 @@ export default function TeamTracker() {
   const [showModal, setShowModal] = useState(false);
   const [editRecord, setEditRecord] = useState(null);
   const [form, setForm] = useState({ ...emptyForm });
+
+  // ── NEW: TL state ──────────────────────────────────────────
+  const [tlOptions, setTlOptions] = useState([]);           // [{ id, name }]
+  const [selectedTl, setSelectedTl] = useState("");         // tl user id or ""
+  const [tlRecruiterNames, setTlRecruiterNames] = useState([]); // recruiter names under selected TL
+  // ───────────────────────────────────────────────────────────
+
+  // ── NEW: Fetch all TLs ─────────────────────────────────────
+  useEffect(() => {
+    const fetchTLs = async () => {
+      const { data, error } = await supabase
+          .from("users")
+        .select("id, name")
+        .eq("role", "tl")
+        .order("name");
+
+      if (error) {
+        console.error("Failed to fetch TLs", error);
+        return;
+      }
+      setTlOptions(data || []);
+    };
+    fetchTLs();
+  }, []);
+  // ───────────────────────────────────────────────────────────
+
+  // ── NEW: When TL selected, fetch their recruiter names ─────
+  useEffect(() => {
+    if (!selectedTl) {
+      setTlRecruiterNames([]);
+      return;
+    }
+
+    const fetchTLRecruiters = async () => {
+      // Step 1: get recruiter_ids under this TL
+      const { data: assignments, error: assignErr } = await supabase
+        .from("tl_recruiter_assignments")
+        .select("recruiter_id")
+        .eq("tl_id", selectedTl);
+
+      if (assignErr) {
+        console.error("Failed to fetch TL assignments", assignErr);
+        return;
+      }
+
+      const recruiterIds = (assignments || [])
+        .map((r) => r.recruiter_id)
+        .filter(Boolean);
+
+      // Step 2: get names from profiles
+      const tlName = tlOptions.find((t) => String(t.id) === String(selectedTl))?.name || "";
+
+      if (!recruiterIds.length) {
+        setTlRecruiterNames(tlName ? [tlName] : []);
+        return;
+      }
+
+      const { data: profiles, error: profileErr } = await supabase
+          .from("users")
+        .select("id, name")
+        .in("id", recruiterIds);
+
+      if (profileErr) {
+        console.error("Failed to fetch recruiter profiles", profileErr);
+        return;
+      }
+
+      const names = [
+        tlName,
+        ...(profiles || []).map((p) => (p.name || "").trim()),
+      ].filter(Boolean);
+
+      setTlRecruiterNames(names);
+    };
+
+    fetchTLRecruiters();
+  }, [selectedTl, tlOptions]);
+  // ───────────────────────────────────────────────────────────
 
   const handleFileUpload = async () => {
     if (!file) return;
@@ -148,10 +224,16 @@ export default function TeamTracker() {
 
     if (fromDate) query = query.gte("doj", fromDate);
     if (toDate) query = query.lte("doj", toDate);
-    if (selectedRecruiter) query = query.eq("recruiter_name", selectedRecruiter);
     if (selectedBde) query = query.eq("bd_name", selectedBde);
     if (clientSearch.trim()) query = query.ilike("client_name", `%${clientSearch.trim()}%`);
     if (locationSearch.trim()) query = query.ilike("location", `%${locationSearch.trim()}%`);
+
+    // ── NEW: TL filter takes priority over individual recruiter filter ──
+    if (selectedTl && tlRecruiterNames.length > 0) {
+      query = query.in("recruiter_name", tlRecruiterNames);
+    } else if (selectedRecruiter) {
+      query = query.eq("recruiter_name", selectedRecruiter);
+    }
 
     const { data, error } = await query;
     if (error) {
@@ -163,7 +245,7 @@ export default function TeamTracker() {
 
     setRecords(data || []);
     setLoading(false);
-  }, [fromDate, toDate, selectedRecruiter, selectedBde, clientSearch, locationSearch]);
+  }, [fromDate, toDate, selectedRecruiter, selectedBde, clientSearch, locationSearch, selectedTl, tlRecruiterNames]);
 
   const fetchRecruiterOptions = useCallback(async () => {
     const { data, error } = await supabase
@@ -217,8 +299,7 @@ export default function TeamTracker() {
           fetchRecruiterOptions();
         }
       )
-      .subscribe((status) => {
-      });
+      .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
@@ -252,14 +333,11 @@ export default function TeamTracker() {
     setEditRecord(null);
   };
 
-  // ✅ Option A: both Permanent and Temporary use Margin = Billing Rate - CTC
-  // Auto-calc but margin_value stays editable if user wants to override
   const calculateMargins = (row) => {
     const billingRate = numeric(row.billing_rate);
     const ctc = numeric(row.ctc);
 
     if (billingRate === null || ctc === null) {
-      // If margin_value was manually typed, keep margin_percent in sync
       const marginValue = numeric(row.margin_value);
       const margin_percent =
         billingRate !== null && billingRate !== 0 && marginValue !== null
@@ -281,7 +359,6 @@ export default function TeamTracker() {
   const handleChange = (e) => {
     const { name, value } = e.target;
     setForm((prev) => {
-      // Enforce numbers-only for CTC/ECTC/Billing fields.
       if (name === "ctc" || name === "offered_ctc" || name === "billing_rate") {
         const isNumericOnly = /^\d*$/.test(String(value));
         if (!isNumericOnly) return prev;
@@ -289,7 +366,6 @@ export default function TeamTracker() {
 
       const next = { ...prev, [name]: value };
 
-      // ✅ If user manually edits margin_value, only recalc margin_percent
       if (name === "margin_value") {
         const billingRate = numeric(next.billing_rate);
         const marginValue = numeric(value);
@@ -300,7 +376,6 @@ export default function TeamTracker() {
         return { ...next, margin_percent: margin_percent ?? "" };
       }
 
-      // ✅ For billing_rate or ctc changes — auto-calc margin_value and margin_percent
       if (name === "billing_rate" || name === "ctc") {
         const margins = calculateMargins(next);
         return {
@@ -334,8 +409,6 @@ export default function TeamTracker() {
       }
     });
 
-    // ✅ Both Permanent and Temporary: use whatever margin_value user has (auto or manual)
-    // margin_percent is always auto from margin_value / billing_rate
     const billingRate = numeric(row.billing_rate);
     const marginValue = numeric(row.margin_value);
     payload.margin_value = marginValue;
@@ -418,16 +491,34 @@ export default function TeamTracker() {
           + Add Revenue
         </button>
 
+        {/* All Recruiters — disabled when a TL is selected */}
         <select
           value={selectedRecruiter}
           onChange={(e) => setSelectedRecruiter(e.target.value)}
-          style={styles.select}
+          style={{
+            ...styles.select,
+            opacity: selectedTl ? 0.4 : 1,
+            pointerEvents: selectedTl ? "none" : "auto",
+          }}
         >
           <option value="">All Recruiters</option>
           {recruiterOptions.map((name) => (
-            <option key={name} value={name}>
-              {name}
-            </option>
+            <option key={name} value={name}>{name}</option>
+          ))}
+        </select>
+
+        {/* ── NEW: All TLs dropdown ── */}
+        <select
+          value={selectedTl}
+          onChange={(e) => {
+            setSelectedTl(e.target.value);
+            setSelectedRecruiter(""); // clear recruiter filter when TL is picked
+          }}
+          style={styles.select}
+        >
+          <option value="">All TLs</option>
+          {tlOptions.map((tl) => (
+            <option key={tl.id} value={tl.id}>{tl.name}</option>
           ))}
         </select>
 
@@ -438,9 +529,7 @@ export default function TeamTracker() {
         >
           <option value="">All BDs</option>
           {bdeOptions.map((name) => (
-            <option key={name} value={name}>
-              {name}
-            </option>
+            <option key={name} value={name}>{name}</option>
           ))}
         </select>
 
@@ -500,9 +589,7 @@ export default function TeamTracker() {
             <thead>
               <tr>
                 {tableColumns.map((c) => (
-                  <th key={c.key} style={styles.th}>
-                    {c.label}
-                  </th>
+                  <th key={c.key} style={styles.th}>{c.label}</th>
                 ))}
                 <th style={styles.th}>Actions</th>
               </tr>
@@ -616,7 +703,6 @@ function TeamRevenueModal({ form, saving, editing, bdeOptions, onChange, onClose
                 <h4 style={styles.sectionTitle}>Revenue Details</h4>
               </div>
               <div style={styles.sectionGrid}>
-                {/* Base fields */}
                 {baseFields.map((col) => (
                   <label key={col.key} style={styles.fieldLabel}>
                     {col.label}
@@ -630,7 +716,6 @@ function TeamRevenueModal({ form, saving, editing, bdeOptions, onChange, onClose
                   </label>
                 ))}
 
-                {/* BD Name */}
                 <label style={styles.fieldLabel}>
                   BD Name
                   <select
@@ -641,14 +726,11 @@ function TeamRevenueModal({ form, saving, editing, bdeOptions, onChange, onClose
                   >
                     <option value="">Select BD</option>
                     {(bdeOptions || []).map((name) => (
-                      <option key={name} value={name}>
-                        {name}
-                      </option>
+                      <option key={name} value={name}>{name}</option>
                     ))}
                   </select>
                 </label>
 
-                {/* Hire Type */}
                 <label style={styles.fieldLabel}>
                   Hire
                   <select
@@ -663,7 +745,6 @@ function TeamRevenueModal({ form, saving, editing, bdeOptions, onChange, onClose
                   </select>
                 </label>
 
-                {/* ✅ PERMANENT: CTC + Billing Rate → auto Margin = BR - CTC, editable, auto Margin % */}
                 {isPermanent && (
                   <>
                     <label style={styles.fieldLabel}>
@@ -677,7 +758,6 @@ function TeamRevenueModal({ form, saving, editing, bdeOptions, onChange, onClose
                         placeholder="Enter CTC"
                       />
                     </label>
-
                     <label style={styles.fieldLabel}>
                       Billing Rate
                       <input
@@ -689,7 +769,6 @@ function TeamRevenueModal({ form, saving, editing, bdeOptions, onChange, onClose
                         placeholder="Enter billing rate"
                       />
                     </label>
-
                     <label style={styles.fieldLabel}>
                       Margin (auto = BR − CTC, editable)
                       <input
@@ -701,7 +780,6 @@ function TeamRevenueModal({ form, saving, editing, bdeOptions, onChange, onClose
                         placeholder="Auto-calculated, override if needed"
                       />
                     </label>
-
                     <label style={styles.fieldLabel}>
                       Margin %
                       <input
@@ -716,7 +794,6 @@ function TeamRevenueModal({ form, saving, editing, bdeOptions, onChange, onClose
                   </>
                 )}
 
-                {/* ✅ TEMPORARY: CTC + Billing Rate → auto Margin + auto Margin % (both editable) */}
                 {isTemporary && (
                   <>
                     <label style={styles.fieldLabel}>
@@ -730,7 +807,6 @@ function TeamRevenueModal({ form, saving, editing, bdeOptions, onChange, onClose
                         placeholder="Enter CTC"
                       />
                     </label>
-
                     <label style={styles.fieldLabel}>
                       Billing Rate
                       <input
@@ -742,7 +818,6 @@ function TeamRevenueModal({ form, saving, editing, bdeOptions, onChange, onClose
                         placeholder="Enter billing rate"
                       />
                     </label>
-
                     <label style={styles.fieldLabel}>
                       Margin (auto-calc, editable)
                       <input
@@ -754,7 +829,6 @@ function TeamRevenueModal({ form, saving, editing, bdeOptions, onChange, onClose
                         placeholder="Auto = Billing - CTC"
                       />
                     </label>
-
                     <label style={styles.fieldLabel}>
                       Margin %
                       <input
@@ -821,6 +895,7 @@ const styles = {
     gap: "10px",
     marginBottom: "14px",
     flexWrap: "wrap",
+    alignItems: "center",
   },
   select: {
     padding: "6px",
