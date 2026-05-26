@@ -33,7 +33,6 @@ const formatLastActivity = (value) => {
   return `Last activity: ${dt.toLocaleDateString()}`;
 };
 
-// ── Phone helpers defined locally — no external dependency ──
 const cleanPhone = (val) => (val || "").replace(/\D/g, "").slice(0, 10);
 const isValidPhone = (val) => !val || val.replace(/\D/g, "").length === 10;
 
@@ -81,8 +80,8 @@ export default function Recruiters() {
         MANAGED_ROLES.map((role) =>
           supabase
             .from("users")
-            .select("id,auth_id,name,email,phone_number,role,created_at,last_seen_at")
-            // IMPORTANT: force role filtering by canonical value
+            // ── include is_active in select ──
+            .select("id,auth_id,name,email,phone_number,role,created_at,last_seen_at,is_active")
             .in("role", [canonicalizeRole(role), ...(getRoleQueryValues(role) || [])])
             .order("created_at", { ascending: false })
         )
@@ -116,6 +115,8 @@ export default function Recruiters() {
           created_at: row.created_at || null,
           last_seen_at: row.last_seen_at || null,
           role: getRoleLabel(role),
+          // ── carry is_active through; treat null as true (existing rows) ──
+          is_active: row.is_active !== false,
           stats: formatLastActivity(latestActivityByName.get(name.toLowerCase()) || null),
         };
       });
@@ -174,7 +175,6 @@ export default function Recruiters() {
       return;
     }
 
-    // Phone: optional, but if provided must be exactly 10 digits
     const phoneDigits = cleanPhone(form.phone);
     if (form.phone && phoneDigits.length !== 10) {
       setError("Phone number must be exactly 10 digits");
@@ -185,7 +185,7 @@ export default function Recruiters() {
       name: form.name.trim(),
       email: form.email.trim(),
       password: form.password.trim(),
-      phone: phoneDigits || null, // send null if empty
+      phone: phoneDigits || null,
       role: canonicalizeRole(form.role),
     });
 
@@ -230,16 +230,39 @@ export default function Recruiters() {
     }
   };
 
-  const handleDeleteUser = async (user, role) => {
-    const ok = window.confirm(`Are you sure you want to delete this ${getRoleLabel(role)}?`);
+  // ── REPLACED: handleDeleteUser → handleToggleActive ──────────────────────────
+  // No record is ever deleted. We simply flip is_active true ↔ false.
+  // Deactivated users cannot log in (enforce this in your auth check / RLS),
+  // but all their historical data (revenue_tracker, candidates, etc.) is preserved.
+  const handleToggleActive = async (user, role) => {
+    const willDeactivate = user.is_active !== false;
+    const actionLabel = willDeactivate ? "deactivate" : "reactivate";
+    const ok = window.confirm(
+      `Are you sure you want to ${actionLabel} ${user.name}?\n\n` +
+      (willDeactivate
+        ? "They will lose login access but all their data will be kept."
+        : "They will regain login access.")
+    );
     if (!ok) return;
+
     setActionBusyId(user.id);
-    const { error: deleteError } = await supabase.from("users").delete().eq("id", user.id);
+    const { error: updateError } = await supabase
+      .from("users")
+      .update({ is_active: !willDeactivate })
+      .eq("id", user.id);
     setActionBusyId(null);
-    if (deleteError) { setError(deleteError.message || "Failed to delete user"); return; }
-    setMessage(`${getRoleLabel(role)} deleted successfully`);
+
+    if (updateError) {
+      setError(updateError.message || `Failed to ${actionLabel} user`);
+      return;
+    }
+
+    setMessage(
+      `${user.name} has been ${willDeactivate ? "deactivated" : "reactivated"} successfully`
+    );
     await loadUsers();
   };
+  // ─────────────────────────────────────────────────────────────────────────────
 
   const handleUpdateUser = async (e) => {
     e.preventDefault();
@@ -348,7 +371,6 @@ export default function Recruiters() {
             onChange={(e) => setForm((prev) => ({ ...prev, password: e.target.value }))}
             style={styles.input}
           />
-          {/* ✅ Phone: strip non-digits on every keystroke, max 10 digits */}
           <input
             placeholder="Phone Number (10 digits)"
             type="tel"
@@ -378,6 +400,8 @@ export default function Recruiters() {
             key={user.id || user.email}
             style={{
               ...styles.card,
+              // ── deactivated cards are visually dimmed ──
+              opacity: user.is_active === false ? 0.5 : 1,
               transform: hoveredCard === index ? "translateY(-2px)" : "translateY(0)",
               boxShadow: hoveredCard === index
                 ? "0 12px 24px rgba(15, 23, 42, 0.12)"
@@ -391,13 +415,25 @@ export default function Recruiters() {
                 <h4 style={styles.cardName}>{user.name}</h4>
                 <p style={styles.cardEmail}>{user.email}</p>
               </div>
-              <span style={{
-                ...styles.statusPill,
-                background: user.status === "Online" ? "#dcfce7" : "#fee2e2",
-                color: user.status === "Online" ? "#166534" : "#991b1b",
-              }}>
-                {user.status}
-              </span>
+              <div style={{ display: "flex", flexDirection: "column", gap: "4px", alignItems: "flex-end" }}>
+                <span style={{
+                  ...styles.statusPill,
+                  background: user.status === "Online" ? "#dcfce7" : "#fee2e2",
+                  color: user.status === "Online" ? "#166534" : "#991b1b",
+                }}>
+                  {user.status}
+                </span>
+                {/* ── account status badge ── */}
+                {user.is_active === false && (
+                  <span style={{
+                    ...styles.statusPill,
+                    background: "#fef3c7",
+                    color: "#92400e",
+                  }}>
+                    Deactivated
+                  </span>
+                )}
+              </div>
             </div>
             <div style={styles.metaRow}>
               <span style={styles.metaLabel}>Role</span>
@@ -416,7 +452,7 @@ export default function Recruiters() {
         <section key={role} style={styles.panel}>
           <h3 style={styles.panelTitle}>Manage {getRoleLabel(role)} Users</h3>
           <p style={styles.panelSubtitle}>
-            Update profile details, change passwords, or remove {getRoleLabel(role)} access.
+            Update profile details, change passwords, or deactivate {getRoleLabel(role)} access.
             {role === "tl" && " Use 'Assign Recruiters' to map recruiters under each TL."}
           </p>
 
@@ -429,6 +465,7 @@ export default function Recruiters() {
                   <th style={styles.th}>Phone Number</th>
                   <th style={styles.th}>Created At</th>
                   <th style={styles.th}>Online Status</th>
+                  <th style={styles.th}>Account Status</th>
                   {role === "tl" && <th style={styles.th}>Assigned Recruiters</th>}
                   <th style={styles.th}>Actions</th>
                 </tr>
@@ -436,16 +473,28 @@ export default function Recruiters() {
               <tbody>
                 {usersByRole[role].length === 0 ? (
                   <tr>
-                    <td style={styles.td} colSpan={role === "tl" ? 7 : 6}>
+                    <td style={styles.td} colSpan={role === "tl" ? 8 : 7}>
                       No {getRoleLabel(role)} users found.
                     </td>
                   </tr>
                 ) : (
                   usersByRole[role].map((user) => {
+                    const isActive = user.is_active !== false;
                     const assignedNames = role === "tl" ? getAssignedRecruiterNames(user.id) : [];
                     return (
-                      <tr key={user.id}>
-                        <td style={styles.td}>{user.name}</td>
+                      <tr
+                        key={user.id}
+                        style={{
+                          // ── deactivated rows are grayed out ──
+                          background: isActive ? "#fff" : "#f8fafc",
+                          opacity: isActive ? 1 : 0.65,
+                        }}
+                      >
+                        <td style={styles.td}>
+                          <span style={{ color: isActive ? "#0f172a" : "#94a3b8" }}>
+                            {user.name}
+                          </span>
+                        </td>
                         <td style={styles.td}>{user.email}</td>
                         <td style={styles.td}>{user.phone_number || "-"}</td>
                         <td style={styles.td}>{formatDate(user.created_at)}</td>
@@ -456,6 +505,17 @@ export default function Recruiters() {
                             color: getStatus(user.last_seen_at) === "Online" ? "#166534" : "#991b1b",
                           }}>
                             {getStatus(user.last_seen_at)}
+                          </span>
+                        </td>
+
+                        {/* ── Account Status column ── */}
+                        <td style={styles.td}>
+                          <span style={{
+                            ...styles.statusPill,
+                            background: isActive ? "#dcfce7" : "#fef3c7",
+                            color: isActive ? "#166534" : "#92400e",
+                          }}>
+                            {isActive ? "Active" : "Deactivated"}
                           </span>
                         </td>
 
@@ -509,13 +569,19 @@ export default function Recruiters() {
                                 Assign Recruiters
                               </button>
                             )}
+
+                            {/* ── REPLACED: Delete → Deactivate / Reactivate ── */}
                             <button
                               type="button"
-                              style={styles.dangerBtn}
-                              onClick={() => handleDeleteUser(user, role)}
+                              style={isActive ? styles.deactivateBtn : styles.reactivateBtn}
+                              onClick={() => handleToggleActive(user, role)}
                               disabled={actionBusyId === user.id}
                             >
-                              {actionBusyId === user.id ? "Processing..." : `Delete ${getRoleLabel(role)}`}
+                              {actionBusyId === user.id
+                                ? "Processing..."
+                                : isActive
+                                ? "Deactivate"
+                                : "Reactivate"}
                             </button>
                           </div>
                         </td>
@@ -570,7 +636,6 @@ export default function Recruiters() {
                 onChange={(e) => setEditForm((prev) => ({ ...prev, email: e.target.value }))}
                 style={styles.input}
               />
-              {/* ✅ Phone in edit modal — same clean handling */}
               <input
                 placeholder="Phone Number (10 digits)"
                 type="tel"
@@ -629,6 +694,8 @@ export default function Recruiters() {
                         ...styles.checkboxRow,
                         background: checked ? "#eff6ff" : "#fff",
                         borderColor: checked ? "#bfdbfe" : "#e2e8f0",
+                        // ── dim deactivated recruiters in the assign list ──
+                        opacity: rec.is_active === false ? 0.5 : 1,
                       }}
                     >
                       <input
@@ -642,7 +709,14 @@ export default function Recruiters() {
                         style={{ accentColor: "#2563eb", width: 16, height: 16 }}
                       />
                       <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 14, fontWeight: 600, color: "#0f172a" }}>{rec.name}</div>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: "#0f172a" }}>
+                          {rec.name}
+                          {rec.is_active === false && (
+                            <span style={{ marginLeft: 6, fontSize: 11, color: "#92400e", background: "#fef3c7", borderRadius: 4, padding: "1px 6px" }}>
+                              Deactivated
+                            </span>
+                          )}
+                        </div>
                         <div style={{ fontSize: 12, color: "#64748b" }}>{rec.email}</div>
                         {otherTLName && (
                           <div style={{ fontSize: 11, color: "#f59e0b", marginTop: 2 }}>
@@ -703,7 +777,11 @@ const styles = {
   secondaryBtn: { border: "1px solid #cbd5e1", background: "#ffffff", color: "#0f172a", padding: "8px 12px", borderRadius: "10px", fontWeight: 600, cursor: "pointer" },
   activeToggle: { background: "#eff6ff", borderColor: "#2563eb", color: "#1d4ed8" },
   assignBtn: { border: "1px solid #bfdbfe", background: "#eff6ff", color: "#1d4ed8", padding: "8px 12px", borderRadius: "10px", fontWeight: 600, cursor: "pointer" },
+  // ── kept for reference but no longer used in the table ──
   dangerBtn: { border: "1px solid #fecaca", background: "#fff1f2", color: "#b91c1c", padding: "8px 12px", borderRadius: "10px", fontWeight: 600, cursor: "pointer" },
+  // ── NEW: deactivate (orange-ish warning) and reactivate (green) ──
+  deactivateBtn: { border: "1px solid #fed7aa", background: "#fff7ed", color: "#c2410c", padding: "8px 12px", borderRadius: "10px", fontWeight: 600, cursor: "pointer" },
+  reactivateBtn: { border: "1px solid #bbf7d0", background: "#f0fdf4", color: "#15803d", padding: "8px 12px", borderRadius: "10px", fontWeight: 600, cursor: "pointer" },
   grid: { display: "grid", gap: "14px", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" },
   card: { background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "14px", padding: "16px", transition: "all 0.18s ease" },
   cardTop: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "10px", marginBottom: "14px" },

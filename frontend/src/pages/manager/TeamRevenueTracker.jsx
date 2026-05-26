@@ -92,17 +92,15 @@ export default function TeamTracker() {
   const [editRecord, setEditRecord] = useState(null);
   const [form, setForm] = useState({ ...emptyForm });
 
-  // ── NEW: TL state ──────────────────────────────────────────
-  const [tlOptions, setTlOptions] = useState([]);           // [{ id, name }]
-  const [selectedTl, setSelectedTl] = useState("");         // tl user id or ""
-  const [tlRecruiterNames, setTlRecruiterNames] = useState([]); // recruiter names under selected TL
-  // ───────────────────────────────────────────────────────────
+  const [tlOptions, setTlOptions] = useState([]);
+  const [selectedTl, setSelectedTl] = useState("");
+  const [tlRecruiterNames, setTlRecruiterNames] = useState([]);
 
-  // ── NEW: Fetch all TLs ─────────────────────────────────────
+  // ── Fetch all TLs ─────────────────────────────────────────
   useEffect(() => {
     const fetchTLs = async () => {
       const { data, error } = await supabase
-          .from("users")
+        .from("users")
         .select("id, name")
         .eq("role", "tl")
         .order("name");
@@ -115,9 +113,8 @@ export default function TeamTracker() {
     };
     fetchTLs();
   }, []);
-  // ───────────────────────────────────────────────────────────
 
-  // ── NEW: When TL selected, fetch their recruiter names ─────
+  // ── When TL selected, fetch their recruiter names (case-insensitive matched) ─
   useEffect(() => {
     if (!selectedTl) {
       setTlRecruiterNames([]);
@@ -140,35 +137,69 @@ export default function TeamTracker() {
         .map((r) => r.recruiter_id)
         .filter(Boolean);
 
-      // Step 2: get names from profiles
-      const tlName = tlOptions.find((t) => String(t.id) === String(selectedTl))?.name || "";
+      const tlName = tlOptions.find((t) => String(t.id) === String(selectedTl))?.name?.trim() || "";
 
-      if (!recruiterIds.length) {
-        setTlRecruiterNames(tlName ? [tlName] : []);
-        return;
-      }
-
-      const { data: profiles, error: profileErr } = await supabase
+      // Step 2: get recruiter names from users table
+      let userNames = tlName ? [tlName] : [];
+ const resolvedSet = new Set();
+    await Promise.all(
+      userNames.map(async (name) => {
+        const { data } = await supabase
+          .from("revenue_tracker")
+          .select("recruiter_name")
+          .ilike("recruiter_name", name);
+        data?.forEach((r) => resolvedSet.add(r.recruiter_name));
+      })
+    );
+      if (recruiterIds.length) {
+        const { data: profiles, error: profileErr } = await supabase
           .from("users")
-        .select("id, name")
-        .in("id", recruiterIds);
+          .select("id, name")
+          .in("id", recruiterIds);
 
-      if (profileErr) {
-        console.error("Failed to fetch recruiter profiles", profileErr);
+        if (profileErr) {
+          console.error("Failed to fetch recruiter profiles", profileErr);
+        } else {
+          userNames = [
+            ...userNames,
+            ...(profiles || []).map((p) => (p.name || "").trim()),
+          ].filter(Boolean);
+        }
+      }
+
+      // Step 3: cross-reference against actual recruiter_name values in revenue_tracker
+      // using case-insensitive matching to avoid silent mismatches (e.g. "Sherin" vs "sherin")
+      const { data: trackerNames, error: trackerErr } = await supabase
+        .from("revenue_tracker")
+        .select("recruiter_name");
+
+      if (trackerErr) {
+        console.error("Failed to fetch tracker recruiter names", trackerErr);
+        // Fall back to raw user names from users table
+        setTlRecruiterNames(userNames);
         return;
       }
 
-      const names = [
-        tlName,
-        ...(profiles || []).map((p) => (p.name || "").trim()),
-      ].filter(Boolean);
+      const allTrackerNames = [
+        ...new Set(
+          (trackerNames || []).map((r) => r.recruiter_name).filter(Boolean)
+        ),
+      ];
 
-      setTlRecruiterNames(names);
+      // Match tracker names case-insensitively against user names
+      const resolvedNames = allTrackerNames.filter((trackerName) =>
+        userNames.some(
+          (n) => n.toLowerCase().trim() === trackerName.toLowerCase().trim()
+        )
+      );
+
+      // If no matches found in tracker, fall back to raw user names
+      // so the query correctly returns zero rows rather than all rows
+      setTlRecruiterNames(resolvedNames.length ? resolvedNames : userNames);
     };
 
     fetchTLRecruiters();
   }, [selectedTl, tlOptions]);
-  // ───────────────────────────────────────────────────────────
 
   const handleFileUpload = async () => {
     if (!file) return;
@@ -228,14 +259,36 @@ export default function TeamTracker() {
     if (clientSearch.trim()) query = query.ilike("client_name", `%${clientSearch.trim()}%`);
     if (locationSearch.trim()) query = query.ilike("location", `%${locationSearch.trim()}%`);
 
-    // ── NEW: TL filter takes priority over individual recruiter filter ──
-    if (selectedTl && tlRecruiterNames.length > 0) {
-      query = query.in("recruiter_name", tlRecruiterNames);
+    // Filter priority:
+    // 1) TL selected → show only records for that TL's entire team
+    //    (TL themselves + all assigned recruiters)
+    // 2) Recruiter selected (without TL) → show only that recruiter's records
+    // 3) Neither → show all records
+    if (selectedTl) {
+      if (tlRecruiterNames.length === 0) {
+        // TL has no mapped names — return zero rows intentionally
+        query = query.eq("id", -1);
+      } else {
+        query = query.in("recruiter_name", tlRecruiterNames);
+
+        // If a recruiter sub-filter is also active, narrow further within the team
+        if (selectedRecruiter) {
+          // Only apply if the selected recruiter actually belongs to this TL's team
+          const inTeam = tlRecruiterNames.some(
+            (n) => n.toLowerCase().trim() === selectedRecruiter.toLowerCase().trim()
+          );
+          if (inTeam) {
+            query = query.eq("recruiter_name", selectedRecruiter);
+          }
+          // If not in team (stale selection), ignore the recruiter filter silently
+        }
+      }
     } else if (selectedRecruiter) {
       query = query.eq("recruiter_name", selectedRecruiter);
     }
 
     const { data, error } = await query;
+
     if (error) {
       console.error("[team-tracker] fetch failed", error);
       setRecords([]);
@@ -245,7 +298,16 @@ export default function TeamTracker() {
 
     setRecords(data || []);
     setLoading(false);
-  }, [fromDate, toDate, selectedRecruiter, selectedBde, clientSearch, locationSearch, selectedTl, tlRecruiterNames]);
+  }, [
+    fromDate,
+    toDate,
+    selectedRecruiter,
+    selectedBde,
+    clientSearch,
+    locationSearch,
+    selectedTl,
+    tlRecruiterNames,
+  ]);
 
   const fetchRecruiterOptions = useCallback(async () => {
     const { data, error } = await supabase
@@ -259,7 +321,9 @@ export default function TeamTracker() {
       return;
     }
 
-    const unique = [...new Set((data || []).map((r) => r.recruiter_name).filter(Boolean))];
+    const unique = [
+      ...new Set((data || []).map((r) => r.recruiter_name).filter(Boolean)),
+    ];
     setRecruiterOptions(unique);
   }, []);
 
@@ -305,6 +369,27 @@ export default function TeamTracker() {
       supabase.removeChannel(channel);
     };
   }, [fetchRecords, fetchRecruiterOptions]);
+
+  // ── Derived: recruiter dropdown options scoped to selected TL's team ─────────
+  const filteredRecruiterOptions = useMemo(() => {
+    if (!selectedTl || tlRecruiterNames.length === 0) return recruiterOptions;
+    return recruiterOptions.filter((name) =>
+      tlRecruiterNames.some(
+        (n) => n.toLowerCase().trim() === name.toLowerCase().trim()
+      )
+    );
+  }, [selectedTl, tlRecruiterNames, recruiterOptions]);
+
+  // ── Clear all filters ─────────────────────────────────────────────────────────
+  const clearFilters = () => {
+    setFromDate("");
+    setToDate("");
+    setSelectedRecruiter("");
+    setSelectedBde("");
+    setClientSearch("");
+    setLocationSearch("");
+    setSelectedTl("");
+  };
 
   const orderedRows = useMemo(() => records, [records]);
 
@@ -465,7 +550,10 @@ export default function TeamTracker() {
     if (!ok) return;
 
     setDeletingId(id);
-    const { error } = await supabase.from("revenue_tracker").delete().eq("id", id);
+    const { error } = await supabase
+      .from("revenue_tracker")
+      .delete()
+      .eq("id", id);
 
     if (error) {
       alert(error.message);
@@ -477,6 +565,11 @@ export default function TeamTracker() {
     setRecords((prev) => prev.filter((r) => r.id !== id));
     setDeletingId(null);
   };
+
+  // ── Check if any filter is active (for showing Clear button prominently) ──
+  const hasActiveFilters =
+    fromDate || toDate || selectedRecruiter || selectedBde ||
+    clientSearch || locationSearch || selectedTl;
 
   return (
     <div style={styles.page}>
@@ -491,34 +584,37 @@ export default function TeamTracker() {
           + Add Revenue
         </button>
 
-        {/* All Recruiters — disabled when a TL is selected */}
-        <select
-          value={selectedRecruiter}
-          onChange={(e) => setSelectedRecruiter(e.target.value)}
-          style={{
-            ...styles.select,
-            opacity: selectedTl ? 0.4 : 1,
-            pointerEvents: selectedTl ? "none" : "auto",
-          }}
-        >
-          <option value="">All Recruiters</option>
-          {recruiterOptions.map((name) => (
-            <option key={name} value={name}>{name}</option>
-          ))}
-        </select>
-
-        {/* ── NEW: All TLs dropdown ── */}
+        {/* ── TL dropdown — clears recruiter when changed ── */}
         <select
           value={selectedTl}
           onChange={(e) => {
             setSelectedTl(e.target.value);
-            setSelectedRecruiter(""); // clear recruiter filter when TL is picked
+            setSelectedRecruiter(""); // always reset recruiter when TL changes
           }}
           style={styles.select}
         >
           <option value="">All TLs</option>
           {tlOptions.map((tl) => (
-            <option key={tl.id} value={tl.id}>{tl.name}</option>
+            <option key={tl.id} value={tl.id}>
+              {tl.name}
+            </option>
+          ))}
+        </select>
+
+        {/* ── Recruiter dropdown — scoped to selected TL's team ── */}
+        <select
+          value={selectedRecruiter}
+          onChange={(e) => setSelectedRecruiter(e.target.value)}
+          style={styles.select}
+          title={selectedTl ? "Showing recruiters under selected TL only" : "All recruiters"}
+        >
+          <option value="">
+            {selectedTl ? "All (TL's team)" : "All Recruiters"}
+          </option>
+          {filteredRecruiterOptions.map((name) => (
+            <option key={name} value={name}>
+              {name}
+            </option>
           ))}
         </select>
 
@@ -529,7 +625,9 @@ export default function TeamTracker() {
         >
           <option value="">All BDs</option>
           {bdeOptions.map((name) => (
-            <option key={name} value={name}>{name}</option>
+            <option key={name} value={name}>
+              {name}
+            </option>
           ))}
         </select>
 
@@ -556,6 +654,17 @@ export default function TeamTracker() {
           onChange={(e) => setLocationSearch(e.target.value)}
           style={styles.input}
         />
+
+        {/* ── Clear Filters button — only shown when filters are active ── */}
+        {hasActiveFilters && (
+          <button
+            style={styles.clearBtn}
+            onClick={clearFilters}
+            title="Reset all filters"
+          >
+            ✕ Clear Filters
+          </button>
+        )}
       </div>
 
       {showUpload && (
@@ -571,7 +680,10 @@ export default function TeamTracker() {
               <button style={styles.button} onClick={handleFileUpload}>
                 Upload
               </button>
-              <button style={styles.button} onClick={() => setShowUpload(false)}>
+              <button
+                style={styles.button}
+                onClick={() => setShowUpload(false)}
+              >
                 Cancel
               </button>
             </div>
@@ -589,7 +701,9 @@ export default function TeamTracker() {
             <thead>
               <tr>
                 {tableColumns.map((c) => (
-                  <th key={c.key} style={styles.th}>{c.label}</th>
+                  <th key={c.key} style={styles.th}>
+                    {c.label}
+                  </th>
                 ))}
                 <th style={styles.th}>Actions</th>
               </tr>
@@ -621,7 +735,10 @@ export default function TeamTracker() {
                     ))}
                     <td style={styles.td}>
                       <div style={styles.actionBtns}>
-                        <button style={styles.editBtn} onClick={() => openEdit(row)}>
+                        <button
+                          style={styles.editBtn}
+                          onClick={() => openEdit(row)}
+                        >
                           Edit
                         </button>
                         <button
@@ -656,7 +773,15 @@ export default function TeamTracker() {
   );
 }
 
-function TeamRevenueModal({ form, saving, editing, bdeOptions, onChange, onClose, onSave }) {
+function TeamRevenueModal({
+  form,
+  saving,
+  editing,
+  bdeOptions,
+  onChange,
+  onClose,
+  onSave,
+}) {
   useEffect(() => {
     const originalOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -684,7 +809,9 @@ function TeamRevenueModal({ form, saving, editing, bdeOptions, onChange, onClose
       <div style={styles.modalShell}>
         <div style={styles.modalHeader}>
           <div style={styles.modalHeaderRow}>
-            <h3 style={styles.modalTitle}>{editing ? "Edit Revenue" : "Add Revenue"}</h3>
+            <h3 style={styles.modalTitle}>
+              {editing ? "Edit Revenue" : "Add Revenue"}
+            </h3>
             <button
               type="button"
               onClick={onClose}
@@ -726,7 +853,9 @@ function TeamRevenueModal({ form, saving, editing, bdeOptions, onChange, onClose
                   >
                     <option value="">Select BD</option>
                     {(bdeOptions || []).map((name) => (
-                      <option key={name} value={name}>{name}</option>
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
                     ))}
                   </select>
                 </label>
@@ -783,7 +912,11 @@ function TeamRevenueModal({ form, saving, editing, bdeOptions, onChange, onClose
                     <label style={styles.fieldLabel}>
                       Margin %
                       <input
-                        style={{ ...styles.modalInput, background: "#f1f5f9", color: "#64748b" }}
+                        style={{
+                          ...styles.modalInput,
+                          background: "#f1f5f9",
+                          color: "#64748b",
+                        }}
                         type="text"
                         name="margin_percent"
                         value={form.margin_percent ?? ""}
@@ -832,7 +965,11 @@ function TeamRevenueModal({ form, saving, editing, bdeOptions, onChange, onClose
                     <label style={styles.fieldLabel}>
                       Margin %
                       <input
-                        style={{ ...styles.modalInput, background: "#f1f5f9", color: "#64748b" }}
+                        style={{
+                          ...styles.modalInput,
+                          background: "#f1f5f9",
+                          color: "#64748b",
+                        }}
                         type="text"
                         name="margin_percent"
                         value={form.margin_percent ?? ""}
@@ -971,6 +1108,23 @@ const styles = {
     color: "#b91c1c",
     cursor: "pointer",
   },
+  button: {
+    padding: "6px 10px",
+    border: "1px solid #cbd5e1",
+    borderRadius: "6px",
+    cursor: "pointer",
+    background: "#fff",
+  },
+  clearBtn: {
+    padding: "6px 12px",
+    border: "1px solid #fca5a5",
+    borderRadius: "6px",
+    background: "#fff1f2",
+    color: "#b91c1c",
+    cursor: "pointer",
+    fontWeight: 500,
+    fontSize: "13px",
+  },
   modal: {
     position: "fixed",
     top: 0,
@@ -988,12 +1142,6 @@ const styles = {
     padding: "20px",
     borderRadius: "8px",
     width: "400px",
-  },
-  button: {
-    padding: "6px 10px",
-    border: "1px solid #cbd5e1",
-    borderRadius: "6px",
-    cursor: "pointer",
   },
   overlay: {
     position: "fixed",
